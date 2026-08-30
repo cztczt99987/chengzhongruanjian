@@ -34,30 +34,31 @@ public class ChangePasswordForm : Form
 
     private void BuildUi()
     {
-        var lblOld = new Label { Text = "原密码：", AutoSize = true, Location = new Point(40, 30) };
+        // 标签列 x=30，输入框列 x=140：确认"确认新密码："这类 6 字标签不与输入框重叠
+        var lblOld = new Label { Text = "原密码：", AutoSize = true, Location = new Point(30, 30) };
         _txtOld = new TextBox
-        { Location = new Point(120, 25), Size = new Size(210, 28), UseSystemPasswordChar = true };
+        { Location = new Point(140, 25), Size = new Size(210, 28), UseSystemPasswordChar = true };
 
-        var lblNew = new Label { Text = "新密码：", AutoSize = true, Location = new Point(40, 75) };
+        var lblNew = new Label { Text = "新密码：", AutoSize = true, Location = new Point(30, 75) };
         _txtNew = new TextBox
-        { Location = new Point(120, 70), Size = new Size(210, 28), UseSystemPasswordChar = true };
+        { Location = new Point(140, 70), Size = new Size(210, 28), UseSystemPasswordChar = true };
 
-        var lblConfirm = new Label { Text = "确认新密码：", AutoSize = true, Location = new Point(40, 120) };
+        var lblConfirm = new Label { Text = "确认新密码：", AutoSize = true, Location = new Point(30, 120) };
         _txtConfirm = new TextBox
-        { Location = new Point(120, 115), Size = new Size(210, 28), UseSystemPasswordChar = true };
+        { Location = new Point(140, 115), Size = new Size(210, 28), UseSystemPasswordChar = true };
 
         _lblError = new Label
         {
             Text = "新密码长度至少 6 位",
             ForeColor = Color.Gray,
             AutoSize = true,
-            Location = new Point(120, 152),
+            Location = new Point(140, 152),
         };
 
         var btnOk = new Button
         {
             Text = "确  定",
-            Location = new Point(120, 185),
+            Location = new Point(140, 185),
             Size = new Size(100, 34),
             BackColor = Color.FromArgb(0, 122, 204),
             ForeColor = Color.White,
@@ -66,7 +67,7 @@ public class ChangePasswordForm : Form
         var btnCancel = new Button
         {
             Text = "取  消",
-            Location = new Point(230, 185),
+            Location = new Point(250, 185),
             Size = new Size(100, 34),
             FlatStyle = FlatStyle.Flat,
         };
