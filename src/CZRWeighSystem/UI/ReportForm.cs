@@ -120,6 +120,9 @@ public class ReportForm : Form
             RowHeadersVisible = false,
             SelectionMode = DataGridViewSelectionMode.FullRowSelect,
             AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+            // 表头/行高随字体自适应：雅黑 10pt + 高 DPI 下默认固定表头高度会截字
+            ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize,
+            AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCellsExceptHeaders,
             BackgroundColor = Color.White,
         };
         _grid.Columns.Add("Key", "");
