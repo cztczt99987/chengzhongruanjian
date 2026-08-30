@@ -205,6 +205,15 @@ public class MainForm : Form
             MessageBox.Show(msg, ok ? "成功" : "错误",
                 MessageBoxButtons.OK, ok ? MessageBoxIcon.Information : MessageBoxIcon.Error);
         }));
+        // 打印设置（对应 PRD F9-04：纸张、联数、字段显隐、自动打印；限管理员）
+        if (AppSession.CurrentUser?.Role.Contains("管理员") == true)
+        {
+            mSys.DropDownItems.Add(new ToolStripMenuItem("打印设置", null, (_, _) =>
+            {
+                using var f = new PrintSettingsDialog();
+                f.ShowDialog(this);
+            }));
+        }
         mSys.DropDownItems.Add(new ToolStripSeparator());
         // 数据库设置（对应 PRD F9-05：单机 SQLite / 网络 SQL Server，仅超管可见）
         if (AppSession.CurrentUser?.Role.Contains("超级管理员") == true)
@@ -716,12 +725,15 @@ public class MainForm : Form
             // 结算完成自动抓拍留证（对应 PRD F7-02）
             if (record != null) CaptureFor(record.SerialNo);
 
-            // 结算完成后询问打印磅单（对应 PRD F5-01，自动打印开关后续配置化）
-            if (record != null && MessageBox.Show(
-                    "是否打印磅单？", "打印磅单",
-                    MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+            // 打印磅单：开启自动打印直接出单，否则询问（对应 PRD F5-01 / F9-04）
+            if (record != null)
             {
-                Report.PoundTicketPrinter.Print(record);
+                if (AppConfig.Current.AutoPrintEnabled ||
+                    MessageBox.Show("是否打印磅单？", "打印磅单",
+                        MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+                {
+                    Report.PoundTicketPrinter.Print(record);
+                }
             }
         }
     }

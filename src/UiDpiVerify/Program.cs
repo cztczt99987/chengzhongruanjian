@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 using CZRWeighSystem;
 using CZRWeighSystem.Core;
 using CZRWeighSystem.Database;
+using CZRWeighSystem.Report;
 using CZRWeighSystem.UI;
 
 internal static class Program
@@ -74,6 +75,11 @@ internal static class Program
             RunSuite("125%", new Point(dpi120.Bounds.Left + 10, dpi120.Bounds.Top + 10));
         else
             Console.WriteLine("  当前未检测到 120 DPI 屏幕，跳过实证");
+
+        // ---------- 磅单渲染自检：各纸张 × 字段显隐组合渲染到内存位图 ----------
+        Console.WriteLine();
+        Console.WriteLine("== 磅单渲染自检 ==");
+        SmokeTestTicket();
 
         // ---------- 150% 档：线性推演 ----------
         Console.WriteLine();
@@ -266,4 +272,51 @@ internal static class Program
     }
 
     private static string Trunc(string s) => s.Length > 18 ? s[..18] + "…" : s;
+
+    /// <summary>磅单渲染自检：各纸张、部分字段隐藏、多联设置下渲染到内存位图不抛异常。</summary>
+    private static void SmokeTestTicket()
+    {
+        var sample = new WeighRecord
+        {
+            SerialNo = "TEST-01-0001", VehicleNo = "冀A12345", Goods = "煤炭",
+            Company = "供货商A", Spec = "一级", BatchNo = "B01", Remark = "测试备注",
+            GrossKg = 34600, TareKg = 11600, NetKg = 23000,
+            FirstTime = DateTime.Now.AddHours(-2), SecondTime = DateTime.Now,
+            Operator = "管理员", Status = "已完成",
+        };
+        var cfg = AppConfig.Current;
+        var (paperBak, hiddenBak, copiesBak) =
+            (cfg.PrintPaper, cfg.PrintHiddenFields, cfg.PrintCopies);
+        try
+        {
+            var cases = new (string Name, string[] Hidden)[]
+            {
+                ("全部字段显示", Array.Empty<string>()),
+                ("隐藏部分字段", ["公司名称", "规格", "批次", "扣重", "实收", "单位", "备注", "签字栏"]),
+            };
+            foreach (var paper in PoundTicketPrinter.Papers)
+            {
+                cfg.PrintPaper = paper.Key;
+                cfg.PrintCopies = 2;
+                foreach (var c in cases)
+                {
+                    cfg.PrintHiddenFields = [.. c.Hidden];
+                    using var bmp = new Bitmap(paper.W, paper.H);
+                    using var g = Graphics.FromImage(bmp);
+                    PoundTicketPrinter.RenderTo(g, new Rectangle(0, 0, paper.W, paper.H), sample);
+                    Console.WriteLine($"  {paper.Name} × [{c.Name}] × 2联 渲染成功");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Issues.Add(("磅单渲染", "-", "DrawTicket", "渲染失败：" + ex.Message));
+        }
+        finally
+        {
+            cfg.PrintPaper = paperBak;
+            cfg.PrintHiddenFields = hiddenBak;
+            cfg.PrintCopies = copiesBak;
+        }
+    }
 }

@@ -45,6 +45,16 @@ public class AppConfig
     /// <summary>公司名称（打印在磅单上）</summary>
     public string CompanyName { get; set; } = "CZR 称重有限公司";
 
+    // ===== 打印设置（对应 PRD F9-04 / F5-02 / F5-03）=====
+    /// <summary>磅单纸张 key：A4 / 241x140 / 241x93（目录见 PoundTicketPrinter.Papers）</summary>
+    public string PrintPaper { get; set; } = "A4";
+    /// <summary>不打印的磅单字段 key 列表（未列出的字段默认打印，对应 F5-02 字段显隐）</summary>
+    public List<string> PrintHiddenFields { get; set; } = [];
+    /// <summary>联数 1~3：一式两联/三联时逐页输出（对应 F5-03）</summary>
+    public int PrintCopies { get; set; } = 1;
+    /// <summary>结算完成后自动打印磅单（false = 每次询问，对应 F5-01）</summary>
+    public bool AutoPrintEnabled { get; set; } = false;
+
     // ===== 使用细节（对应 PRD 7.2 交互要点 / 4.1 规则 3）=====
     /// <summary>保存操作前是否二次确认（true 更稳妥，熟练后可改 false）</summary>
     public bool ConfirmBeforeSave { get; set; } = true;
