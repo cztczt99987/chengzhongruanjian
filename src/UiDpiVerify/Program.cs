@@ -122,6 +122,13 @@ internal static class Program
                 Application.DoEvents();
                 Console.WriteLine($"  {f.GetType().Name,-26} DeviceDpi={f.DeviceDpi}");
                 CheckForm(f, dpiName);
+                CheckSiblingOverlap(f, dpiName);
+
+                // 模拟窗口拉大后复查（捕捉 Anchor 拉伸导致的互相遮盖/越界）
+                f.Size = new Size(f.Width + 400, f.Height + 160);
+                Application.DoEvents();
+                CheckForm(f, dpiName + "+放大");
+                CheckSiblingOverlap(f, dpiName + "+放大");
             }
             catch (Exception ex)
             {
@@ -184,6 +191,33 @@ internal static class Program
                 if (b.Right > pb.Width + 2 || b.Bottom > pb.Height + 2)
                     Issues.Add((formName, dpi, $"{c.GetType().Name} \"{Trunc(c.Text)}\"",
                         $"控件越界：Right={b.Right}/{pb.Width}, Bottom={b.Bottom}/{pb.Height}"));
+            }
+        }
+    }
+
+    /// <summary>检查同一父容器内非 Dock 兄弟控件是否互相遮盖（重叠 ≥8×8 视为异常）。</summary>
+    private static void CheckSiblingOverlap(Control root, string dpi)
+    {
+        string formName = root.GetType().Name;
+        foreach (var grp in AllControls(root).Where(c => c.Parent != null).GroupBy(c => c.Parent!))
+        {
+            // 跳过未执行布局的容器（窗体未 Show 时仍是默认 200×100，测量无意义）
+            var pb = grp.Key.ClientSize;
+            if (pb.Width <= 200 && pb.Height <= 100) continue;
+
+            // TabPage 本来就同位置叠放（由 TabControl 控制可见性），排除
+            var kids = grp.Where(c => c is not TabPage &&
+                                      c.Dock == DockStyle.None && c.Width > 0 && c.Height > 0).ToList();
+            for (int i = 0; i < kids.Count; i++)
+            {
+                for (int j = i + 1; j < kids.Count; j++)
+                {
+                    var r = Rectangle.Intersect(kids[i].Bounds, kids[j].Bounds);
+                    if (r.Width >= 8 && r.Height >= 8)
+                        Issues.Add((formName, dpi,
+                            $"{kids[i].GetType().Name} \"{Trunc(kids[i].Text)}\" × {kids[j].GetType().Name} \"{Trunc(kids[j].Text)}\"",
+                            $"兄弟控件重叠 {r.Width}×{r.Height}@({r.X},{r.Y})"));
+                }
             }
         }
     }

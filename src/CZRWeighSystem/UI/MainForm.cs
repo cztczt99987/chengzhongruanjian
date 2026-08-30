@@ -18,6 +18,7 @@ public class MainForm : Form
     private Label _lblGross = null!;         // 毛重
     private Label _lblTare = null!;          // 皮重
     private Label _lblNet = null!;           // 净重
+    private readonly List<GroupBox> _weightBoxes = [];   // 毛/皮/净三栏（随窗口铺开）
     private TextBox _txtVehicle = null!;     // 车号
     private ComboBox _cboGoods = null!;      // 货物
     private ComboBox _cboCompany = null!;    // 收/发货单位
@@ -113,7 +114,11 @@ public class MainForm : Form
                 Size = new Size(pw, _videoPanel.ClientSize.Height - 34),
                 SizeMode = PictureBoxSizeMode.Zoom,
                 BackColor = Color.Black,
-                Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+                // 只有最后一路随面板拉伸（吸收宽度变化）；其余各路固定宽度，
+                // 否则多路画面全部拉伸会互相重叠
+                Anchor = i == count - 1
+                    ? AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right
+                    : AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left,
             };
             _videoPanel.Controls.Add(pic);
             _picBoxes.Add(pic);
@@ -295,6 +300,8 @@ public class MainForm : Form
         };
 
         // 车/皮/净三栏（对应 PRD 5.2 界面区域 1）
+        // 注意：不能用 Left+Right 锚定——窗口变宽时三栏各自拉伸会互相遮盖，
+        // 改为固定锚定 + Resize 时在重量框右侧均匀铺开（见 LayoutWeightBoxes）
         string[] names = { "毛重", "皮重", "净重" };
         Label[] targets = new Label[3];
         for (int i = 0; i < 3; i++)
@@ -304,7 +311,7 @@ public class MainForm : Form
                 Text = names[i],
                 Location = new Point(600 + i * 250, 45),
                 Size = new Size(240, 110),
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+                Anchor = AnchorStyles.Top | AnchorStyles.Left,
             };
             var val = new Label
             {
@@ -319,6 +326,7 @@ public class MainForm : Form
             box.Controls.Add(val);
             Controls.Add(box);
             targets[i] = val;
+            _weightBoxes.Add(box);
         }
         _lblGross = targets[0];
         _lblTare = targets[1];
@@ -326,6 +334,26 @@ public class MainForm : Form
 
         Controls.Add(_lblWeight);
         Controls.Add(_lblStable);
+
+        // 窗口尺寸变化时重新铺开三栏；
+        // DPI 缩放发生在句柄创建之后，缩放过程会覆盖重排结果，
+        // 因此还要在句柄创建完成后（消息队列空闲时）再重排一次
+        Resize += (_, _) => LayoutWeightBoxes();
+        HandleCreated += (_, _) => BeginInvoke(new MethodInvoker(LayoutWeightBoxes));
+    }
+
+    /// <summary>把毛/皮/净三栏均匀铺开在重量显示框右侧（避免锚定拉伸互相遮盖）。</summary>
+    private void LayoutWeightBoxes()
+    {
+        if (_weightBoxes.Count == 0) return;
+        int start = _lblWeight.Right + 24;
+        int end = ClientSize.Width - 20;
+        int gap = 10;
+        int w = (end - start - (_weightBoxes.Count - 1) * gap) / _weightBoxes.Count;
+        if (w < 80) return;             // 窗口过窄时不再重排，避免出现负宽
+        for (int i = 0; i < _weightBoxes.Count; i++)
+            _weightBoxes[i].SetBounds(
+                start + i * (w + gap), _weightBoxes[i].Top, w, _weightBoxes[i].Height);
     }
 
     // ---------- 信息录入区 ----------
@@ -335,8 +363,10 @@ public class MainForm : Form
         {
             Text = "信息录入（回车跳转下一项）",
             Location = new Point(20, 225),
+            // 只固定宽度、不向右拉伸：右侧 x=915 起是未完成列表，
+            // 若用 Right 锚定，窗口拉宽时录入区会向右生长盖住列表
             Size = new Size(880, 190),
-            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            Anchor = AnchorStyles.Top | AnchorStyles.Left,
         };
 
         Label L(string text, int x, int y) => new Label
@@ -521,8 +551,10 @@ public class MainForm : Form
         {
             Text = "一次磅未完成列表（双击行配对）",
             Location = new Point(915, 225),
-            Size = new Size(435, 420),
-            Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+            // 高度到 y=505（与操作按钮行底边对齐）；下方 y=520 起是视频区，
+            // 不能用 Bottom 锚定——窗口变高时列表会向下生长压住视频画面
+            Size = new Size(435, 280),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
         };
 
         _grid = new DataGridView
