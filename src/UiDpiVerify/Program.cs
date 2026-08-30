@@ -80,6 +80,7 @@ internal static class Program
         Console.WriteLine();
         Console.WriteLine("== 磅单渲染自检 ==");
         SmokeTestTicket();
+        SmokeTestTemplate();
 
         // ---------- 150% 档：线性推演 ----------
         Console.WriteLine();
@@ -154,6 +155,8 @@ internal static class Program
         new ReportForm(),
         new BaseInfoForm(),
         new DatabaseSettingsDialog(),
+        new PrintSettingsDialog(),
+        new TemplateDesignerForm(),
         new RecordEditDialog(new WeighRecord
         {
             SerialNo = "TEST-01-0001", VehicleNo = "A12345",
@@ -173,6 +176,7 @@ internal static class Program
         {
             if (c is Form or PictureBox) continue;          // 无文字/纯图片
             if (c is ToolStrip or MenuStrip or StatusStrip) continue;
+            if (c.Parent is PropertyGrid) continue;          // 属性网格内部子控件，测量无意义
 
             // 0) DataGridView 表头高度检查：模式非 AutoSize 且高度不够时表头文字被截半
             if (c is DataGridView grid &&
@@ -272,6 +276,45 @@ internal static class Program
     }
 
     private static string Trunc(string s) => s.Length > 18 ? s[..18] + "…" : s;
+
+    /// <summary>模板自检：默认模板 JSON 往返 + 模板模式渲染 + 含图片元素缺图容错。</summary>
+    private static void SmokeTestTemplate()
+    {
+        try
+        {
+            // 1) 默认模板 JSON 序列化往返一致
+            var t = PrintTemplate.CreateDefault("241x140");
+            t.Elements.Add(new ImageElement { X = 170, Y = 10, W = 25, H = 15, Path = "logo.png" });
+            var json = System.Text.Json.JsonSerializer.Serialize(t);
+            var back = System.Text.Json.JsonSerializer.Deserialize<PrintTemplate>(json)!;
+            bool roundTrip = back.PaperKey == "241x140" &&
+                             back.Elements.Count == t.Elements.Count &&
+                             back.Elements[^1] is ImageElement;
+            Console.WriteLine($"  JSON 往返（含多态元素/图片元素）：{(roundTrip ? "通过" : "不一致")}");
+            if (!roundTrip)
+                Issues.Add(("磅单模板", "-", "PrintTemplate", "JSON 序列化往返不一致"));
+
+            // 2) 模板模式渲染到内存位图（含缺图容错路径）
+            foreach (var paper in PoundTicketPrinter.Papers)
+            {
+                t.PaperKey = paper.Key;
+                using var bmp = new Bitmap(paper.W, paper.H);
+                using var g = Graphics.FromImage(bmp);
+                TemplateTicketRenderer.Render(t, g, new WeighRecord
+                {
+                    SerialNo = "TEST-01-0002", VehicleNo = "冀B54321", Goods = "矿粉",
+                    GrossKg = 40000, TareKg = 15000, NetKg = 25000,
+                    FirstTime = DateTime.Now.AddHours(-1), SecondTime = DateTime.Now,
+                    Operator = "管理员", Status = "已完成",
+                }, AppConfig.Current, 96f / 25.4f);
+                Console.WriteLine($"  模板渲染（{paper.Name}，含缺图容错）成功");
+            }
+        }
+        catch (Exception ex)
+        {
+            Issues.Add(("磅单模板", "-", "TemplateTicketRenderer", "渲染失败：" + ex.Message));
+        }
+    }
 
     /// <summary>磅单渲染自检：各纸张、部分字段隐藏、多联设置下渲染到内存位图不抛异常。</summary>
     private static void SmokeTestTicket()

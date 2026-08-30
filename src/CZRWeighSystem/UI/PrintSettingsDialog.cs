@@ -14,6 +14,7 @@ public class PrintSettingsDialog : Form
     private NumericUpDown _numCopies = null!;
     private CheckBox _chkAutoPrint = null!;
     private CheckedListBox _lstFields = null!;
+    private ComboBox _cboTemplate = null!;       // 打印模板选择（空项 = 不用模板）
 
     /// <summary>字段目录的 key 列表（与 _lstFields 条目按序对应）</summary>
     private readonly List<string> _keys = [];
@@ -23,6 +24,7 @@ public class PrintSettingsDialog : Form
     private List<string> _snapHidden = [];
     private int _snapCopies;
     private bool _snapAuto;
+    private string _snapTpl = "";
 
     public PrintSettingsDialog()
     {
@@ -36,9 +38,39 @@ public class PrintSettingsDialog : Form
         Font = new Font("Microsoft YaHei UI", 10F);
         Size = new Size(470, 585);
 
+        // 打印模板（二期：启用后版式由模板决定，纸张/字段显隐仅对内置版式生效）
+        var grpTpl = new GroupBox
+        { Text = "打印模板", Location = new Point(12, 10), Size = new Size(430, 96) };
+        _cboTemplate = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Location = new Point(80, 30),
+            Size = new Size(230, 28),
+        };
+        RefreshTemplateItems();
+        var btnDesigner = new Button
+        {
+            Text = "模板设计器",
+            Location = new Point(316, 28),
+            Size = new Size(100, 30),
+        };
+        btnDesigner.Click += (_, _) => OpenDesigner();
+        var lblTplHint = new Label
+        {
+            Text = "选择模板后按模板版式打印；纸张与字段勾选仅对内置版式生效。",
+            Location = new Point(15, 66),
+            AutoSize = true,
+            ForeColor = Color.FromArgb(96, 96, 96),
+        };
+        grpTpl.Controls.AddRange(new Control[]
+        {
+            new Label { Text = "模板：", AutoSize = true, Location = new Point(15, 33) },
+            _cboTemplate, btnDesigner, lblTplHint,
+        });
+
         // 纸张与联数
         var grpPaper = new GroupBox
-        { Text = "纸张与联数", Location = new Point(12, 10), Size = new Size(430, 130) };
+        { Text = "纸张与联数", Location = new Point(12, 114), Size = new Size(430, 130) };
         _cboPaper = new ComboBox
         {
             DropDownStyle = ComboBoxStyle.DropDownList,
@@ -70,12 +102,12 @@ public class PrintSettingsDialog : Form
 
         // 字段显隐
         var grpFields = new GroupBox
-        { Text = "磅单字段（勾选＝打印）", Location = new Point(12, 148), Size = new Size(430, 336) };
+        { Text = "磅单字段（勾选＝打印）", Location = new Point(12, 252), Size = new Size(430, 232) };
         _lstFields = new CheckedListBox
         {
             CheckOnClick = true,
             Location = new Point(15, 28),
-            Size = new Size(400, 293),
+            Size = new Size(400, 189),
         };
         foreach (var (key, label) in PoundTicketPrinter.FieldCatalog)
         {
@@ -103,7 +135,7 @@ public class PrintSettingsDialog : Form
         { Text = "取消", Location = new Point(354, 496), Size = new Size(88, 34) };
         btnCancel.Click += (_, _) => { RestoreSnapshot(); Close(); };
 
-        Controls.AddRange(new Control[] { grpPaper, grpFields, btnPreview, btnOk, btnCancel });
+        Controls.AddRange(new Control[] { grpTpl, grpPaper, grpFields, btnPreview, btnOk, btnCancel });
 
         // 载入当前配置
         var cfg = AppConfig.Current;
@@ -111,10 +143,38 @@ public class PrintSettingsDialog : Form
         _cboPaper.SelectedIndex = paperIdx >= 0 ? paperIdx : 0;
         _numCopies.Value = Math.Clamp(cfg.PrintCopies, 1, 3);
         _chkAutoPrint.Checked = cfg.AutoPrintEnabled;
+        SelectTemplateInCombo(cfg.PrintTemplateFile);
         _snapPaper = cfg.PrintPaper;
         _snapHidden = [.. cfg.PrintHiddenFields];
         _snapCopies = cfg.PrintCopies;
         _snapAuto = cfg.AutoPrintEnabled;
+        _snapTpl = cfg.PrintTemplateFile;
+    }
+
+    /// <summary>重新加载模板目录到下拉框（首项"不使用模板"）。</summary>
+    private void RefreshTemplateItems()
+    {
+        _cboTemplate.Items.Clear();
+        _cboTemplate.Items.Add("（不使用模板 - 内置版式）");
+        foreach (var name in PrintTemplate.ListNames())
+            _cboTemplate.Items.Add(name);
+    }
+
+    /// <summary>把下拉框定位到指定模板文件名。</summary>
+    private void SelectTemplateInCombo(string file)
+    {
+        _cboTemplate.SelectedIndex =
+            string.IsNullOrWhiteSpace(file) ? 0 : _cboTemplate.Items.IndexOf(file);
+    }
+
+    /// <summary>打开模板设计器；返回后刷新模板列表并选中刚编辑的文件。</summary>
+    private void OpenDesigner()
+    {
+        using var f = new TemplateDesignerForm();
+        f.ShowDialog(this);
+        RefreshTemplateItems();
+        if (!string.IsNullOrWhiteSpace(f.CurrentFile))
+            SelectTemplateInCombo(f.CurrentFile);
     }
 
     /// <summary>把界面选择套用到配置对象（不落盘）。</summary>
@@ -128,6 +188,9 @@ public class PrintSettingsDialog : Form
         cfg.PrintHiddenFields = _keys
             .Where((_, i) => !_lstFields.GetItemChecked(i))
             .ToList();
+        // 下拉索引 0 = 不使用模板
+        cfg.PrintTemplateFile = _cboTemplate.SelectedIndex > 0
+            ? _cboTemplate.Text : "";
     }
 
     /// <summary>保存并关闭。</summary>
@@ -153,6 +216,7 @@ public class PrintSettingsDialog : Form
         cfg.PrintHiddenFields = [.. _snapHidden];
         cfg.PrintCopies = _snapCopies;
         cfg.AutoPrintEnabled = _snapAuto;
+        cfg.PrintTemplateFile = _snapTpl;
     }
 
     /// <summary>预览用的示例记录。</summary>

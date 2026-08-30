@@ -110,12 +110,52 @@ public static class PoundTicketPrinter
         => DrawTicket(g, bounds, r);
 
     /// <summary>
-    /// 构建打印文档：纸张/边距按打印设置；联数逐页输出（对应 F5-03 一式 N 联）。
+    /// 加载当前启用的打印模板；未启用或文件缺失返回 null（走内置版式）。
+    /// </summary>
+    public static PrintTemplate? LoadActiveTemplate()
+    {
+        var file = AppConfig.Current.PrintTemplateFile;
+        if (string.IsNullOrWhiteSpace(file)) return null;
+        try
+        {
+            return PrintTemplate.Load(file);
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"加载打印模板失败，改用内置版式：{file}", ex);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 为指定模板构建打印文档（模板设计器预览用，不读启用配置）。
+    /// </summary>
+    public static PrintDocument BuildTemplateDocument(PrintTemplate t, WeighRecord r)
+    {
+        var cfg = AppConfig.Current;
+        int idx = Array.FindIndex(Papers, p => p.Key == t.PaperKey);
+        var paper = idx >= 0 ? Papers[idx] : Papers[0];
+
+        var doc = new PrintDocument { DocumentName = "磅单模板预览" };
+        doc.DefaultPageSettings.PaperSize = new PaperSize(paper.Name, paper.W, paper.H);
+        doc.DefaultPageSettings.Margins = new Margins(40, 40, 40, 40);
+        doc.PrintPage += (_, e) =>
+        {
+            e.Graphics!.TranslateTransform(e.MarginBounds.X, e.MarginBounds.Y);
+            TemplateTicketRenderer.Render(t, e.Graphics, r, cfg, e.Graphics.DpiX / 25.4f);
+        };
+        return doc;
+    }
+
+    /// <summary>
+    /// 构建打印文档：启用模板时按模板纸张与版式渲染，否则走内置版式；
+    /// 联数逐页输出（对应 F5-03 一式 N 联）。
     /// </summary>
     private static PrintDocument BuildDocument(WeighRecord r)
     {
         var cfg = AppConfig.Current;
-        int idx = Array.FindIndex(Papers, p => p.Key == cfg.PrintPaper);
+        var tpl = LoadActiveTemplate();
+        int idx = Array.FindIndex(Papers, p => p.Key == (tpl?.PaperKey ?? cfg.PrintPaper));
         var paper = idx >= 0 ? Papers[idx] : Papers[0];
 
         var doc = new PrintDocument { DocumentName = $"磅单_{r.SerialNo}" };
@@ -125,7 +165,16 @@ public static class PoundTicketPrinter
         int printed = 0;
         doc.PrintPage += (_, e) =>
         {
-            DrawTicket(e.Graphics, e.MarginBounds, r);
+            if (tpl != null)
+            {
+                // 模板模式：元素坐标为毫米，平移到边距起点后按设备分辨率渲染
+                e.Graphics!.TranslateTransform(e.MarginBounds.X, e.MarginBounds.Y);
+                TemplateTicketRenderer.Render(tpl, e.Graphics, r, cfg, e.Graphics.DpiX / 25.4f);
+            }
+            else
+            {
+                DrawTicket(e.Graphics, e.MarginBounds, r);
+            }
             printed++;
             e.HasMorePages = printed < Math.Max(1, cfg.PrintCopies);
         };
