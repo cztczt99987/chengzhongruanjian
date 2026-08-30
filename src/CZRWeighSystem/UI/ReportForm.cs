@@ -68,14 +68,17 @@ public class ReportForm : Form
 
         _dtpFrom = new DateTimePicker
         {
-            Format = DateTimePickerFormat.Short,
+            // 统一固定 yyyy-MM-dd：Short 格式跟随系统区域，英文系统下会显示成 "31/ 7/2026"
+            Format = DateTimePickerFormat.Custom,
+            CustomFormat = "yyyy-MM-dd",
             Location = new Point(300, 33),
             Size = new Size(120, 28),
             Value = DateTime.Today.AddDays(-30),
         };
         _dtpTo = new DateTimePicker
         {
-            Format = DateTimePickerFormat.Short,
+            Format = DateTimePickerFormat.Custom,
+            CustomFormat = "yyyy-MM-dd",
             Location = new Point(440, 33),
             Size = new Size(120, 28),
             Value = DateTime.Today,

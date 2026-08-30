@@ -179,6 +179,19 @@ internal static class Program
                         $"表头高 {grid.ColumnHeadersHeight}px < 字体所需 {need}px，表头文字会显示一半"));
             }
 
+            // 0.1) 日期控件格式检查：Short 跟随系统区域（英文系统显示成 "31/ 7/2026"），
+            //      应固定 CustomFormat="yyyy-MM-dd"；Custom 但未设格式则显示空白
+            if (c is DateTimePicker dtp)
+            {
+                if (dtp.Format == DateTimePickerFormat.Short)
+                    Issues.Add((formName, dpi, $"DateTimePicker \"{Trunc(dtp.Name)}\"",
+                        "使用 Short 格式跟随系统区域，应固定 CustomFormat=yyyy-MM-dd"));
+                else if (dtp.Format == DateTimePickerFormat.Custom &&
+                         string.IsNullOrEmpty(dtp.CustomFormat))
+                    Issues.Add((formName, dpi, $"DateTimePicker \"{Trunc(dtp.Name)}\"",
+                        "Custom 格式但未设置 CustomFormat，会显示空白"));
+            }
+
             // 1) 文字宽度检查（AutoSize 控件自适应文字，自身不截断，跳过）
             if (!string.IsNullOrEmpty(c.Text) && !c.AutoSize)
             {
