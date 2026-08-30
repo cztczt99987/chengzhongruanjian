@@ -176,14 +176,15 @@ public class RecordQueryForm : Form
         var btnExport = new Button
         {
             Text = "导出 Excel(CSV)",
-            Location = new Point(880, 608),
-            Size = new Size(165, 36),
+            // 右侧按钮链右对齐重排：导出 869 / 磅单预览 1009 / 补打 1119（原磅单预览被导出整个盖住）
+            Location = new Point(869, 608),
+            Size = new Size(130, 36),
             BackColor = Color.FromArgb(0, 153, 0),
             ForeColor = Color.White,
             FlatStyle = FlatStyle.Flat,
             Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
             AutoSize = true,
-            MinimumSize = new Size(165, 36),
+            MinimumSize = new Size(130, 36),
         };
         btnExport.Click += (_, _) =>
             CsvExporter.Export(_grid, $"称重记录_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
@@ -192,25 +193,25 @@ public class RecordQueryForm : Form
         var btnReprint = new Button
         {
             Text = "补打磅单",
-            Location = new Point(1055, 608),
-            Size = new Size(120, 36),
+            Location = new Point(1119, 608),
+            Size = new Size(100, 36),
             BackColor = Color.FromArgb(0, 122, 204),
             ForeColor = Color.White,
             FlatStyle = FlatStyle.Flat,
             Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
             AutoSize = true,
-            MinimumSize = new Size(120, 36),
+            MinimumSize = new Size(100, 36),
         };
         btnReprint.Click += (_, _) => Reprint();
 
-        // 查看抓拍图片（对应 PRD F7-03）：右锚区第三位，避免与左侧按钮重叠
+        // 查看抓拍图片（对应 PRD F7-03）：放在左侧按钮组末尾，与合计标签互不遮挡
         var btnCaptures = new Button
         {
             Text = "查看抓拍",
-            Location = new Point(750, 608),
+            Location = new Point(380, 608),
             Size = new Size(110, 36),
             FlatStyle = FlatStyle.Flat,
-            Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
+            Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
         };
         btnCaptures.Click += (_, _) => ShowCaptures();
 
@@ -218,12 +219,12 @@ public class RecordQueryForm : Form
         var btnPreview = new Button
         {
             Text = "磅单预览",
-            Location = new Point(925, 608),
-            Size = new Size(120, 36),
+            Location = new Point(1009, 608),
+            Size = new Size(100, 36),
             FlatStyle = FlatStyle.Flat,
             Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
             AutoSize = true,
-            MinimumSize = new Size(120, 36),
+            MinimumSize = new Size(100, 36),
         };
         btnPreview.Click += (_, _) =>
         {
@@ -240,6 +241,7 @@ public class RecordQueryForm : Form
         Controls.Add(btnExport);
         Controls.Add(btnReprint);
         Controls.Add(btnPreview);
+        Controls.Add(btnCaptures);   // 原先遗漏未加入，导致按钮从未显示
 
         // 管理员专属：修改 / 作废 / 留痕（对应 PRD F3-03、F3-04）
         if (_canManage)
