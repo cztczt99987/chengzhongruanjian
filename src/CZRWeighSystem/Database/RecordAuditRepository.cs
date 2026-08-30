@@ -96,6 +96,41 @@ public class RecordAuditRepository
             CheckText("batch_no", "批次", old.BatchNo, v.BatchNo);
             CheckText("remark", "备注", old.Remark, v.Remark);
 
+            // ---- 自定义字段比对（值存 ext_json，逐字段留痕）----
+            var oldExt = old.ParseExt();
+            var newExt = v.Ext ?? [];
+            var merged = new Dictionary<string, string>(oldExt);
+            bool extDirty = false;
+            foreach (var (name, val) in newExt)
+            {
+                string nv = val.Trim();
+                oldExt.TryGetValue(name, out string? ov);
+                if ((ov ?? "") == nv) continue;
+                if (nv.Length == 0) merged.Remove(name); else merged[name] = nv;
+                InsertAudit(conn, tx, new RecordAudit
+                {
+                    RecordId = recordId, Action = "修改", Field = name,
+                    OldValue = ov, NewValue = nv.Length == 0 ? null : nv,
+                    Operator = operatorName, Time = now,
+                });
+                auditCount++;
+                extDirty = true;
+            }
+            foreach (var name in oldExt.Keys.Where(k => !newExt.ContainsKey(k)).ToList())
+            {
+                merged.Remove(name);
+                InsertAudit(conn, tx, new RecordAudit
+                {
+                    RecordId = recordId, Action = "修改", Field = name,
+                    OldValue = oldExt[name], NewValue = null,
+                    Operator = operatorName, Time = now,
+                });
+                auditCount++;
+                extDirty = true;
+            }
+            if (extDirty)
+                UpdateField(conn, tx, recordId, "ext_json", WeighRecord.ExtToJson(merged));
+
             // ---- 重量字段比对（改毛/皮自动重算净重）----
             double oldGross = old.GrossKg ?? 0, oldTare = old.TareKg ?? 0;
             if (Math.Abs(v.GrossKg - oldGross) > 0.001)
@@ -249,6 +284,7 @@ public class RecordAuditRepository
             NetKg = GetDbl(reader, "net_kg"),
             Status = reader.GetString(reader.GetOrdinal("status")),
             IsManual = Convert.ToInt64(reader.GetValue(reader.GetOrdinal("is_manual"))) == 1,
+            ExtJson = GetStr(reader, "ext_json"),
         };
     }
 
@@ -280,4 +316,6 @@ public class RecordEditValues
     public double GrossKg { get; set; }
     /// <summary>皮重（千克）</summary>
     public double TareKg { get; set; }
+    /// <summary>自定义字段值（null = 不修改扩展字段）</summary>
+    public Dictionary<string, string>? Ext { get; set; }
 }

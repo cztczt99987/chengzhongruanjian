@@ -73,6 +73,31 @@ public static class Db
         using var cmd = conn.CreateCommand();
         cmd.CommandText = sql;
         cmd.ExecuteNonQuery();
+        EnsureExtColumn(conn);
+    }
+
+    /// <summary>
+    /// 旧库升级：t_weigh_record 补 ext_json 列（自定义字段值，JSON 存储）。
+    /// SQLite 的 ADD COLUMN 不支持 IF NOT EXISTS，重复执行报"列已存在"直接忽略。
+    /// </summary>
+    private static void EnsureExtColumn(DbConnection conn)
+    {
+        using var cmd = conn.CreateCommand();
+        if (IsSqlServer)
+        {
+            cmd.CommandText = """
+                IF NOT EXISTS (SELECT 1 FROM sys.columns
+                    WHERE object_id = OBJECT_ID(N't_weigh_record') AND name = 'ext_json')
+                ALTER TABLE t_weigh_record ADD ext_json NVARCHAR(500);
+                """;
+            cmd.ExecuteNonQuery();
+        }
+        else
+        {
+            cmd.CommandText = "ALTER TABLE t_weigh_record ADD COLUMN ext_json TEXT;";
+            try { cmd.ExecuteNonQuery(); }
+            catch { /* 列已存在 */ }
+        }
     }
 
     // ==================== 建表脚本（双方言） ====================
@@ -154,6 +179,16 @@ public static class Db
             phone       TEXT,
             enabled     INTEGER NOT NULL DEFAULT 1
         );
+
+        CREATE TABLE IF NOT EXISTS t_custom_field (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT NOT NULL UNIQUE,
+            field_type  TEXT NOT NULL DEFAULT '文本',
+            options     TEXT,
+            required    INTEGER NOT NULL DEFAULT 0,
+            sort_order  INTEGER NOT NULL DEFAULT 0,
+            enabled     INTEGER NOT NULL DEFAULT 1
+        );
         """;
 
     private const string SqlServerSchema = """
@@ -229,6 +264,16 @@ public static class Db
             type        NVARCHAR(10) NOT NULL DEFAULT N'收货',
             contact     NVARCHAR(30),
             phone       NVARCHAR(20),
+            enabled     BIT NOT NULL DEFAULT 1
+        );
+        IF OBJECT_ID(N't_custom_field', N'U') IS NULL
+        CREATE TABLE t_custom_field (
+            id          BIGINT IDENTITY(1,1) PRIMARY KEY,
+            name        NVARCHAR(50) NOT NULL UNIQUE,
+            field_type  NVARCHAR(10) NOT NULL DEFAULT N'文本',
+            options     NVARCHAR(200),
+            required    BIT NOT NULL DEFAULT 0,
+            sort_order  INT NOT NULL DEFAULT 0,
             enabled     BIT NOT NULL DEFAULT 1
         );
         """;

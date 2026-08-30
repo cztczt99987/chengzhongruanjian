@@ -38,6 +38,7 @@ internal static class Program
         {
             Username = "admin", DisplayName = "管理员", Role = "超级管理员",
         };
+        SeedCustomFields();
 
         // 临时图片（供 CaptureViewForm 使用）
         string tempImg = Path.Combine(Path.GetTempPath(), "dpi_verify_cap.jpg");
@@ -81,6 +82,7 @@ internal static class Program
         Console.WriteLine("== 磅单渲染自检 ==");
         SmokeTestTicket();
         SmokeTestTemplate();
+        SmokeTestExt();
 
         // ---------- 150% 档：线性推演 ----------
         Console.WriteLine();
@@ -276,6 +278,48 @@ internal static class Program
     }
 
     private static string Trunc(string s) => s.Length > 18 ? s[..18] + "…" : s;
+
+    /// <summary>种子自定义字段（文本必填/数字/下拉各一，驱动动态表单渲染自检）。</summary>
+    private static void SeedCustomFields()
+    {
+        var repo = new CustomFieldRepository();
+        if (repo.GetAll().Count > 0) return;
+        repo.Save(new CustomField { Name = "合同号", FieldType = "文本", Required = true, SortOrder = 1 });
+        repo.Save(new CustomField { Name = "含水率(%)", FieldType = "数字", SortOrder = 2 });
+        repo.Save(new CustomField { Name = "货类", FieldType = "下拉", Options = "内贸,外贸,中转", SortOrder = 3 });
+    }
+
+    /// <summary>ExtJson 序列化往返 + 占位符融合自检。</summary>
+    private static void SmokeTestExt()
+    {
+        try
+        {
+            var r = new WeighRecord
+            {
+                SerialNo = "TEST-01-0003", VehicleNo = "冀C11111",
+                GrossKg = 30000, TareKg = 10000, NetKg = 20000, Status = "已完成",
+                ExtJson = WeighRecord.ExtToJson(new Dictionary<string, string>
+                { ["合同号"] = "HT-2026-001", ["货类"] = "外贸" }),
+            };
+            var ext = r.ParseExt();
+            bool roundTrip = ext.Count == 2 && ext["合同号"] == "HT-2026-001";
+
+            var ph = PrintTemplate.BuildPlaceholders(r, AppConfig.Current);
+            bool merged = ph["合同号"] == "HT-2026-001" && ph["货类"] == "外贸";
+            string expanded = PrintTemplate.Expand("合同{合同号} 类别{货类}", ph);
+            bool expandOk = expanded == "合同HT-2026-001 类别外贸" &&
+                            PrintTemplate.Expand("未知{不存在}", ph) == "未知{不存在}";
+
+            Console.WriteLine($"  ExtJson 往返：{(roundTrip ? "通过" : "不一致")}，" +
+                              $"占位符融合：{(merged && expandOk ? "通过" : "失败")}");
+            if (!roundTrip || !merged || !expandOk)
+                Issues.Add(("自定义字段", "-", "ExtJson/占位符", "序列化或占位符融合不一致"));
+        }
+        catch (Exception ex)
+        {
+            Issues.Add(("自定义字段", "-", "SmokeTestExt", "自检失败：" + ex.Message));
+        }
+    }
 
     /// <summary>模板自检：默认模板 JSON 往返 + 模板模式渲染 + 含图片元素缺图容错。</summary>
     private static void SmokeTestTemplate()

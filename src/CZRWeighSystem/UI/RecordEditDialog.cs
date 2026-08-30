@@ -23,6 +23,10 @@ public class RecordEditDialog : Form
     private TextBox _txtTare = null!;
     private Label _lblNet = null!;
 
+    /// <summary>自定义字段输入（自定义表单）</summary>
+    private readonly List<(CustomField Def, Control Input)> _extInputs = [];
+    private readonly CustomFieldRepository _fieldRepo = new();
+
     /// <summary>保存成功后的新值（窗体关闭后由调用方读取）</summary>
     public RecordEditValues? Result { get; private set; }
 
@@ -36,6 +40,7 @@ public class RecordEditDialog : Form
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
+        ShowInTaskbar = false;
         ClientSize = new Size(500, 430);
         Font = new Font("Microsoft YaHei UI", 10F);
 
@@ -100,6 +105,31 @@ public class RecordEditDialog : Form
         _txtTare.TextChanged += (_, _) => _lblNet.Text = CalcNet();
         y += 52;
 
+        // 自定义字段（自定义表单）：逐行渲染，值取自记录 ext_json
+        var ext = _record.ParseExt();
+        foreach (var def in _fieldRepo.GetAll(enabledOnly: true))
+        {
+            ext.TryGetValue(def.Name, out string? val);
+            Controls.Add(L(def.Name + "：", y));
+            Control input = def.FieldType switch
+            {
+                "下拉" => NewCombo(y, val, def.OptionList),
+                "日期" => new DateTimePicker
+                {
+                    Location = new Point(140, y),
+                    Size = new Size(280, 28),
+                    Format = DateTimePickerFormat.Custom,
+                    CustomFormat = "yyyy-MM-dd",
+                },
+                _ => new TextBox { Location = new Point(140, y), Size = new Size(280, 28), Text = val ?? "" },
+            };
+            if (input is DateTimePicker dtp && DateTime.TryParse(val, out var d))
+                dtp.Value = d;
+            Controls.Add(input);
+            _extInputs.Add((def, input));
+            y += 42;
+        }
+
         // 保存 / 取消
         var btnOk = new Button
         {
@@ -123,6 +153,7 @@ public class RecordEditDialog : Form
         Controls.Add(btnCancel);
 
         AcceptButton = btnOk;
+        ClientSize = new Size(500, y + 60);   // 高度随自定义字段行数自适应
     }
 
     private ComboBox NewCombo(int y, string? value, params string[] items)
@@ -180,6 +211,8 @@ public class RecordEditDialog : Form
             Remark = _txtRemark.Text,
             GrossKg = gross,
             TareKg = tare,
+            Ext = _extInputs.Count == 0 ? null
+                : _extInputs.ToDictionary(p => p.Def.Name, p => p.Input.Text.Trim()),
         };
         DialogResult = DialogResult.OK;
         Close();

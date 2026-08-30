@@ -154,6 +154,9 @@ public class RecordQueryForm : Form
         _grid.Columns.Add("SecondTime", "二次磅时间");
         _grid.Columns.Add("Operator", "司磅员");
         _grid.Columns.Add("Status", "状态");
+        // 自定义字段动态列（自定义表单）
+        foreach (var f in new CustomFieldRepository().GetAll(enabledOnly: true))
+            _grid.Columns.Add("Ext_" + f.Name, f.Name);
 
         Controls.Add(_grid);
     }
@@ -425,8 +428,10 @@ public class RecordQueryForm : Form
             _txtVehicle.Text, _txtGoods.Text, _txtCompany.Text, status);
 
         _grid.Rows.Clear();
+        var extFields = new CustomFieldRepository().GetAll(enabledOnly: true);
         foreach (var r in list)
         {
+            var ext = r.ParseExt();
             int i = _grid.Rows.Add(
                 r.SerialNo,
                 r.VehicleNo,
@@ -439,6 +444,9 @@ public class RecordQueryForm : Form
                 r.SecondTime?.ToString("yyyy-MM-dd HH:mm") ?? "",
                 r.Operator ?? "",
                 r.Status);
+            // 自定义字段动态列取值
+            for (int k = 0; k < extFields.Count; k++)
+                _grid.Rows[i].Cells[11 + k].Value = ext.TryGetValue(extFields[k].Name, out var v) ? v : "";
             _grid.Rows[i].Tag = r;   // 行 Tag 保存完整记录，供补打使用
         }
 

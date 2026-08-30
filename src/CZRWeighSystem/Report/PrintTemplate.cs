@@ -62,30 +62,37 @@ public class PrintTemplate
         "一次磅时间", "二次磅时间", "打印时间", "司磅员", "备注", "状态",
     ];
 
-    /// <summary>按称重记录与配置生成占位符取值表</summary>
-    public static Dictionary<string, string> BuildPlaceholders(WeighRecord r, AppConfig cfg) => new()
+    /// <summary>按称重记录与配置生成占位符取值表（含自定义字段）。</summary>
+    public static Dictionary<string, string> BuildPlaceholders(WeighRecord r, AppConfig cfg)
     {
-        ["公司名称"] = cfg.CompanyName,
-        ["流水号"] = r.SerialNo,
-        ["磅号"] = r.ScaleNo,
-        ["车号"] = r.VehicleNo,
-        ["货物"] = r.Goods ?? "-",
-        ["收发货单位"] = r.Company ?? "-",
-        ["规格"] = r.Spec ?? "-",
-        ["批次"] = r.BatchNo ?? "-",
-        ["毛重"] = FmtKg(r.GrossKg, cfg),
-        ["皮重"] = FmtKg(r.TareKg, cfg),
-        ["净重"] = FmtKg(r.NetKg, cfg),
-        ["扣重"] = FmtKg(0, cfg),
-        ["实收"] = FmtKg(r.NetKg, cfg),
-        ["单位"] = cfg.Unit,
-        ["一次磅时间"] = r.FirstTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-",
-        ["二次磅时间"] = r.SecondTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-",
-        ["打印时间"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
-        ["司磅员"] = r.Operator ?? "-",
-        ["备注"] = r.IsManual ? "手工补录" : (r.Remark ?? ""),
-        ["状态"] = r.Status,
-    };
+        var ph = new Dictionary<string, string>
+        {
+            ["公司名称"] = cfg.CompanyName,
+            ["流水号"] = r.SerialNo,
+            ["磅号"] = r.ScaleNo,
+            ["车号"] = r.VehicleNo,
+            ["货物"] = r.Goods ?? "-",
+            ["收发货单位"] = r.Company ?? "-",
+            ["规格"] = r.Spec ?? "-",
+            ["批次"] = r.BatchNo ?? "-",
+            ["毛重"] = FmtKg(r.GrossKg, cfg),
+            ["皮重"] = FmtKg(r.TareKg, cfg),
+            ["净重"] = FmtKg(r.NetKg, cfg),
+            ["扣重"] = FmtKg(0, cfg),
+            ["实收"] = FmtKg(r.NetKg, cfg),
+            ["单位"] = cfg.Unit,
+            ["一次磅时间"] = r.FirstTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-",
+            ["二次磅时间"] = r.SecondTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-",
+            ["打印时间"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+            ["司磅员"] = r.Operator ?? "-",
+            ["备注"] = r.IsManual ? "手工补录" : (r.Remark ?? ""),
+            ["状态"] = r.Status,
+        };
+        // 自定义字段名即占位符（如模板中写 {合同号}）
+        foreach (var (name, val) in r.ParseExt())
+            ph.TryAdd(name, val);
+        return ph;
+    }
 
     /// <summary>替换文本中的 {占位符}；未识别的占位符原样保留</summary>
     public static string Expand(string text, Dictionary<string, string> ph)

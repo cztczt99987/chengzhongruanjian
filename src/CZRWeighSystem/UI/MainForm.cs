@@ -96,11 +96,11 @@ public class MainForm : Form
         _videoPanel = new GroupBox
         {
             Text = "视频监控（保存称重时自动抓拍留证）",
-            Location = new Point(20, 520),
-            Size = new Size(1330, 270),
+            Location = new Point(20, _videoY),
+            Size = new Size(1330, _videoH),
             Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
             // 最小高度：窗口缩到最小时仍保留一屏完整画面（避免标题被截/画面过小）
-            MinimumSize = new Size(400, 180),
+            MinimumSize = new Size(400, 140),
         };
 
         // 按配置路数生成预览画面
@@ -450,6 +450,50 @@ public class MainForm : Form
         };
         panel.Controls.Add(_lblTareHint);
 
+        // 自定义字段（自定义表单）：从定义表读取启用字段动态渲染，
+        // 每行两列（x=20 / x=445），行高 36；录入面板高度随之扩展
+        var fields = _fieldRepo.GetAll(enabledOnly: true);
+        int rowY = 178;
+        for (int i = 0; i < fields.Count; i++)
+        {
+            var def = fields[i];
+            int x = i % 2 == 0 ? 20 : 445;
+            if (i % 2 == 0 && i > 0) rowY += 36;
+
+            var lbl = new Label
+            { Text = def.Name + "：", AutoSize = true, Location = new Point(x, rowY + 3) };
+            // 用窗体字体测量（Label 未加入控件树时会回落到系统默认字体导致测宽偏小），
+            // AutoSize 渲染宽度略大于测量值，再留 6px 余量
+            int inputX = x + TextRenderer.MeasureText(lbl.Text, Font).Width + 6;
+            int inputW = (i % 2 == 0 ? 430 : 855) - inputX;
+            if (inputW < 90) inputW = 90;    // 超长字段名时输入框保底宽度（可能轻微越界，设计上避免过长字段名）
+
+            Control input = def.FieldType switch
+            {
+                "下拉" => NewCombo(inputX, rowY, inputW, def.OptionList),
+                "日期" => new DateTimePicker
+                {
+                    Location = new Point(inputX, rowY),
+                    Size = new Size(inputW, 28),
+                    Format = DateTimePickerFormat.Custom,
+                    CustomFormat = "yyyy-MM-dd",
+                },
+                _ => new TextBox { Location = new Point(inputX, rowY), Size = new Size(inputW, 28) },
+            };
+            panel.Controls.AddRange([lbl, input]);
+            _customInputs.Add((def, input));
+        }
+        if (fields.Count > 0)
+            _inputPanelH = rowY + 36 + 8;
+
+        // 布局参数随录入面板高度顺移：按钮行、列表高度、视频区
+        // （视频区底边保持 790 不变，行数越多视频区越矮，最少保 140）
+        _buttonsY = 225 + _inputPanelH + 30;
+        _gridH = _buttonsY + 60 - 225;
+        _videoY = _buttonsY + 75;
+        _videoH = Math.Max(140, 790 - _videoY);
+
+        panel.Size = new Size(880, _inputPanelH);
         Controls.Add(panel);
     }
 
@@ -495,6 +539,17 @@ public class MainForm : Form
     // ---------- 基础档案数据源（对应 PRD F9：录入区下拉来自档案）----------
 
     private readonly Database.BaseInfoRepository _baseRepo = new();
+    private readonly Database.CustomFieldRepository _fieldRepo = new();
+
+    // ===== 自定义字段（自定义表单）=====
+    private readonly List<(CustomField Def, Control Input)> _customInputs = [];
+
+    // 录入区高度随自定义字段行数变化，按钮/列表/视频区随之顺移
+    private int _inputPanelH = 190;     // 录入面板高度
+    private int _buttonsY = 445;        // 操作按钮行 y
+    private int _gridH = 280;           // 未完成列表高度（底边与按钮行对齐）
+    private int _videoY = 520;          // 视频区 y
+    private int _videoH = 270;          // 视频区高度（底边保持 790）
 
     /// <summary>车辆档案 → 车号输入框自动完成列表。</summary>
     private void LoadVehicleAutoComplete()
@@ -560,9 +615,9 @@ public class MainForm : Form
         {
             Text = "一次磅未完成列表（双击行配对）",
             Location = new Point(915, 225),
-            // 高度到 y=505（与操作按钮行底边对齐）；下方 y=520 起是视频区，
+            // 高度与操作按钮行底边对齐（随自定义字段行数顺移）；下方是视频区，
             // 不能用 Bottom 锚定——窗口变高时列表会向下生长压住视频画面
-            Size = new Size(435, 280),
+            Size = new Size(435, _gridH),
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
         };
 
@@ -595,9 +650,10 @@ public class MainForm : Form
     // ---------- 操作按钮 ----------
     private void BuildButtons()
     {
-        _btnFirst = NewButton("保存一次磅", 20, 445, 200, 60, Color.FromArgb(0, 122, 204));
-        _btnSecond = NewButton("保存二次磅", 240, 445, 200, 60, Color.FromArgb(0, 153, 0));
-        var btnClear = NewButton("清空录入", 460, 445, 120, 60, Color.Gray);
+        int y = _buttonsY;
+        _btnFirst = NewButton("保存一次磅", 20, y, 200, 60, Color.FromArgb(0, 122, 204));
+        _btnSecond = NewButton("保存二次磅", 240, y, 200, 60, Color.FromArgb(0, 153, 0));
+        var btnClear = NewButton("清空录入", 460, y, 120, 60, Color.Gray);
 
         _btnFirst.Click += (_, _) => SaveFirst();
         _btnSecond.Click += (_, _) => SaveSecond();
@@ -657,6 +713,10 @@ public class MainForm : Form
         double? manual = ParseManual();
         if (_txtManual.TextLength > 0 && manual == null) return;
 
+        // 自定义字段采集与校验（必填/数字格式）
+        var ext = CollectExt();
+        if (ext == null) return;
+
         // 保存前二次确认（显示车号与重量）
         string weightText = manual.HasValue
             ? _cfg.FormatWeight(manual.Value)
@@ -667,7 +727,7 @@ public class MainForm : Form
         var (ok, msg, firstRecord) = _manager.SaveFirstWeigh(
             _txtVehicle.Text, _cboGoods.Text, _cboCompany.Text,
             _cboSpec.Text, _txtBatch.Text, _txtRemark.Text,
-            manual, _txtOperator.Text);
+            manual, _txtOperator.Text, ext);
 
         MessageBox.Show(msg, ok ? "成功" : "提示",
             MessageBoxButtons.OK, ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
@@ -752,6 +812,39 @@ public class MainForm : Form
         return _cfg.Unit == "t" ? v * 1000 : v;
     }
 
+    /// <summary>
+    /// 采集自定义字段值；校验失败（必填缺失/数字格式错误）提示并返回 null。
+    /// </summary>
+    private Dictionary<string, string>? CollectExt()
+    {
+        if (_customInputs.Count == 0) return [];
+        var ext = new Dictionary<string, string>();
+        foreach (var (def, input) in _customInputs)
+        {
+            string val = input.Text.Trim();
+            if (val.Length == 0)
+            {
+                if (def.Required)
+                {
+                    MessageBox.Show($"[{def.Name}] 为必填项", "提示",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    input.Focus();
+                    return null;
+                }
+                continue;
+            }
+            if (def.FieldType == "数字" && !double.TryParse(val, out _))
+            {
+                MessageBox.Show($"[{def.Name}] 需填写数字", "提示",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                input.Focus();
+                return null;
+            }
+            ext[def.Name] = val;
+        }
+        return ext;
+    }
+
     /// <summary>刷新未完成列表（超时记录标红提醒，对应 PRD 4.1 规则 3）。</summary>
     private void RefreshGrid()
     {
@@ -783,6 +876,11 @@ public class MainForm : Form
         _txtBatch.Clear();
         _txtRemark.Clear();
         _txtManual.Clear();
+        foreach (var (_, input) in _customInputs)
+        {
+            if (input is DateTimePicker dtp) dtp.Value = DateTime.Today;
+            else input.Text = "";
+        }
         _txtVehicle.Focus();
     }
 

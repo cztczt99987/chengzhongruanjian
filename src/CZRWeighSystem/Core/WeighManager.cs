@@ -74,7 +74,7 @@ public class WeighManager : IDisposable
     /// <returns>(是否成功, 提示消息, 保存的记录)</returns>
     public (bool Ok, string Message, WeighRecord? Record) SaveFirstWeigh(string vehicleNo, string? goods,
         string? company, string? spec, string? batchNo, string? remark,
-        double? manualKg, string? operatorName)
+        double? manualKg, string? operatorName, Dictionary<string, string>? ext = null)
     {
         // ---- 入参校验 ----
         if (string.IsNullOrWhiteSpace(vehicleNo))
@@ -103,6 +103,7 @@ public class WeighManager : IDisposable
             GrossKg = weight.Value,          // 未配对阶段暂存一次磅重量
             Operator = operatorName,
             IsManual = manualKg.HasValue,
+            ExtJson = WeighRecord.ExtToJson(ext),
         };
         _repo.InsertFirstWeigh(record);
         Log.Info($"保存一次磅：{record.SerialNo} 车号 {record.VehicleNo} 重量 {weight}kg");

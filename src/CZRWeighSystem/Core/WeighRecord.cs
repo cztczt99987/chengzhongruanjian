@@ -30,6 +30,25 @@ public class WeighRecord
     /// <summary>是否手工补录</summary>
     public bool IsManual { get; set; }
 
+    /// <summary>自定义字段值（JSON 对象，键=字段名；对应 t_weigh_record.ext_json）</summary>
+    public string? ExtJson { get; set; }
+
     /// <summary>一次磅保存时的重量（未配对阶段即当前称量值）</summary>
     public double? FirstWeightKg => FirstTime.HasValue ? GrossKg : null;
+
+    /// <summary>解析自定义字段值（JSON 无效时返回空字典）。</summary>
+    public Dictionary<string, string> ParseExt()
+    {
+        if (string.IsNullOrWhiteSpace(ExtJson)) return [];
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(ExtJson)
+                   ?? [];
+        }
+        catch { return []; }
+    }
+
+    /// <summary>自定义字段字典序列化（空字典返回 null，不占存储）。</summary>
+    public static string? ExtToJson(Dictionary<string, string>? ext)
+        => ext is { Count: > 0 } ? System.Text.Json.JsonSerializer.Serialize(ext) : null;
 }

@@ -24,10 +24,10 @@ public class WeighRecordRepository
         string sql = """
             INSERT INTO t_weigh_record
                 (serial_no, scale_no, vehicle_no, goods, company, spec, batch_no, remark,
-                 gross_kg, first_time, operator, status, is_manual, created_at)
+                 gross_kg, first_time, operator, status, is_manual, ext_json, created_at)
             VALUES
                 (@serial_no, @scale_no, @vehicle_no, @goods, @company, @spec, @batch_no, @remark,
-                 @gross_kg, @first_time, @operator, @status, @is_manual, @created_at);
+                 @gross_kg, @first_time, @operator, @status, @is_manual, @ext_json, @created_at);
             """ + Db.LastIdSql;
 
         using var cmd = conn.CreateCommand();
@@ -302,6 +302,7 @@ public class WeighRecordRepository
         cmd.Add("@operator", r.Operator);
         cmd.Add("@status", r.Status);
         cmd.Add("@is_manual", r.IsManual ? 1 : 0);
+        cmd.Add("@ext_json", r.ExtJson);
         cmd.Add("@created_at", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
     }
 
@@ -327,6 +328,7 @@ public class WeighRecordRepository
             Operator = GetStr(reader, "operator"),
             Status = reader.GetString(reader.GetOrdinal("status")),
             IsManual = Convert.ToInt64(reader.GetValue(reader.GetOrdinal("is_manual"))) == 1,
+            ExtJson = GetStr(reader, "ext_json"),
         };
     }
 

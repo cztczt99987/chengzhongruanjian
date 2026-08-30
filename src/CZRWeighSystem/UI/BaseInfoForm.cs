@@ -5,19 +5,21 @@ namespace CZRWeighSystem.UI;
 
 /// <summary>
 /// 基础资料管理窗体（对应 PRD 5.9 / F9-01~F9-05）。
-/// 三个页签：车辆档案 / 货物档案 / 收发货单位档案。
+/// 四个页签：车辆档案 / 货物档案 / 收发货单位档案 / 自定义字段。
 /// 编辑方式：表格内直接编辑（单元格结束编辑即保存），
 /// 新增走对话框，删除需确认。导入 Excel 后续迭代（F9-05）。
 /// </summary>
 public class BaseInfoForm : Form
 {
     private readonly BaseInfoRepository _repo = new();
+    private readonly CustomFieldRepository _fieldRepo = new();
     private readonly AppConfig _cfg = AppConfig.Current;
 
     private TabControl _tabs = null!;
     private DataGridView _gridVehicle = null!;
     private DataGridView _gridGoods = null!;
     private DataGridView _gridCompany = null!;
+    private DataGridView _gridField = null!;
 
     /// <summary>内部刷新标记：CellEndEdit 保存后重载时防递归</summary>
     private bool _loading;
@@ -58,6 +60,11 @@ public class BaseInfoForm : Form
         _gridCompany = BuildGrid();
         tabCompany.Controls.Add(BuildGridPanel(_gridCompany, "新增单位", AddCompany, DeleteCompanyRow));
         _tabs.TabPages.Add(tabCompany);
+
+        var tabField = new TabPage("自定义字段");
+        _gridField = BuildGrid();
+        tabField.Controls.Add(BuildGridPanel(_gridField, "新增字段", AddField, DeleteFieldRow));
+        _tabs.TabPages.Add(tabField);
 
         // 页签切换时刷新对应表格
         _tabs.SelectedIndexChanged += (_, _) => ReloadCurrent();
@@ -140,6 +147,7 @@ public class BaseInfoForm : Form
         LoadVehicleGrid();
         LoadGoodsGrid();
         LoadCompanyGrid();
+        LoadFieldGrid();
         _loading = false;
     }
 
@@ -152,6 +160,7 @@ public class BaseInfoForm : Form
             case 0: LoadVehicleGrid(); break;
             case 1: LoadGoodsGrid(); break;
             case 2: LoadCompanyGrid(); break;
+            case 3: LoadFieldGrid(); break;
         }
         _loading = false;
     }
@@ -263,6 +272,62 @@ public class BaseInfoForm : Form
         c.Enabled = (row.Cells[4].Value?.ToString()) != "否";
         ShowResult(_repo.SaveCompany(c));
     }
+
+    // ================== 自定义字段页签 ==================
+
+    private static readonly string[] FieldTypes = ["文本", "数字", "日期", "下拉"];
+
+    private void LoadFieldGrid()
+    {
+        var g = _gridField;
+        g.CellEndEdit -= FieldCellSaved;
+        g.Columns.Clear();
+        g.Rows.Clear();
+        g.Columns.Add(Col("Name", "字段名"));
+        var cboType = new DataGridViewComboBoxColumn
+        {
+            Name = "Type",
+            HeaderText = "类型",
+            DataSource = FieldTypes,
+            FlatStyle = FlatStyle.Flat,
+        };
+        g.Columns.Add(cboType);
+        g.Columns.Add(Col("Options", "下拉候选值(逗号分隔)"));
+        g.Columns.Add(Col("Required", "必填"));
+        g.Columns.Add(Col("Sort", "排序号"));
+        g.Columns.Add(Col("Enabled", "启用"));
+        foreach (var f in _fieldRepo.GetAll())
+        {
+            int i = g.Rows.Add(f.Name, f.FieldType, f.Options ?? "",
+                f.Required ? "是" : "否", f.SortOrder.ToString(), f.Enabled ? "是" : "否");
+            g.Rows[i].Tag = f;
+        }
+        g.CellEndEdit += FieldCellSaved;
+    }
+
+    private void FieldCellSaved(object? sender, DataGridViewCellEventArgs e)
+    {
+        if (_loading || e.RowIndex < 0) return;
+        if (_gridField.Rows[e.RowIndex].Tag is not CustomField f) return;
+        var row = _gridField.Rows[e.RowIndex];
+        f.Name = row.Cells[0].Value?.ToString() ?? "";
+        f.FieldType = row.Cells[1].Value?.ToString() ?? "文本";
+        f.Options = NullIfEmpty(row.Cells[2].Value?.ToString());
+        f.Required = (row.Cells[3].Value?.ToString()) == "是";
+        f.SortOrder = int.TryParse(row.Cells[4].Value?.ToString(), out int sort) ? sort : 0;
+        f.Enabled = (row.Cells[5].Value?.ToString()) != "否";
+        ShowResult(_fieldRepo.Save(f));
+    }
+
+    private void AddField()
+    {
+        string? name = Prompt("请输入字段名（如：合同号）：", "新增自定义字段");
+        if (string.IsNullOrWhiteSpace(name)) return;
+        ShowResult(_fieldRepo.Save(new CustomField { Name = name }));
+        ReloadCurrent();
+    }
+
+    private void DeleteFieldRow() => DeleteRow(_gridField, id => _fieldRepo.Delete(id));
 
     // ================== 新增（对话框录入）==================
 
