@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- 目标框架：.NET 10（LTS，本机 VS2026 配套 SDK），Windows 桌面专用 -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <!-- 启用 Windows 窗体（WinForms） -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>CZRWeighSystem</RootNamespace>
+    <AssemblyName>CZRWeighSystem</AssemblyName>
+    <!-- 生成中文资源，保证界面中文正常 -->
+    <SatelliteResourceLanguages>zh-Hans</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- SQLite 数据库驱动（单机版数据库，无需安装数据库服务） -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.8" />
+    <!-- SQL Server 驱动（网络版数据库，对应 PRD F9-05） -->
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
+    <!-- 串口驱动（.NET 9+ 桌面框架不再内置，需显式引用） -->
+    <PackageReference Include="System.IO.Ports" Version="8.0.0" />
+  </ItemGroup>
+
+</Project>

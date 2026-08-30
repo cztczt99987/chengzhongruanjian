@@ -1,0 +1,13 @@
+# .NET 构建产物
+bin/
+obj/
+
+# 运行时数据与日志
+*.log
+src/*/bin/**/logs/
+src/*/bin/**/data/
+
+# IDE 与用户配置
+.vs/
+*.user
+*.suo
