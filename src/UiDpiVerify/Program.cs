@@ -237,7 +237,7 @@ internal static class Program
                 for (int j = i + 1; j < kids.Count; j++)
                 {
                     var r = Rectangle.Intersect(kids[i].Bounds, kids[j].Bounds);
-                    if (r.Width >= 8 && r.Height >= 8)
+                    if (r.Width >= 4 && r.Height >= 4)          // ≥4px 即判定（轻微遮挡也会露出破绽）
                         Issues.Add((formName, dpi,
                             $"{kids[i].GetType().Name} \"{Trunc(kids[i].Text)}\" × {kids[j].GetType().Name} \"{Trunc(kids[j].Text)}\"",
                             $"兄弟控件重叠 {r.Width}×{r.Height}@({r.X},{r.Y})"));

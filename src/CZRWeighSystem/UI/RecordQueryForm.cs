@@ -69,7 +69,8 @@ public class RecordQueryForm : Form
         {
             Format = DateTimePickerFormat.Custom,
             CustomFormat = "yyyy-MM-dd",
-            Location = new Point(210, 38),
+            // x=222：给"至"标签（x=193，宽约 20px）留出间距，避免压住本框左边框
+            Location = new Point(222, 38),
             Size = new Size(120, 28),
             Value = DateTime.Today,
         };
