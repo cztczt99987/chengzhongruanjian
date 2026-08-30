@@ -566,6 +566,10 @@ public class MainForm : Form
             RowHeadersVisible = false,
             SelectionMode = DataGridViewSelectionMode.FullRowSelect,
             AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+            // 表头/行高随字体自适应：窗体用雅黑 10pt 且高 DPI 缩放，
+            // 默认固定表头高度会导致中文字被截成一半
+            ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize,
+            AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCellsExceptHeaders,
             BackgroundColor = Color.White,
             BorderStyle = BorderStyle.None,
         };

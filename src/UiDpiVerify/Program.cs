@@ -168,6 +168,17 @@ internal static class Program
             if (c is Form or PictureBox) continue;          // 无文字/纯图片
             if (c is ToolStrip or MenuStrip or StatusStrip) continue;
 
+            // 0) DataGridView 表头高度检查：模式非 AutoSize 且高度不够时表头文字被截半
+            if (c is DataGridView grid &&
+                grid.ColumnHeadersHeightSizeMode != DataGridViewColumnHeadersHeightSizeMode.AutoSize)
+            {
+                // 字体较高（如雅黑 10pt）+ 高 DPI 时，默认固定表头高度装不下中文
+                int need = grid.Font.Height + 6;            // 上下各留 3px 余量
+                if (grid.ColumnHeadersHeight < need)
+                    Issues.Add((formName, dpi, "DataGridView（表头）",
+                        $"表头高 {grid.ColumnHeadersHeight}px < 字体所需 {need}px，表头文字会显示一半"));
+            }
+
             // 1) 文字宽度检查（AutoSize 控件自适应文字，自身不截断，跳过）
             if (!string.IsNullOrEmpty(c.Text) && !c.AutoSize)
             {
