@@ -3,6 +3,7 @@ namespace CZRWeighSystem.UI;
 /// <summary>
 /// 车牌号软键盘弹窗：点击字符按钮逐位组成车牌，确认后回填录入区。
 /// 键区按分类标签页组织：省份简称 / 字母与数字（车牌不含 I、O，含挂学警港澳特殊标识），
+/// 其中"字母 / 数字"页左右分栏：左侧字母、右侧数字与特殊标识，方便查找。
 /// 点击省份后自动跳到字母/数字页，贴合"省份 + 发牌机关代号 + 编号"的实际输入顺序。
 /// 省份仅允许出现在开头：重新选择省份时替换旧省份，已输入的编号保留。
 /// </summary>
@@ -84,7 +85,20 @@ public class VehiclePadDialog : Form
             return page;
         }
         var pageProvince = Page("省份简称", out var flowProvince);
-        var pageAlnum = Page("字母 / 数字", out var flowAlnum);
+        var pageAlnum = Page("字母 / 数字", out _);
+
+        // 字母 / 数字页分栏：左侧字母、右侧数字与特殊标识，分区排列方便查找
+        FlowLayoutPanel FlowIn(GroupBox box)
+        {
+            var flow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true };
+            box.Controls.Add(flow);
+            pageAlnum.Controls.Add(box);
+            return flow;
+        }
+        var flowLetters = FlowIn(new GroupBox
+        { Text = "字母", Location = new Point(2, 4), Size = new Size(310, 250) });
+        var flowDigits = FlowIn(new GroupBox
+        { Text = "数字 / 特殊", Location = new Point(316, 4), Size = new Size(262, 250) });
 
         // click 为空时默认行为=追加字符；省份键等特殊逻辑通过 click 完全接管
         Button Key(string text, Color back, FlowLayoutPanel page, int width = 56, Action? click = null)
@@ -117,13 +131,13 @@ public class VehiclePadDialog : Form
                         : p.ToString() + s;         // 尚无省份 → 插入到开头
                     tabs.SelectedTab = pageAlnum;
                 });
-        // 字母（白底，车牌不用 I/O）+ 数字 + 特殊标识（白底）合并一页，减少页面切换
+        // 字母（车牌不用 I/O）在左栏；数字与挂/学/警/港/澳特殊标识在右栏
         foreach (var ch in Letters)
-            Key(ch.ToString(), Color.White, flowAlnum);
+            Key(ch.ToString(), Color.White, flowLetters, width: 44);
         foreach (var ch in Digits)
-            Key(ch.ToString(), Color.White, flowAlnum);
+            Key(ch.ToString(), Color.White, flowDigits, width: 44);
         foreach (var m in Marks)
-            Key(m.ToString(), Color.White, flowAlnum);
+            Key(m.ToString(), Color.White, flowDigits, width: 44);
 
         // ---- 底部确认/取消 ----
         var btnOk = new Button
