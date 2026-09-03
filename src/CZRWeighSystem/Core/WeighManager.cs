@@ -168,11 +168,7 @@ public class WeighManager : IDisposable
 
     private void OnWeightReceived(WeightData data)
     {
-        // 稳定判定：小于 20kg 视为空磅抖动，直接重置
-        if (data.ValueKg < 20)
-            _filter.Reset();
-        else
-            _filter.Push(data.ValueKg);
+        _filter.Push(data.ValueKg);
 
         CurrentKg = data.ValueKg;
         WeightUpdated?.Invoke();

@@ -47,13 +47,4 @@ public class StabilityFilter
             StableKg = 0;
         }
     }
-
-    /// <summary>重置状态（如磅上重量归零后调用）。</summary>
-    public void Reset()
-    {
-        _lastKg = double.NaN;
-        _sameCount = 0;
-        IsStable = false;
-        StableKg = 0;
-    }
 }
