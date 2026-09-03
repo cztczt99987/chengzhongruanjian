@@ -557,30 +557,21 @@ public class MainForm : Form
         _txtVehicle.AutoCompleteCustomSource.AddRange(list);
     }
 
-    /// <summary>货物档案 → 货物下拉；档案为空时保留默认示例项。</summary>
-    private string[] LoadGoodsNames()
-    {
-        var list = _baseRepo.GetGoods(onlyEnabled: true)
+    /// <summary>货物档案 → 货物下拉。</summary>
+    private string[] LoadGoodsNames() =>
+        _baseRepo.GetGoods(onlyEnabled: true)
             .Select(g => g.Name).ToArray();
-        return list.Length > 0 ? list : new[] { "煤炭", "矿粉", "钢材", "砂石" };
-    }
 
-    /// <summary>单位档案 → 单位下拉；档案为空时保留默认示例项。</summary>
-    private string[] LoadCompanyNames()
-    {
-        var list = _baseRepo.GetCompanies(onlyEnabled: true)
+    /// <summary>单位档案 → 单位下拉。</summary>
+    private string[] LoadCompanyNames() =>
+        _baseRepo.GetCompanies(onlyEnabled: true)
             .Select(c => c.Name).ToArray();
-        return list.Length > 0 ? list : new[] { "供货商A", "收货商B", "临时客户" };
-    }
 
     /// <summary>货物档案规格去重 → 规格下拉。</summary>
-    private string[] LoadSpecNames()
-    {
-        var list = _baseRepo.GetGoods(onlyEnabled: true)
+    private string[] LoadSpecNames() =>
+        _baseRepo.GetGoods(onlyEnabled: true)
             .Select(g => g.Spec).Where(s => !string.IsNullOrWhiteSpace(s))
             .Select(s => s!).Distinct().ToArray();
-        return list.Length > 0 ? list : new[] { "一级", "二级" };
-    }
 
     /// <summary>基础资料变更后刷新录入区下拉与车号自动完成（保留当前已填值）。</summary>
     private void ReloadBaseInfo()
