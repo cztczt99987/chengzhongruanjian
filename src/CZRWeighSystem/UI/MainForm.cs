@@ -117,6 +117,9 @@ public class MainForm : Form
             SelectionMode = DataGridViewSelectionMode.FullRowSelect,
             MultiSelect = false,
             AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+            // 表头/行高随字体自适应：高 DPI 下默认固定表头高度会把中文列头截成一半
+            ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize,
+            AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCellsExceptHeaders,
             BackgroundColor = Color.White,
             BorderStyle = BorderStyle.FixedSingle,
         };
