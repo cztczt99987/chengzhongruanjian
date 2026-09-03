@@ -1,13 +1,14 @@
 using CZRWeighSystem.Core;
 using CZRWeighSystem.Report;
 using System.Drawing.Drawing2D;
+using System.Text.Json;
 
 namespace CZRWeighSystem.UI;
 
 /// <summary>
-/// 磅单模板设计器（二期）：左侧元素列表、中间画布、右侧属性编辑。
-/// 画布按毫米等比缩放，支持鼠标拖拽移动元素、右下角手柄调整宽高；
-/// 工具栏新建/打开/保存模板、插入占位符、调整层级、打印预览。
+/// 磅单模板设计器（二期）：左侧工具箱+元素列表、中间画布、右侧属性编辑。
+/// 画布按毫米等比缩放，支持鼠标拖拽移动元素、右下角手柄调整宽高、工具箱双击/拖放添加元素；
+/// 工具栏新建/打开/保存模板、插入占位符、调整层级、撤销重做、打印预览、帮助。
 /// </summary>
 public class TemplateDesignerForm : Form
 {
@@ -15,14 +16,24 @@ public class TemplateDesignerForm : Form
     private string _fileName = "";               // 当前模板文件名（空 = 未保存过）
     private bool _dirty;
 
+    // 撤销/重做（快照式：每次变更前压入上一个模板 JSON 快照，栈深 50）
+    private readonly Stack<string> _undoStack = new();
+    private readonly Stack<string> _redoStack = new();
+    private string _lastSnapshot = "";           // 上次提交后的序列化快照
+
     /// <summary>当前模板文件名（保存/打开后有效；供打印设置对话框回选）</summary>
     public string CurrentFile => _fileName;
 
     private readonly ListBox _lstElements = new();
+    private readonly ListBox _lstToolbox = new();
     private readonly PropertyGrid _grid = new();
     private readonly ComboBox _cboPaper = new();
     private readonly ComboBox _cboInsert = new();
     private readonly Canvas _canvas;             // 中间画布
+
+    /// <summary>工具箱元素类型（双击/拖放到画布添加）</summary>
+    private static readonly string[] ToolboxItems =
+        ["文本", "线条", "矩形框", "图片", "表格", "签名区", "二维码", "条形码"];
 
     /// <summary>预览用示例记录</summary>
     private static WeighRecord Sample => new()
@@ -49,13 +60,23 @@ public class TemplateDesignerForm : Form
         BuildToolbar();
         BuildSide();
 
-        // 全局键盘删除（画布或列表上按 Delete 删除选中元素）
+        // 全局键盘：Delete 删除选中元素，Ctrl+Z / Ctrl+Y 撤销重做
         KeyPreview = true;
         KeyDown += (_, e) =>
         {
             if (e.KeyCode == Keys.Delete && _canvas.Selected != null)
             {
                 DeleteSelected();
+                e.Handled = true;
+            }
+            else if (e.Control && e.KeyCode == Keys.Z)
+            {
+                Undo();
+                e.Handled = true;
+            }
+            else if (e.Control && e.KeyCode == Keys.Y)
+            {
+                Redo();
                 e.Handled = true;
             }
         };
@@ -67,6 +88,7 @@ public class TemplateDesignerForm : Form
                 e.Cancel = true;
         };
 
+        InitHistory();
         RefreshList();
     }
 
@@ -113,7 +135,11 @@ public class TemplateDesignerForm : Form
             new ToolStripButton("下移一层") { ToolTipText = "选中的元素下移一层" },
             new ToolStripButton("删除元素") { ToolTipText = "删除选中元素（Delete）" },
             new ToolStripSeparator(),
+            new ToolStripButton("撤销") { ToolTipText = "撤销上一步操作（Ctrl+Z）" },
+            new ToolStripButton("重做") { ToolTipText = "重做被撤销的操作（Ctrl+Y）" },
+            new ToolStripSeparator(),
             new ToolStripButton("打印预览") { ToolTipText = "按当前模板预览打印效果" },
+            new ToolStripButton("帮助") { ToolTipText = "占位符、格式与操作说明" },
         });
         top.ItemClicked += (_, e) =>
         {
@@ -126,12 +152,15 @@ public class TemplateDesignerForm : Form
                 case "上移一层": Reorder(+1); break;
                 case "下移一层": Reorder(-1); break;
                 case "删除元素": DeleteSelected(); break;
+                case "撤销": Undo(); break;
+                case "重做": Redo(); break;
                 case "打印预览":
                     using (var doc = PoundTicketPrinter.BuildTemplateDocument(_tpl, Sample))
                     using (var preview = new PrintPreviewDialog
                            { Document = doc, Width = 800, Height = 600 })
                         preview.ShowDialog();
                     break;
+                case "帮助": ShowHelp(); break;
             }
         };
         Controls.Add(top);
@@ -148,8 +177,24 @@ public class TemplateDesignerForm : Form
 
     private void BuildSide()
     {
-        _lstElements.Dock = DockStyle.Left;
-        _lstElements.Width = 210;
+        // 工具箱：双击或拖放到画布添加元素
+        _lstToolbox.Dock = DockStyle.Top;
+        _lstToolbox.Height = 150;
+        _lstToolbox.IntegralHeight = false;
+        foreach (var item in ToolboxItems) _lstToolbox.Items.Add(item);
+        _lstToolbox.DoubleClick += (_, _) =>
+        {
+            int idx = _lstToolbox.IndexFromPoint(_lstToolbox.PointToClient(Cursor.Position));
+            if (idx >= 0) AddElement(ToolboxItems[idx], 15, 30);
+        };
+        _lstToolbox.MouseDown += (_, e) =>
+        {
+            int idx = _lstToolbox.IndexFromPoint(e.Location);
+            if (idx >= 0 && e.Button == MouseButtons.Left)
+                _lstToolbox.DoDragDrop(ToolboxItems[idx], DragDropEffects.Copy);
+        };
+
+        _lstElements.Dock = DockStyle.Fill;
         _lstElements.SelectedIndexChanged += (_, _) =>
         {
             if (_suppressSync) return;
@@ -163,14 +208,14 @@ public class TemplateDesignerForm : Form
         _grid.Width = 260;
         _grid.PropertyValueChanged += (_, e) =>
         {
-            _dirty = true;
+            MarkDirty();                          // 属性修改计入撤销栈
             // 纸张在属性网格外修改；此处刷新列表描述与画布
-            RefreshList();
             _canvas.Invalidate();
         };
 
         var leftHolder = new Panel { Dock = DockStyle.Left, Width = 210 };
         leftHolder.Controls.Add(_lstElements);
+        leftHolder.Controls.Add(_lstToolbox);     // 工具箱在上方（Dock Top 先加入的在底部 Dock 顺序中靠上）
 
         var rightHolder = new Panel { Dock = DockStyle.Right, Width = 260 };
         rightHolder.Controls.Add(_grid);
@@ -189,6 +234,7 @@ public class TemplateDesignerForm : Form
             PoundTicketPrinter.Papers[Math.Max(0, _cboPaper.SelectedIndex)].Key);
         _fileName = "";
         _dirty = false;
+        InitHistory();
         _canvas.Selected = null;
         _grid.SelectedObject = null;
         RefreshList();
@@ -216,6 +262,7 @@ public class TemplateDesignerForm : Form
             RefreshList();
             _canvas.Invalidate();
             _dirty = false;
+            InitHistory();
         }
         catch (Exception ex)
         {
@@ -273,8 +320,110 @@ public class TemplateDesignerForm : Form
 
     public void MarkDirty()
     {
-        _dirty = true;
+        CommitChange();
         RefreshList();
+    }
+
+    // ==================== 撤销 / 重做（快照式） ====================
+
+    /// <summary>序列化当前模板（撤销快照与存盘同构，多态标记已含在模型上）。</summary>
+    private string Snapshot() => JsonSerializer.Serialize(_tpl);
+
+    /// <summary>重置撤销/重做历史（新建、打开模板后调用）。</summary>
+    private void InitHistory()
+    {
+        _lastSnapshot = Snapshot();
+        _undoStack.Clear();
+        _redoStack.Clear();
+    }
+
+    /// <summary>每次模板变更后调用：把上一个快照压入撤销栈。</summary>
+    private void CommitChange()
+    {
+        var prev = _lastSnapshot;
+        var cur = Snapshot();
+        if (prev == cur) return;                 // 内容未变不占栈
+        _undoStack.Push(prev);
+        if (_undoStack.Count > 50)               // 限制栈深，丢弃最早快照
+        {
+            var keep = _undoStack.Take(50).ToArray();
+            _undoStack.Clear();
+            for (int i = keep.Length - 1; i >= 0; i--) _undoStack.Push(keep[i]);
+        }
+        _lastSnapshot = cur;
+        _redoStack.Clear();
+        _dirty = true;
+    }
+
+    private void Undo()
+    {
+        if (_undoStack.Count == 0) return;
+        _redoStack.Push(Snapshot());
+        Restore(_undoStack.Pop());
+    }
+
+    private void Redo()
+    {
+        if (_redoStack.Count == 0) return;
+        _undoStack.Push(Snapshot());
+        Restore(_redoStack.Pop());
+    }
+
+    /// <summary>恢复到指定快照（撤销/重做共用）。</summary>
+    private void Restore(string snap)
+    {
+        try
+        {
+            _tpl = JsonSerializer.Deserialize<PrintTemplate>(snap) ?? _tpl;
+        }
+        catch
+        {
+            return;                              // 快照损坏则忽略（理论不可达）
+        }
+        _lastSnapshot = Snapshot();
+        _canvas.Selected = null;
+        _grid.SelectedObject = null;
+        _cboPaper.SelectedIndex = Math.Max(0, Array.FindIndex(
+            PoundTicketPrinter.Papers, p => p.Key == _tpl.PaperKey));
+        RefreshList();
+        _canvas.Invalidate();
+        _dirty = true;
+    }
+
+    // ==================== 元素添加（工具箱） ====================
+
+    /// <summary>按工具箱类型名创建元素（默认尺寸/占位内容）。</summary>
+    private static TemplateElement CreateElement(string type) => type switch
+    {
+        "文本" => new TextElement { Text = "文本" },
+        "线条" => new LineElement { W = 60 },
+        "矩形框" => new RectElement { W = 60, H = 20 },
+        "图片" => new ImageElement(),
+        "表格" => new TableElement
+        {
+            W = 120, H = 16,
+            Columns =
+            [
+                new() { Header = "车号", Text = "{车号}", Width = 60 },
+                new() { Header = "毛重", Text = "{毛重}", Width = 60 },
+            ],
+        },
+        "签名区" => new SignatureElement { W = 120, H = 8 },
+        "二维码" => new QRCodeElement { W = 25, H = 25 },
+        "条形码" => new BarcodeElement { W = 60, H = 15 },
+        _ => new TextElement(),
+    };
+
+    /// <summary>添加元素到画布（x/y 为毫米坐标）并选中。</summary>
+    private void AddElement(string type, float xMm, float yMm)
+    {
+        var e = CreateElement(type);
+        e.X = Math.Max(0, xMm);
+        e.Y = Math.Max(0, yMm);
+        _tpl.Elements.Add(e);
+        _canvas.Selected = e;
+        MarkDirty();
+        SelectionChanged();
     }
 
     private void RefreshList()
@@ -333,6 +482,67 @@ public class TemplateDesignerForm : Form
         _canvas.Invalidate();
     }
 
+    // ==================== 帮助 ====================
+
+    /// <summary>操作指引与帮助（占位符、格式、元素、快捷键）。</summary>
+    private void ShowHelp()
+    {
+        string help =
+            """
+            【操作说明】
+            · 添加元素：左侧工具箱双击，或拖放到画布落点
+            · 移动/缩放：画布拖拽移动元素；拖右下角红色手柄调整大小
+            · 编辑属性：选中元素后在右侧属性网格修改（文本、字号、颜色、对齐等）
+            · 层级调整：工具栏"上移一层/下移一层"（后添加的元素在上层）
+            · 删除元素：选中后按 Delete 或工具栏"删除元素"
+            · 撤销/重做：Ctrl+Z / Ctrl+Y（最多 50 步）
+            · 保存后可在"系统 → 打印设置"或"磅单模板管理"中启用模板
+
+            【占位符】
+            元素文本中写入 {字段名} 打印时自动替换为实际数据：
+            公司名称、流水号、磅号、车号、货物、发货单位、收货单位、规格、批次、
+            毛重、皮重、净重、扣重、实收、单位、
+            一次磅时间、二次磅时间、打印时间、司磅员、备注、状态
+            以及系统"自定义字段"中定义的字段名。
+
+            【数据格式】
+            占位符支持格式后缀（冒号分隔）：
+            · 数字精度：{毛重:F1} → 34.6；{净重:F2} → 23.00
+            · 日期格式：{一次磅时间:yyyy-MM-dd} → 2026-09-03
+                       {二次磅时间:HH:mm} → 09:30
+            · 表头也可用占位符，如"毛重（{单位}）"
+            格式非法时自动回退为默认显示值。
+
+            【元素说明】
+            · 文本：任意文字 + 占位符，可设字号/加粗/对齐/颜色
+            · 线条/矩形框：可设颜色、线宽；矩形可设填充色（留空不填充）
+            · 图片：公司 LOGO 等，填相对路径或绝对路径（png/jpg/bmp）
+            · 表格：表头行 + 数据行，列内容支持占位符，列宽按毫米配置
+            · 签名区：多个签名标签均分宽度并画下划线
+            · 二维码：内容支持占位符（如 {流水号}）
+            · 条形码：Code39 格式（支持数字/字母/ - . 空格 $ / + %）
+            """;
+        using var f = new Form
+        {
+            Text = "磅单模板设计帮助",
+            Size = new Size(660, 620),
+            StartPosition = FormStartPosition.CenterParent,
+            Font = Font,
+            ShowInTaskbar = false,
+        };
+        var txt = new TextBox
+        {
+            Multiline = true,
+            ReadOnly = true,
+            ScrollBars = ScrollBars.Vertical,
+            Dock = DockStyle.Fill,
+            Text = help,
+            BackColor = Color.White,
+        };
+        f.Controls.Add(txt);
+        f.ShowDialog(this);
+    }
+
     // ==================== 画布 ====================
 
     /// <summary>
@@ -362,7 +572,24 @@ public class TemplateDesignerForm : Form
             BackColor = Color.FromArgb(96, 96, 96);
             Cursor = Cursors.Cross;
             Resize += (_, _) => FitScale();
+
+            // 支持从工具箱拖放元素到画布落点
+            AllowDrop = true;
+            DragEnter += (_, e) =>
+            {
+                if (e.Data?.GetDataPresent(DataFormats.StringFormat) == true)
+                    e.Effect = DragDropEffects.Copy;
+            };
+            DragDrop += (_, e) =>
+            {
+                if (e.Data?.GetData(DataFormats.StringFormat) is not string type) return;
+                var mm = PointToMm(PointToClient(new Point(e.X, e.Y)));
+                _owner.AddElement(type, mm.X, mm.Y);
+            };
         }
+
+        /// <summary>把画布像素坐标换算为纸面毫米坐标（供拖放落点使用）。</summary>
+        public PointF PointToMm(Point p) => ToMm(p);
 
         /// <summary>画布宽度变化时重算缩放比例（页面完整显示）。</summary>
         private void FitScale()
