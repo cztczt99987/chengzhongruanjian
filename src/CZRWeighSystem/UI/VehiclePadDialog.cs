@@ -2,8 +2,9 @@ namespace CZRWeighSystem.UI;
 
 /// <summary>
 /// 车牌号软键盘弹窗：点击字符按钮逐位组成车牌，确认后回填录入区。
-/// 键区按分类标签页组织：省份简称 / 字母（车牌不含 I、O）/ 数字与特殊标识（挂学警港澳），
-/// 点击省份后自动跳到字母页，贴合"省份 + 发牌机关代号 + 编号"的实际输入顺序。
+/// 键区按分类标签页组织：省份简称 / 字母与数字（车牌不含 I、O，含挂学警港澳特殊标识），
+/// 点击省份后自动跳到字母/数字页，贴合"省份 + 发牌机关代号 + 编号"的实际输入顺序。
+/// 省份仅允许出现在开头：重新选择省份时替换旧省份，已输入的编号保留。
 /// </summary>
 public class VehiclePadDialog : Form
 {
@@ -42,25 +43,29 @@ public class VehiclePadDialog : Form
 
     private void BuildUi()
     {
-        // ---- 顶部预览 + 退格/清空 ----
+        // ---- 顶部预览 + 删除/清空（浅红大按钮，醒目易点）----
         var top = new Panel { Location = new Point(15, 15), Size = new Size(610, 60) };
         _lblPreview.Parent = top;
         var btnBack = new Button
         {
-            Text = "⌫ 退格", Location = new Point(460, 10), Size = new Size(70, 40),
+            Text = "⌫ 删除", Location = new Point(424, 10), Size = new Size(92, 40),
+            BackColor = Color.FromArgb(255, 214, 214),
             FlatStyle = FlatStyle.Flat,
+            Font = new Font("Microsoft YaHei UI", 11F, FontStyle.Bold),
         };
         var btnClear = new Button
         {
-            Text = "清空", Location = new Point(536, 10), Size = new Size(64, 40),
+            Text = "清空", Location = new Point(522, 10), Size = new Size(78, 40),
+            BackColor = Color.FromArgb(255, 214, 214),
             FlatStyle = FlatStyle.Flat,
+            Font = new Font("Microsoft YaHei UI", 11F, FontStyle.Bold),
         };
         btnBack.Click += (_, _) => { if (_lblPreview.Text.Length > 0) _lblPreview.Text = _lblPreview.Text[..^1]; };
         btnClear.Click += (_, _) => _lblPreview.Text = "";
         top.Controls.AddRange([btnBack, btnClear]);
         Controls.Add(top);
 
-        // ---- 键区：分类标签页（省份 / 字母 / 数字·特殊），每页按键都完整可见 ----
+        // ---- 键区：分类标签页（省份 / 字母·数字），每页按键都完整可见 ----
         var tabs = new TabControl
         {
             Location = new Point(15, 85),
@@ -79,10 +84,10 @@ public class VehiclePadDialog : Form
             return page;
         }
         var pageProvince = Page("省份简称", out var flowProvince);
-        var pageLetter = Page("字母", out var flowLetter);
-        var pageDigit = Page("数字·特殊", out var flowDigit);
+        var pageAlnum = Page("字母 / 数字", out var flowAlnum);
 
-        Button Key(string text, Color back, FlowLayoutPanel page, int width = 56, Action? afterClick = null)
+        // click 为空时默认行为=追加字符；省份键等特殊逻辑通过 click 完全接管
+        Button Key(string text, Color back, FlowLayoutPanel page, int width = 56, Action? click = null)
         {
             var b = new Button
             {
@@ -93,25 +98,32 @@ public class VehiclePadDialog : Form
             };
             b.Click += (_, _) =>
             {
-                if (_lblPreview.Text.Length < 10) _lblPreview.Text += text;
-                afterClick?.Invoke();
+                if (click != null) click();
+                else if (_lblPreview.Text.Length < 10) _lblPreview.Text += text;
             };
             page.Controls.Add(b);
             return b;
         }
 
-        // 省份简称（黄底）→ 点完自动跳到字母页
+        // 省份简称（黄底）：省份只能出现在开头——重新选省份时替换旧省份、保留已输编号；
+        // 选完自动跳到字母/数字页
         foreach (var p in Provinces)
             Key(p.ToString(), Color.FromArgb(255, 236, 153), flowProvince,
-                afterClick: () => tabs.SelectedTab = pageLetter);
-        // 字母（白底）
+                click: () =>
+                {
+                    string s = _lblPreview.Text;
+                    _lblPreview.Text = s.Length > 0 && Provinces.Contains(s[0])
+                        ? p.ToString() + s[1..]     // 已有省份 → 替换第一个字符
+                        : p.ToString() + s;         // 尚无省份 → 插入到开头
+                    tabs.SelectedTab = pageAlnum;
+                });
+        // 字母（白底，车牌不用 I/O）+ 数字 + 特殊标识（白底）合并一页，减少页面切换
         foreach (var ch in Letters)
-            Key(ch.ToString(), Color.White, flowLetter);
-        // 数字 + 特殊标识（白底）
+            Key(ch.ToString(), Color.White, flowAlnum);
         foreach (var ch in Digits)
-            Key(ch.ToString(), Color.White, flowDigit);
+            Key(ch.ToString(), Color.White, flowAlnum);
         foreach (var m in Marks)
-            Key(m.ToString(), Color.White, flowDigit);
+            Key(m.ToString(), Color.White, flowAlnum);
 
         // ---- 底部确认/取消 ----
         var btnOk = new Button
