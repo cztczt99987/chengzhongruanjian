@@ -19,7 +19,8 @@ public class ReportForm : Form
     {
         ("日结汇总", "daily"),
         ("按货物汇总", "goods"),
-        ("按单位汇总", "company"),
+        ("按发货单位汇总", "sender_company"),
+        ("按收货单位汇总", "receiver_company"),
         ("按车号汇总", "vehicle_no"),
         ("按司磅员汇总", "operator"),
     };

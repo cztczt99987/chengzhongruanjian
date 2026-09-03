@@ -57,7 +57,7 @@ public class PrintTemplate
     /// <summary>可用占位符名（模板设计器"插入字段"用）</summary>
     public static readonly string[] PlaceholderNames =
     [
-        "公司名称", "流水号", "磅号", "车号", "货物", "收发货单位", "规格", "批次",
+        "公司名称", "流水号", "磅号", "车号", "货物", "发货单位", "收货单位", "规格", "批次",
         "毛重", "皮重", "净重", "扣重", "实收", "单位",
         "一次磅时间", "二次磅时间", "打印时间", "司磅员", "备注", "状态",
     ];
@@ -72,14 +72,15 @@ public class PrintTemplate
             ["磅号"] = r.ScaleNo,
             ["车号"] = r.VehicleNo,
             ["货物"] = r.Goods ?? "-",
-            ["收发货单位"] = r.Company ?? "-",
+            ["发货单位"] = r.SenderCompany ?? "-",
+            ["收货单位"] = r.ReceiverCompany ?? "-",
             ["规格"] = r.Spec ?? "-",
             ["批次"] = r.BatchNo ?? "-",
             ["毛重"] = FmtKg(r.GrossKg, cfg),
             ["皮重"] = FmtKg(r.TareKg, cfg),
             ["净重"] = FmtKg(r.NetKg, cfg),
-            ["扣重"] = FmtKg(0, cfg),
-            ["实收"] = FmtKg(r.NetKg, cfg),
+            ["扣重"] = FmtKg(r.DeductKg, cfg),
+            ["实收"] = FmtKg(r.ReceivedKg, cfg),
             ["单位"] = cfg.Unit,
             ["一次磅时间"] = r.FirstTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-",
             ["二次磅时间"] = r.SecondTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-",
@@ -115,7 +116,8 @@ public class PrintTemplate
         t.Elements.Add(new TextElement { Text = "No. {流水号}", X = 130, Y = 28, W = 65, H = 8, Align = TextAlign.Right });
         t.Elements.Add(new TextElement { Text = "车号：{车号}", X = 15, Y = 44, W = 85, H = 8 });
         t.Elements.Add(new TextElement { Text = "货物：{货物}", X = 105, Y = 44, W = 90, H = 8 });
-        t.Elements.Add(new TextElement { Text = "收发货单位：{收发货单位}", X = 15, Y = 54, W = 95, H = 8 });
+        t.Elements.Add(new TextElement { Text = "发货单位：{发货单位}", X = 15, Y = 54, W = 45, H = 8 });
+        t.Elements.Add(new TextElement { Text = "收货单位：{收货单位}", X = 65, Y = 54, W = 45, H = 8 });
         t.Elements.Add(new TextElement { Text = "规格：{规格}", X = 110, Y = 54, W = 40, H = 8 });
         t.Elements.Add(new TextElement { Text = "批次：{批次}", X = 152, Y = 54, W = 43, H = 8 });
         t.Elements.Add(new RectElement { X = 15, Y = 66, W = 180, H = 18 });

@@ -28,8 +28,9 @@ public class TemplateDesignerForm : Form
     private static WeighRecord Sample => new()
     {
         SerialNo = "PREVIEW-0001", ScaleNo = "01", VehicleNo = "冀A12345",
-        Goods = "煤炭", Company = "CZR 收货商B", Spec = "一级", BatchNo = "B2026",
-        GrossKg = 34600, TareKg = 11600, NetKg = 23000,
+        Goods = "煤炭", SenderCompany = "CZR 供货商A", ReceiverCompany = "CZR 收货商B",
+        Spec = "一级", BatchNo = "B2026",
+        GrossKg = 34600, TareKg = 11600, NetKg = 23000, DeductKg = 200,
         FirstTime = DateTime.Now.AddHours(-1), SecondTime = DateTime.Now,
         Operator = AppSession.DisplayName, Status = "已完成",
     };

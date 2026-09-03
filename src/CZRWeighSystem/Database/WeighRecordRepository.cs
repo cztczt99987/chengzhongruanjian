@@ -23,10 +23,12 @@ public class WeighRecordRepository
         // 自增 Id 回读语句按数据库类型拼接（SQLite/SQL Server 方言不同）
         string sql = """
             INSERT INTO t_weigh_record
-                (serial_no, scale_no, vehicle_no, goods, company, spec, batch_no, remark,
+                (serial_no, scale_no, vehicle_no, goods, sender_company, receiver_company,
+                 deduct_kg, spec, batch_no, remark,
                  gross_kg, first_time, operator, status, is_manual, ext_json, created_at)
             VALUES
-                (@serial_no, @scale_no, @vehicle_no, @goods, @company, @spec, @batch_no, @remark,
+                (@serial_no, @scale_no, @vehicle_no, @goods, @sender_company, @receiver_company,
+                 @deduct_kg, @spec, @batch_no, @remark,
                  @gross_kg, @first_time, @operator, @status, @is_manual, @ext_json, @created_at);
             """ + Db.LastIdSql;
 
@@ -39,9 +41,11 @@ public class WeighRecordRepository
 
     /// <summary>
     /// 二次称重并结算：大者为毛重、小者为皮重（兼容先皮后毛与先毛后皮），
-    /// 净重 = |一次重量 - 二次重量|（对应 PRD 4.1 规则 1）。
+    /// 净重 = |一次重量 - 二次重量|（对应 PRD 4.1 规则 1）；
+    /// deductKg 非空时同时更新扣重（实收 = 净重 - 扣重，在显示/打印层计算）。
     /// </summary>
-    public WeighRecord CompleteSecondWeigh(long id, double secondKg, string? operatorName)
+    public WeighRecord CompleteSecondWeigh(long id, double secondKg,
+        double? deductKg, string? operatorName)
     {
         using var conn = Db.CreateConnection();
 
@@ -59,13 +63,14 @@ public class WeighRecordRepository
             first.GrossKg = Math.Max(firstKg, secondKg);   // 毛重 = 大值
             first.TareKg = Math.Min(firstKg, secondKg);    // 皮重 = 小值
             first.NetKg = Math.Abs(firstKg - secondKg);    // 净重 = 差值
+            if (deductKg.HasValue) first.DeductKg = deductKg;
             first.SecondTime = DateTime.Now;
             first.Status = "已完成";
             first.Operator = operatorName ?? first.Operator;
 
             const string sql = """
                 UPDATE t_weigh_record SET
-                    gross_kg=@gross_kg, tare_kg=@tare_kg, net_kg=@net_kg,
+                    gross_kg=@gross_kg, tare_kg=@tare_kg, net_kg=@net_kg, deduct_kg=@deduct_kg,
                     second_time=@second_time, status=@status
                 WHERE id=@id;
                 """;
@@ -76,6 +81,7 @@ public class WeighRecordRepository
                 cmd.Add("@gross_kg", first.GrossKg);
                 cmd.Add("@tare_kg", first.TareKg);
                 cmd.Add("@net_kg", first.NetKg);
+                cmd.Add("@deduct_kg", first.DeductKg);
                 cmd.Add("@second_time", first.SecondTime?.ToString("yyyy-MM-dd HH:mm:ss"));
                 cmd.Add("@status", first.Status);
                 cmd.Add("@id", id);
@@ -140,7 +146,8 @@ public class WeighRecordRepository
         }
         if (!string.IsNullOrWhiteSpace(company))
         {
-            where.Add("company LIKE @c");
+            // 单位条件同时匹配发货/收货单位
+            where.Add("(sender_company LIKE @c OR receiver_company LIKE @c)");
             cmd.Add("@c", $"%{company.Trim()}%");
         }
         if (!string.IsNullOrWhiteSpace(status))
@@ -184,17 +191,16 @@ public class WeighRecordRepository
             }).ToList();
     }
 
-    /// <summary>
-    /// 维度汇总报表：按货物/单位/车号/司磅员汇总（对应 PRD F4-03）。
-    /// </summary>
-    /// <param name="field">分组字段，仅允许 goods/company/vehicle_no/operator</param>
+    /// <summary>维度汇总报表：按货物/发货单位/收货单位/车号/司磅员汇总（对应 PRD F4-03）。</summary>
+    /// <param name="field">分组字段，仅允许 goods/sender_company/receiver_company/vehicle_no/operator</param>
     public List<ReportRow> SummaryBy(string field, DateTime from, DateTime to)
     {
         // 字段白名单校验，防止 SQL 注入
         string col = field switch
         {
             "goods" => "goods",
-            "company" => "company",
+            "sender_company" => "sender_company",
+            "receiver_company" => "receiver_company",
             "vehicle_no" => "vehicle_no",
             "operator" => "operator",
             _ => throw new ArgumentException("不支持的汇总字段：" + field),
@@ -293,7 +299,9 @@ public class WeighRecordRepository
         cmd.Add("@scale_no", r.ScaleNo);
         cmd.Add("@vehicle_no", r.VehicleNo);
         cmd.Add("@goods", r.Goods);
-        cmd.Add("@company", r.Company);
+        cmd.Add("@sender_company", r.SenderCompany);
+        cmd.Add("@receiver_company", r.ReceiverCompany);
+        cmd.Add("@deduct_kg", r.DeductKg);
         cmd.Add("@spec", r.Spec);
         cmd.Add("@batch_no", r.BatchNo);
         cmd.Add("@remark", r.Remark);
@@ -316,7 +324,9 @@ public class WeighRecordRepository
             ScaleNo = reader.GetString(reader.GetOrdinal("scale_no")),
             VehicleNo = reader.GetString(reader.GetOrdinal("vehicle_no")),
             Goods = GetStr(reader, "goods"),
-            Company = GetStr(reader, "company"),
+            SenderCompany = GetStr(reader, "sender_company"),
+            ReceiverCompany = GetStr(reader, "receiver_company"),
+            DeductKg = GetDbl(reader, "deduct_kg"),
             Spec = GetStr(reader, "spec"),
             BatchNo = GetStr(reader, "batch_no"),
             Remark = GetStr(reader, "remark"),

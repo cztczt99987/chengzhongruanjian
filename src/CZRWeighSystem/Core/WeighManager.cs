@@ -112,16 +112,16 @@ public class WeighManager : IDisposable
     /// <param name="first">待配对的一次磅记录</param>
     /// <returns>(是否成功, 提示消息, 结算后的记录)</returns>
     public (bool Ok, string Message, WeighRecord? Record) SaveSecondWeigh(
-        WeighRecord first, double? manualKg, string? operatorName)
+        WeighRecord first, double? deductKg, string? operatorName)
     {
-        var (weight, err) = ResolveWeight(manualKg);
+        var (weight, err) = ResolveWeight();
         if (weight == null) return (false, err!, null);
 
         if (weight <= 0) return (false, "二次磅重量必须大于 0", null);
 
         try
         {
-            var result = _repo.CompleteSecondWeigh(first.Id, weight.Value, operatorName);
+            var result = _repo.CompleteSecondWeigh(first.Id, weight.Value, deductKg, operatorName);
             Log.Info($"二次磅结算：{result.SerialNo} 车号 {result.VehicleNo} " +
                      $"毛 {result.GrossKg} 皮 {result.TareKg} 净 {result.NetKg}");
             return (true,
@@ -139,18 +139,12 @@ public class WeighManager : IDisposable
     public List<WeighRecord> GetUnfinishedList() => _repo.GetUnfinishedList();
 
     /// <summary>
-    /// 解析保存用重量：优先手工补录值；否则要求当前稳定。
+    /// 解析保存用重量：取当前稳定重量（扣重在录入区单独填写，不影响称量值）。
     /// </summary>
-    private (double? Weight, string? Error) ResolveWeight(double? manualKg)
+    private (double? Weight, string? Error) ResolveWeight()
     {
-        if (manualKg.HasValue)
-        {
-            if (manualKg.Value <= 0) return (null, "补录重量必须大于 0");
-            return (manualKg.Value, null);
-        }
-
         if (!IsStable)
-            return (null, "重量未稳定，请等待稳定后再保存（或使用补录）");
+            return (null, "重量未稳定，请等待稳定后再保存");
         if (StableKg <= 0)
             return (null, "当前重量为 0，请确认车辆已上磅");
 

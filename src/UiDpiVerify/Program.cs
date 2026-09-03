@@ -163,6 +163,7 @@ internal static class Program
         {
             SerialNo = "TEST-01-0001", VehicleNo = "A12345",
             GrossKg = 30000, TareKg = 10000, NetKg = 20000,
+            SenderCompany = "供货商A", ReceiverCompany = "收货商B", DeductKg = 100,
             Goods = "煤炭", Status = "已完成",
         }),
         new VoidReasonDialog("TEST-01-0001"),
@@ -178,6 +179,7 @@ internal static class Program
         {
             if (c is Form or PictureBox) continue;          // 无文字/纯图片
             if (c is ToolStrip or MenuStrip or StatusStrip) continue;
+            if (c is ScrollBar) continue;                    // 网格内部滚动条，未显示时布局值无意义
             if (c.Parent is PropertyGrid) continue;          // 属性网格内部子控件，测量无意义
 
             // 0) DataGridView 表头高度检查：模式非 AutoSize 且高度不够时表头文字被截半
@@ -366,7 +368,8 @@ internal static class Program
         var sample = new WeighRecord
         {
             SerialNo = "TEST-01-0001", VehicleNo = "冀A12345", Goods = "煤炭",
-            Company = "供货商A", Spec = "一级", BatchNo = "B01", Remark = "测试备注",
+            SenderCompany = "供货商A", ReceiverCompany = "收货商B", DeductKg = 150,
+            Spec = "一级", BatchNo = "B01", Remark = "测试备注",
             GrossKg = 34600, TareKg = 11600, NetKg = 23000,
             FirstTime = DateTime.Now.AddHours(-2), SecondTime = DateTime.Now,
             Operator = "管理员", Status = "已完成",

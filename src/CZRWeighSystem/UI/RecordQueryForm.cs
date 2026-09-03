@@ -146,7 +146,8 @@ public class RecordQueryForm : Form
         _grid.Columns.Add("SerialNo", "流水号");
         _grid.Columns.Add("VehicleNo", "车号");
         _grid.Columns.Add("Goods", "货物");
-        _grid.Columns.Add("Company", "单位");
+        _grid.Columns.Add("Sender", "发货单位");
+        _grid.Columns.Add("Receiver", "收货单位");
         _grid.Columns.Add("Gross", $"毛重({_cfg.Unit})");
         _grid.Columns.Add("Tare", $"皮重({_cfg.Unit})");
         _grid.Columns.Add("Net", $"净重({_cfg.Unit})");
@@ -436,7 +437,8 @@ public class RecordQueryForm : Form
                 r.SerialNo,
                 r.VehicleNo,
                 r.Goods ?? "",
-                r.Company ?? "",
+                r.SenderCompany ?? "",
+                r.ReceiverCompany ?? "",
                 Fmt(r.GrossKg),
                 Fmt(r.TareKg),
                 Fmt(r.NetKg),
@@ -446,7 +448,7 @@ public class RecordQueryForm : Form
                 r.Status);
             // 自定义字段动态列取值
             for (int k = 0; k < extFields.Count; k++)
-                _grid.Rows[i].Cells[11 + k].Value = ext.TryGetValue(extFields[k].Name, out var v) ? v : "";
+                _grid.Rows[i].Cells[12 + k].Value = ext.TryGetValue(extFields[k].Name, out var v) ? v : "";
             _grid.Rows[i].Tag = r;   // 行 Tag 保存完整记录，供补打使用
         }
 

@@ -91,7 +91,8 @@ public class RecordAuditRepository
 
             CheckText("vehicle_no", "车号", old.VehicleNo, v.VehicleNo);
             CheckText("goods", "货物", old.Goods, v.Goods);
-            CheckText("company", "单位", old.Company, v.Company);
+            CheckText("sender_company", "发货单位", old.SenderCompany, v.SenderCompany);
+            CheckText("receiver_company", "收货单位", old.ReceiverCompany, v.ReceiverCompany);
             CheckText("spec", "规格", old.Spec, v.Spec);
             CheckText("batch_no", "批次", old.BatchNo, v.BatchNo);
             CheckText("remark", "备注", old.Remark, v.Remark);
@@ -275,7 +276,9 @@ public class RecordAuditRepository
             ScaleNo = reader.GetString(reader.GetOrdinal("scale_no")),
             VehicleNo = reader.GetString(reader.GetOrdinal("vehicle_no")),
             Goods = GetStr(reader, "goods"),
-            Company = GetStr(reader, "company"),
+            SenderCompany = GetStr(reader, "sender_company"),
+            ReceiverCompany = GetStr(reader, "receiver_company"),
+            DeductKg = GetDbl(reader, "deduct_kg"),
             Spec = GetStr(reader, "spec"),
             BatchNo = GetStr(reader, "batch_no"),
             Remark = GetStr(reader, "remark"),
@@ -308,7 +311,10 @@ public class RecordEditValues
 {
     public string VehicleNo { get; set; } = "";
     public string? Goods { get; set; }
-    public string? Company { get; set; }
+    /// <summary>发货单位（原"单位"拆分）</summary>
+    public string? SenderCompany { get; set; }
+    /// <summary>收货单位（原"单位"拆分）</summary>
+    public string? ReceiverCompany { get; set; }
     public string? Spec { get; set; }
     public string? BatchNo { get; set; }
     public string? Remark { get; set; }
@@ -316,6 +322,8 @@ public class RecordEditValues
     public double GrossKg { get; set; }
     /// <summary>皮重（千克）</summary>
     public double TareKg { get; set; }
+    /// <summary>扣重（千克），null = 不修改</summary>
+    public double? DeductKg { get; set; }
     /// <summary>自定义字段值（null = 不修改扩展字段）</summary>
     public Dictionary<string, string>? Ext { get; set; }
 }

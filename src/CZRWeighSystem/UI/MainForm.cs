@@ -20,18 +20,20 @@ public class MainForm : Form
     private Label _lblTare = null!;          // 皮重
     private Label _lblNet = null!;           // 净重
     private readonly List<GroupBox> _weightBoxes = [];   // 毛/皮/净三栏（随窗口铺开）
-    private TextBox _txtVehicle = null!;     // 车号
-    private ComboBox _cboGoods = null!;      // 货物
-    private ComboBox _cboCompany = null!;    // 收/发货单位
-    private ComboBox _cboSpec = null!;       // 规格
+    private TextBox _txtVehicle = null!;     // 车号（弹窗软键盘选择，只读）
+    private TextBox _txtGoods = null!;       // 货物
+    private TextBox _txtSender = null!;      // 发货单位
+    private TextBox _txtReceiver = null!;    // 收货单位
+    private TextBox _txtSpec = null!;        // 规格
     private TextBox _txtBatch = null!;       // 批次
     private TextBox _txtRemark = null!;      // 备注
-    private TextBox _txtManual = null!;      // 手工补录重量
+    private TextBox _txtDeduct = null!;      // 扣重
     private TextBox _txtOperator = null!;    // 司磅员
     private Label _lblTareHint = null!;      // 车号档案默认皮重提示
+    private Button _btnVehicle = null!;      // 选择车牌按钮
     private DataGridView _grid = null!;      // 未完成一次磅列表
-    private Button _btnFirst = null!;        // 保存一次磅
-    private Button _btnSecond = null!;       // 保存二次磅
+    private Button _btnSave = null!;         // 保存（智能判断一次/二次磅）
+    private ComboBox _cboMode = null!;       // 保存模式：自动判断/一次磅/二次磅
     private StatusStrip _status = null!;
     private ToolStripStatusLabel _tsslSource = null!;
     private ToolStripStatusLabel _tsslState = null!;
@@ -280,7 +282,6 @@ public class MainForm : Form
         {
             using var f = new BaseInfoForm();
             f.ShowDialog(this);
-            ReloadBaseInfo();       // 关闭后刷新录入区下拉数据源
         }));
         menu.Items.Add(mBase);
 
@@ -419,50 +420,67 @@ public class MainForm : Form
         Label L(string text, int x, int y) => new Label
         { Text = text, AutoSize = true, Location = new Point(x, y) };
 
-        panel.Controls.Add(L("车号：", 20, 35));
-        _txtVehicle = NewTextBox(85, 32, 130);
-        _txtVehicle.Leave += (_, _) => OnVehicleLeft();
-        LoadVehicleAutoComplete();     // 车号自动完成（来自车辆档案）
+        // 两列对称布局：左列 标签x=25 输入x=110 宽290；右列 标签x=450 输入x=535 宽320
+        const int lx = 25, lInX = 110, lInW = 290;
+        const int rx = 450, rInX = 535, rInW = 320;
+        static int Row(int row) => 32 + row * 38;
 
-        panel.Controls.Add(L("货物：", 235, 35));
-        _cboGoods = NewCombo(290, 32, 130, LoadGoodsNames());
+        // ---- 行1：车号（只读，点按钮弹软键盘选牌）｜ 扣重 ----
+        panel.Controls.Add(L("车号：", lx, Row(0) + 3));
+        _txtVehicle = NewTextBox(lInX, Row(0), 240);
+        _txtVehicle.ReadOnly = true;
+        var btnVehicle = _btnVehicle = new Button
+        {
+            Text = "选择车牌", Location = new Point(lInX + 248, Row(0) - 1), Size = new Size(92, 30),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Color.FromArgb(0, 122, 204), ForeColor = Color.White,
+        };
+        btnVehicle.Click += (_, _) => SelectVehicle();
 
-        panel.Controls.Add(L("单位：", 445, 35));
-        _cboCompany = NewCombo(500, 32, 150, LoadCompanyNames());
+        panel.Controls.Add(L($"扣重({_cfg.Unit})：", rx, Row(0) + 3));
+        _txtDeduct = NewTextBox(rInX, Row(0), rInW);
 
-        panel.Controls.Add(L("规格：", 670, 35));
-        _cboSpec = NewCombo(725, 32, 130, LoadSpecNames());
+        // ---- 行2：货物 ｜ 规格 ----
+        panel.Controls.Add(L("货物：", lx, Row(1) + 3));
+        _txtGoods = NewTextBox(lInX, Row(1), lInW);
+        panel.Controls.Add(L("规格：", rx, Row(1) + 3));
+        _txtSpec = NewTextBox(rInX, Row(1), rInW);
 
-        panel.Controls.Add(L("批次：", 20, 85));
-        _txtBatch = NewTextBox(85, 82, 130);
+        // ---- 行3：发货单位 ｜ 收货单位 ----
+        panel.Controls.Add(L("发货单位：", lx, Row(2) + 3));
+        _txtSender = NewTextBox(lInX, Row(2), lInW);
+        panel.Controls.Add(L("收货单位：", rx, Row(2) + 3));
+        _txtReceiver = NewTextBox(rInX, Row(2), rInW);
 
-        panel.Controls.Add(L("备注：", 235, 85));
-        _txtRemark = NewTextBox(290, 82, 360);
-
-        panel.Controls.Add(L("司磅员：", 670, 85));
-        _txtOperator = NewTextBox(745, 82, 110);
+        // ---- 行4：批次 ｜ 司磅员 ----
+        panel.Controls.Add(L("批次：", lx, Row(3) + 3));
+        _txtBatch = NewTextBox(lInX, Row(3), lInW);
+        panel.Controls.Add(L("司磅员：", rx, Row(3) + 3));
+        _txtOperator = NewTextBox(rInX, Row(3), rInW);
         _txtOperator.Text = AppSession.DisplayName;   // 司磅员=当前登录用户，自动记录
         _txtOperator.ReadOnly = true;                  // 不允许手工修改
 
-        panel.Controls.Add(L("补录重量(" + _cfg.Unit + ")：", 20, 135));
-        _txtManual = NewTextBox(150, 132, 120);
-        _txtManual.TextChanged += (_, _) =>
+        // ---- 行5：备注 ｜ 车号相关提示（默认皮重/待配对）----
+        panel.Controls.Add(L("备注：", lx, Row(4) + 3));
+        _txtRemark = NewTextBox(lInX, Row(4), lInW);
+        _lblTareHint = new Label
         {
-            // 输入补录重量后按钮文字提示
-            bool manual = double.TryParse(_txtManual.Text, out _);
-            _btnFirst.Text = manual ? "保存一次磅(补录)" : "保存一次磅";
-            _btnSecond.Text = manual ? "保存二次磅(补录)" : "保存二次磅";
+            Text = "",
+            AutoSize = true,
+            Location = new Point(rInX, Row(4) + 4),
+            ForeColor = Color.FromArgb(0, 102, 204),
         };
 
         panel.Controls.AddRange(new Control[] {
-            _txtVehicle, _cboGoods, _cboCompany, _cboSpec,
-            _txtBatch, _txtRemark, _txtOperator, _txtManual
+            _txtVehicle, btnVehicle, _txtDeduct,
+            _txtGoods, _txtSpec, _txtSender, _txtReceiver,
+            _txtBatch, _txtOperator, _txtRemark, _lblTareHint,
         });
 
         // 回车键流转录入（对应 PRD F2-05）：
-        // 车号→货物→单位→规格→批次→备注→补录重量→保存一次磅
-        Control[] flow = { _txtVehicle, _cboGoods, _cboCompany, _cboSpec,
-                           _txtBatch, _txtRemark, _txtManual };
+        // 扣重→货物→规格→发货单位→收货单位→批次→备注→保存一次磅
+        Control[] flow = { _txtDeduct, _txtGoods, _txtSpec, _txtSender,
+                           _txtReceiver, _txtBatch, _txtRemark };
         for (int i = 0; i < flow.Length; i++)
         {
             int idx = i;
@@ -478,54 +496,42 @@ public class MainForm : Form
             };
         }
 
-        // 车号匹配档案时的默认皮重提示
-        _lblTareHint = new Label
-        {
-            Text = "",
-            AutoSize = true,
-            Location = new Point(290, 139),
-            ForeColor = Color.FromArgb(0, 102, 204),
-        };
-        panel.Controls.Add(_lblTareHint);
-
-        // 自定义字段（自定义表单）：从定义表读取启用字段动态渲染，
-        // 每行两列（x=20 / x=445），行高 36；录入面板高度随之扩展
+        // 自定义字段（自定义表单）：从第 6 行起，延续两列对称布局
         var fields = _fieldRepo.GetAll(enabledOnly: true);
-        int rowY = 178;
+        int row = 5;
         for (int i = 0; i < fields.Count; i++)
         {
             var def = fields[i];
-            int x = i % 2 == 0 ? 20 : 445;
-            if (i % 2 == 0 && i > 0) rowY += 36;
+            bool left = i % 2 == 0;
+            int x = left ? lx : rx;
+            int inX = left ? lInX : rInX;
+            int inW = left ? lInW : rInW;
+            int y = Row(row);
 
             var lbl = new Label
-            { Text = def.Name + "：", AutoSize = true, Location = new Point(x, rowY + 3) };
-            // 用窗体字体测量（Label 未加入控件树时会回落到系统默认字体导致测宽偏小），
-            // AutoSize 渲染宽度略大于测量值，再留 6px 余量
-            int inputX = x + TextRenderer.MeasureText(lbl.Text, Font).Width + 6;
-            int inputW = (i % 2 == 0 ? 430 : 855) - inputX;
-            if (inputW < 90) inputW = 90;    // 超长字段名时输入框保底宽度（可能轻微越界，设计上避免过长字段名）
-
+            { Text = def.Name + "：", AutoSize = true, Location = new Point(x, y + 3) };
             Control input = def.FieldType switch
             {
-                "下拉" => NewCombo(inputX, rowY, inputW, def.OptionList),
+                "下拉" => NewCombo(inX, y, inW, def.OptionList),
                 "日期" => new DateTimePicker
                 {
-                    Location = new Point(inputX, rowY),
-                    Size = new Size(inputW, 28),
+                    Location = new Point(inX, y),
+                    Size = new Size(inW, 28),
                     Format = DateTimePickerFormat.Custom,
                     CustomFormat = "yyyy-MM-dd",
                 },
-                _ => new TextBox { Location = new Point(inputX, rowY), Size = new Size(inputW, 28) },
+                _ => new TextBox { Location = new Point(inX, y), Size = new Size(inW, 28) },
             };
             panel.Controls.AddRange([lbl, input]);
             _customInputs.Add((def, input));
+            if (!left) row++;              // 右列放完才换行
         }
-        if (fields.Count > 0)
-            _inputPanelH = rowY + 36 + 8;
+        if (fields.Count % 2 == 1) row++;  // 末行单字段独占一行
 
-        // 布局参数随录入面板高度顺移：按钮行、列表高度、视频区
-        // （视频区底边保持 790 不变，行数越多视频区越矮，最少保 140）
+        // 布局参数随录入面板高度顺移：按钮行、列表高度、采集列表区
+        // （采集列表区底边保持 790 不变，行数越多越矮，最少保 140）
+        int rowsUsed = fields.Count > 0 ? row : 5;
+        _inputPanelH = Row(rowsUsed - 1) + 44;
         _buttonsY = 225 + _inputPanelH + 30;
         _gridH = _buttonsY + 60 - 225;
         _videoY = _buttonsY + 75;
@@ -533,6 +539,17 @@ public class MainForm : Form
 
         panel.Size = new Size(880, _inputPanelH);
         Controls.Add(panel);
+    }
+
+    /// <summary>弹出车牌软键盘，确认后回填车号并刷新档案提示。</summary>
+    private void SelectVehicle()
+    {
+        using var f = new VehiclePadDialog();
+        if (f.ShowDialog(this) == DialogResult.OK && f.ResultVehicle != null)
+        {
+            _txtVehicle.Text = f.ResultVehicle;
+            OnVehicleLeft();     // 匹配车辆档案默认皮重 / 未完成配对提示
+        }
     }
 
     private static TextBox NewTextBox(int x, int y, int w) => new()
@@ -558,12 +575,12 @@ public class MainForm : Form
         string no = _txtVehicle.Text.Trim();
         if (no.Length == 0) { _lblTareHint.Text = ""; return; }
 
-        // 未完成列表配对提示（已有逻辑）
+        // 未完成列表配对提示（自动模式下保存按钮已自动选中该记录）
         var hit = _manager.GetUnfinishedList()
             .FirstOrDefault(r => r.VehicleNo == no);
         if (hit != null)
         {
-            _lblTareHint.Text = $"[{no}] 有未完成的二次磅，请右侧选中配对";
+            _lblTareHint.Text = $"[{no}] 有未完成的二次磅，保存时将自动配对结算";
             return;
         }
 
@@ -574,7 +591,7 @@ public class MainForm : Form
             : "";
     }
 
-    // ---------- 基础档案数据源（对应 PRD F9：录入区下拉来自档案）----------
+    // ---------- 基础档案数据源（车号档案默认皮重提示用）----------
 
     private readonly Database.BaseInfoRepository _baseRepo = new();
     private readonly Database.CustomFieldRepository _fieldRepo = new();
@@ -582,60 +599,12 @@ public class MainForm : Form
     // ===== 自定义字段（自定义表单）=====
     private readonly List<(CustomField Def, Control Input)> _customInputs = [];
 
-    // 录入区高度随自定义字段行数变化，按钮/列表/视频区随之顺移
+    // 录入区高度随自定义字段行数变化，按钮/列表/采集列表区随之顺移
     private int _inputPanelH = 190;     // 录入面板高度
     private int _buttonsY = 445;        // 操作按钮行 y
     private int _gridH = 280;           // 未完成列表高度（底边与按钮行对齐）
     private int _videoY = 520;          // 采集信息列表区 y
     private int _videoH = 270;          // 采集信息列表区高度（底边保持 790）
-
-    /// <summary>车辆档案 → 车号输入框自动完成列表。</summary>
-    private void LoadVehicleAutoComplete()
-    {
-        var list = _baseRepo.GetVehicles(onlyEnabled: true)
-            .Select(v => v.VehicleNo).ToArray();
-        if (list.Length == 0) return;
-        _txtVehicle.AutoCompleteMode = AutoCompleteMode.SuggestAppend;
-        _txtVehicle.AutoCompleteSource = AutoCompleteSource.CustomSource;
-        _txtVehicle.AutoCompleteCustomSource.AddRange(list);
-    }
-
-    /// <summary>货物档案 → 货物下拉。</summary>
-    private string[] LoadGoodsNames() =>
-        _baseRepo.GetGoods(onlyEnabled: true)
-            .Select(g => g.Name).ToArray();
-
-    /// <summary>单位档案 → 单位下拉。</summary>
-    private string[] LoadCompanyNames() =>
-        _baseRepo.GetCompanies(onlyEnabled: true)
-            .Select(c => c.Name).ToArray();
-
-    /// <summary>货物档案规格去重 → 规格下拉。</summary>
-    private string[] LoadSpecNames() =>
-        _baseRepo.GetGoods(onlyEnabled: true)
-            .Select(g => g.Spec).Where(s => !string.IsNullOrWhiteSpace(s))
-            .Select(s => s!).Distinct().ToArray();
-
-    /// <summary>基础资料变更后刷新录入区下拉与车号自动完成（保留当前已填值）。</summary>
-    private void ReloadBaseInfo()
-    {
-        string goods = _cboGoods.Text, company = _cboCompany.Text,
-               spec = _cboSpec.Text, vehicle = _txtVehicle.Text;
-
-        ReloadCombo(_cboGoods, LoadGoodsNames(), goods);
-        ReloadCombo(_cboCompany, LoadCompanyNames(), company);
-        ReloadCombo(_cboSpec, LoadSpecNames(), spec);
-        LoadVehicleAutoComplete();
-        _txtVehicle.Text = vehicle;
-    }
-
-    /// <summary>重填下拉列表并尽量保留原值。</summary>
-    private static void ReloadCombo(ComboBox cbo, string[] items, string keep)
-    {
-        cbo.Items.Clear();
-        cbo.Items.AddRange(items);
-        cbo.Text = keep;
-    }
 
     // ---------- 未完成列表 ----------
     private void BuildGrid()
@@ -681,16 +650,28 @@ public class MainForm : Form
     private void BuildButtons()
     {
         int y = _buttonsY;
-        _btnFirst = NewButton("保存一次磅", 20, y, 200, 60, Color.FromArgb(0, 122, 204));
-        _btnSecond = NewButton("保存二次磅", 240, y, 200, 60, Color.FromArgb(0, 153, 0));
-        var btnClear = NewButton("清空录入", 460, y, 120, 60, Color.Gray);
+        _btnSave = NewButton("保存一次磅", 20, y, 260, 60, Color.FromArgb(0, 122, 204));
 
-        _btnFirst.Click += (_, _) => SaveFirst();
-        _btnSecond.Click += (_, _) => SaveSecond();
+        // 模式切换（默认自动判断：车号匹配到未完成记录 → 二次磅，否则一次磅）
+        var lblMode = new Label { Text = "模式：", AutoSize = true, Location = new Point(300, y + 20) };
+        _cboMode = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Location = new Point(355, y + 16),
+            Size = new Size(130, 28),
+        };
+        _cboMode.Items.AddRange(["自动判断", "一次磅", "二次磅"]);
+        _cboMode.SelectedIndex = 0;
+
+        var btnClear = NewButton("清空录入", 510, y, 120, 60, Color.Gray);
+
+        _btnSave.Click += (_, _) => Save();
+        _cboMode.SelectedIndexChanged += (_, _) => UpdateSaveButton();
         btnClear.Click += (_, _) => ClearInput();
 
-        Controls.Add(_btnFirst);
-        Controls.Add(_btnSecond);
+        Controls.Add(_btnSave);
+        Controls.Add(lblMode);
+        Controls.Add(_cboMode);
         Controls.Add(btnClear);
     }
 
@@ -741,27 +722,88 @@ public class MainForm : Form
             MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
     }
 
+    // ===== 保存模式（单按钮智能判断 + 手动切换）=====
+
+    private enum SaveMode { First, Second }
+
+    /// <summary>
+    /// 解析本次保存模式：
+    /// 自动判断 → 已选中未完成记录、或录入车号能匹配到未完成记录 → 二次磅，否则一次磅；
+    /// 手动一次/二次 → 强制指定（二次磅时按车号自动选中匹配记录，免去手工点选）。
+    /// </summary>
+    private SaveMode ResolveSaveMode()
+    {
+        switch (_cboMode.SelectedIndex)
+        {
+            case 1: return SaveMode.First;
+            case 2:
+                AutoSelectByVehicle();
+                return SaveMode.Second;
+            default:     // 自动判断
+                if (_grid.CurrentRow?.Tag is WeighRecord) return SaveMode.Second;
+                return AutoSelectByVehicle() ? SaveMode.Second : SaveMode.First;
+        }
+    }
+
+    /// <summary>按录入车号在未完成列表中查找并选中匹配记录；返回是否命中。</summary>
+    private bool AutoSelectByVehicle()
+    {
+        string no = _txtVehicle.Text.Trim();
+        if (no.Length == 0) return false;
+        foreach (DataGridViewRow row in _grid.Rows)
+        {
+            if (row.Tag is WeighRecord r && r.VehicleNo == no)
+            {
+                _grid.ClearSelection();
+                row.Selected = true;
+                _grid.CurrentCell = row.Cells[0];
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>按当前模式刷新保存按钮文字与颜色，操作员一眼可见本次将执行的操作。</summary>
+    private void UpdateSaveButton()
+    {
+        if (ResolveSaveMode() == SaveMode.Second)
+        {
+            _btnSave.Text = "保存二次磅（结算）";
+            _btnSave.BackColor = Color.FromArgb(0, 153, 0);
+        }
+        else
+        {
+            _btnSave.Text = "保存一次磅";
+            _btnSave.BackColor = Color.FromArgb(0, 122, 204);
+        }
+    }
+
+    /// <summary>统一保存入口：按模式自动走一次磅或二次磅。</summary>
+    private void Save()
+    {
+        if (ResolveSaveMode() == SaveMode.Second) SaveSecond();
+        else SaveFirst();
+    }
+
     /// <summary>保存一次磅。</summary>
     private void SaveFirst()
     {
-        double? manual = ParseManual();
-        if (_txtManual.TextLength > 0 && manual == null) return;
+        double? deduct = ParseDeduct();
+        if (_txtDeduct.TextLength > 0 && deduct == null) return;
 
         // 自定义字段采集与校验（必填/数字格式）
         var ext = CollectExt();
         if (ext == null) return;
 
         // 保存前二次确认（显示车号与重量）
-        string weightText = manual.HasValue
-            ? _cfg.FormatWeight(manual.Value)
-            : _cfg.FormatWeight(_manager.StableKg);
+        string weightText = _cfg.FormatWeight(_manager.StableKg);
         if (!ConfirmSave("确认保存一次磅？",
             $"车号：{_txtVehicle.Text}  重量：{weightText}")) return;
 
         var (ok, msg, firstRecord) = _manager.SaveFirstWeigh(
-            _txtVehicle.Text, _cboGoods.Text, _cboCompany.Text,
-            _cboSpec.Text, _txtBatch.Text, _txtRemark.Text,
-            manual, _txtOperator.Text, ext);
+            _txtVehicle.Text, _txtGoods.Text, _txtSender.Text, _txtReceiver.Text,
+            _txtSpec.Text, _txtBatch.Text, _txtRemark.Text,
+            deduct, _txtOperator.Text, ext);
 
         MessageBox.Show(msg, ok ? "成功" : "提示",
             MessageBoxButtons.OK, ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
@@ -796,18 +838,16 @@ public class MainForm : Form
             if (r != DialogResult.Yes) return;
         }
 
-        double? manual = ParseManual();
-        if (_txtManual.TextLength > 0 && manual == null) return;
+        double? deduct = ParseDeduct();
+        if (_txtDeduct.TextLength > 0 && deduct == null) return;
 
         // 保存前二次确认（显示配对车号与两次重量）
-        string weightText = manual.HasValue
-            ? _cfg.FormatWeight(manual.Value)
-            : _cfg.FormatWeight(_manager.StableKg);
+        string weightText = _cfg.FormatWeight(_manager.StableKg);
         if (!ConfirmSave("确认保存二次磅并结算？",
             $"车号：{first.VehicleNo}  一次磅：{_cfg.FormatWeight(first.GrossKg ?? 0)}  本次：{weightText}"))
             return;
 
-        var (ok, msg, record) = _manager.SaveSecondWeigh(first, manual, _txtOperator.Text);
+        var (ok, msg, record) = _manager.SaveSecondWeigh(first, deduct, _txtOperator.Text);
         MessageBox.Show(msg, ok ? "结算成功" : "提示",
             MessageBoxButtons.OK, ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
 
@@ -833,13 +873,13 @@ public class MainForm : Form
         }
     }
 
-    /// <summary>解析补录重量输入；非法输入时提示并返回 null。</summary>
-    private double? ParseManual()
+    /// <summary>解析扣重输入；留空 = 无扣重；非法输入时提示并返回 null。</summary>
+    private double? ParseDeduct()
     {
-        if (_txtManual.TextLength == 0) return null;
-        if (!double.TryParse(_txtManual.Text, out double v) || v <= 0)
+        if (_txtDeduct.TextLength == 0) return null;
+        if (!double.TryParse(_txtDeduct.Text, out double v) || v < 0)
         {
-            MessageBox.Show("补录重量格式不正确（应为大于 0 的数字）", "提示",
+            MessageBox.Show("扣重格式不正确（应为不小于 0 的数字）", "提示",
                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return null;
         }
@@ -908,15 +948,20 @@ public class MainForm : Form
     private void ClearInput()
     {
         _txtVehicle.Clear();
+        _txtDeduct.Clear();
+        _txtGoods.Clear();
+        _txtSpec.Clear();
+        _txtSender.Clear();
+        _txtReceiver.Clear();
         _txtBatch.Clear();
         _txtRemark.Clear();
-        _txtManual.Clear();
         foreach (var (_, input) in _customInputs)
         {
             if (input is DateTimePicker dtp) dtp.Value = DateTime.Today;
             else input.Text = "";
         }
-        _txtVehicle.Focus();
+        _lblTareHint.Text = "";
+        _btnVehicle.Focus();
     }
 
     // ================================================================

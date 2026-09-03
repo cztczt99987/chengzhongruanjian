@@ -25,7 +25,8 @@ public static class PoundTicketPrinter
     [
         new("车号", "车号", (r, _) => r.VehicleNo),
         new("货物", "货物", (r, _) => r.Goods),
-        new("收发货单位", "收发货单位", (r, _) => r.Company),
+        new("发货单位", "发货单位", (r, _) => r.SenderCompany),
+        new("收货单位", "收货单位", (r, _) => r.ReceiverCompany),
         new("规格", "规格", (r, _) => r.Spec),
         new("批次", "批次", (r, _) => r.BatchNo),
     ];
@@ -241,8 +242,8 @@ public static class PoundTicketPrinter
                 }
                 if (row2)
                 {
-                    if (Vis("扣重")) g.DrawString($"扣重：{Fmt(0, cfg)}", font, Brushes.Black, x + 12, ry);
-                    if (Vis("实收")) g.DrawString($"实收：{Fmt(r.NetKg, cfg)}", font, Brushes.Black, x + colW + 12, ry);
+                    if (Vis("扣重")) g.DrawString($"扣重：{Fmt(r.DeductKg, cfg)}", font, Brushes.Black, x + 12, ry);
+                    if (Vis("实收")) g.DrawString($"实收：{Fmt(r.ReceivedKg, cfg)}", font, Brushes.Black, x + colW + 12, ry);
                     if (Vis("单位")) g.DrawString($"单位：{cfg.Unit}", font, Brushes.Black, x + colW * 2 + 12, ry);
                 }
             }
@@ -256,8 +257,8 @@ public static class PoundTicketPrinter
                 }
                 if (row2)
                 {
-                    if (Vis("扣重")) g.DrawString($"扣重：{Fmt(0, cfg)}", font, Brushes.Black, x + 16, y + 62);
-                    if (Vis("实收")) g.DrawString($"实收：{Fmt(r.NetKg, cfg)}", font, Brushes.Black, x + colW + 16, y + 62);
+                    if (Vis("扣重")) g.DrawString($"扣重：{Fmt(r.DeductKg, cfg)}", font, Brushes.Black, x + 16, y + 62);
+                    if (Vis("实收")) g.DrawString($"实收：{Fmt(r.ReceivedKg, cfg)}", font, Brushes.Black, x + colW + 16, y + 62);
                     if (Vis("单位")) g.DrawString($"单位：{cfg.Unit}", font, Brushes.Black, x + colW * 2 + 16, y + 62);
                 }
             }

@@ -15,13 +15,16 @@ public class RecordEditDialog : Form
 
     private TextBox _txtVehicle = null!;
     private ComboBox _cboGoods = null!;
-    private ComboBox _cboCompany = null!;
+    private TextBox _txtSender = null!;
+    private TextBox _txtReceiver = null!;
     private ComboBox _cboSpec = null!;
     private TextBox _txtBatch = null!;
     private TextBox _txtRemark = null!;
     private TextBox _txtGross = null!;
     private TextBox _txtTare = null!;
+    private TextBox _txtDeduct = null!;
     private Label _lblNet = null!;
+    private Label _lblReceived = null!;
 
     /// <summary>自定义字段输入（自定义表单）</summary>
     private readonly List<(CustomField Def, Control Input)> _extInputs = [];
@@ -64,10 +67,14 @@ public class RecordEditDialog : Form
         Controls.Add(_cboGoods);
         y += 42;
 
-        // 单位
-        Controls.Add(L("单位：", y));
-        _cboCompany = NewCombo(y, _record.Company, "供货商A", "收货商B", "临时客户");
-        Controls.Add(_cboCompany);
+        // 发货单位 / 收货单位
+        Controls.Add(L("发货单位：", y));
+        _txtSender = new TextBox { Location = new Point(140, y), Size = new Size(280, 28), Text = _record.SenderCompany ?? "" };
+        Controls.Add(_txtSender);
+        y += 42;
+        Controls.Add(L("收货单位：", y));
+        _txtReceiver = new TextBox { Location = new Point(140, y), Size = new Size(280, 28), Text = _record.ReceiverCompany ?? "" };
+        Controls.Add(_txtReceiver);
         y += 42;
 
         // 规格
@@ -95,6 +102,16 @@ public class RecordEditDialog : Form
         Controls.Add(new Label { Text = $"皮重({_cfg.Unit})：", AutoSize = true, Location = new Point(272, y + 4) });
         _txtTare = new TextBox { Location = new Point(380, y), Size = new Size(100, 28), Text = Num(_record.TareKg) };
         Controls.Add(_txtTare);
+        y += 42;
+
+        // 扣重 / 实收（实收 = 净重 - 扣重，只读展示）
+        Controls.Add(L($"扣重({_cfg.Unit})：", y));
+        _txtDeduct = new TextBox { Location = new Point(140, y), Size = new Size(120, 28), Text = Num(_record.DeductKg) };
+        Controls.Add(_txtDeduct);
+        Controls.Add(new Label { Text = "实收：", AutoSize = true, Location = new Point(272, y + 4) });
+        _lblReceived = new Label { Text = CalcReceived(), AutoSize = true, Location = new Point(325, y + 4), ForeColor = Color.FromArgb(0, 102, 204) };
+        Controls.Add(_lblReceived);
+        _txtDeduct.TextChanged += (_, _) => _lblReceived.Text = CalcReceived();
         y += 42;
 
         // 净重（自动计算，只读展示）
@@ -182,6 +199,14 @@ public class RecordEditDialog : Form
         return Math.Abs(g - t).ToString("0.###");
     }
 
+    /// <summary>实收预览 = 净重 - 扣重。</summary>
+    private string CalcReceived()
+    {
+        double net = Math.Abs(ParseNum(_txtGross.Text) - ParseNum(_txtTare.Text));
+        double deduct = _txtDeduct.TextLength > 0 && double.TryParse(_txtDeduct.Text, out double d) ? d : 0;
+        return (net - deduct).ToString("0.###");
+    }
+
     private double ParseNum(string text) =>
         double.TryParse(text, out double v) ? (_cfg.Unit == "t" ? v * 1000 : v) : 0;
 
@@ -205,12 +230,15 @@ public class RecordEditDialog : Form
         {
             VehicleNo = _txtVehicle.Text,
             Goods = _cboGoods.Text,
-            Company = _cboCompany.Text,
+            SenderCompany = _txtSender.Text,
+            ReceiverCompany = _txtReceiver.Text,
             Spec = _cboSpec.Text,
             BatchNo = _txtBatch.Text,
             Remark = _txtRemark.Text,
             GrossKg = gross,
             TareKg = tare,
+            DeductKg = _txtDeduct.TextLength > 0 && double.TryParse(_txtDeduct.Text, out double d)
+                ? (_cfg.Unit == "t" ? d * 1000 : d) : 0,
             Ext = _extInputs.Count == 0 ? null
                 : _extInputs.ToDictionary(p => p.Def.Name, p => p.Input.Text.Trim()),
         };

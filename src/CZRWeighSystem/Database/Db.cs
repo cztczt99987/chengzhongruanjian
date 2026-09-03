@@ -74,6 +74,7 @@ public static class Db
         cmd.CommandText = sql;
         cmd.ExecuteNonQuery();
         EnsureExtColumn(conn);
+        EnsureCompanyDeductColumns(conn);
     }
 
     /// <summary>
@@ -98,6 +99,53 @@ public static class Db
             try { cmd.ExecuteNonQuery(); }
             catch { /* 列已存在 */ }
         }
+    }
+
+    /// <summary>
+    /// 旧库升级：t_weigh_record 补 sender_company / receiver_company / deduct_kg 列
+    /// （原"单位"拆分为发货/收货单位，新增扣重；SQLite ADD COLUMN 不支持 IF NOT EXISTS，
+    /// 重复执行报"列已存在"直接忽略）。旧 company 列数据迁移到 receiver_company。
+    /// </summary>
+    private static void EnsureCompanyDeductColumns(DbConnection conn)
+    {
+        void Exec(string sql)
+        {
+            using var c = conn.CreateCommand();
+            c.CommandText = sql;
+            try { c.ExecuteNonQuery(); }
+            catch when (!IsSqlServer) { /* SQLite：列已存在 */ }
+        }
+
+        if (IsSqlServer)
+        {
+            Exec("""
+                IF NOT EXISTS (SELECT 1 FROM sys.columns
+                    WHERE object_id = OBJECT_ID(N't_weigh_record') AND name = 'sender_company')
+                ALTER TABLE t_weigh_record ADD sender_company NVARCHAR(100);
+                """);
+            Exec("""
+                IF NOT EXISTS (SELECT 1 FROM sys.columns
+                    WHERE object_id = OBJECT_ID(N't_weigh_record') AND name = 'receiver_company')
+                ALTER TABLE t_weigh_record ADD receiver_company NVARCHAR(100);
+                """);
+            Exec("""
+                IF NOT EXISTS (SELECT 1 FROM sys.columns
+                    WHERE object_id = OBJECT_ID(N't_weigh_record') AND name = 'deduct_kg')
+                ALTER TABLE t_weigh_record ADD deduct_kg FLOAT;
+                """);
+        }
+        else
+        {
+            Exec("ALTER TABLE t_weigh_record ADD COLUMN sender_company TEXT;");
+            Exec("ALTER TABLE t_weigh_record ADD COLUMN receiver_company TEXT;");
+            Exec("ALTER TABLE t_weigh_record ADD COLUMN deduct_kg REAL;");
+        }
+
+        // 旧"单位"数据归入收货单位（仅补空值，幂等）
+        Exec("""
+            UPDATE t_weigh_record SET receiver_company = company
+            WHERE receiver_company IS NULL AND company IS NOT NULL;
+            """);
     }
 
     // ==================== 建表脚本（双方言） ====================
@@ -200,6 +248,9 @@ public static class Db
             vehicle_no   NVARCHAR(20) NOT NULL,
             goods        NVARCHAR(50),
             company      NVARCHAR(100),
+            sender_company    NVARCHAR(100),
+            receiver_company  NVARCHAR(100),
+            deduct_kg    FLOAT,
             spec         NVARCHAR(50),
             batch_no     NVARCHAR(50),
             remark       NVARCHAR(200),

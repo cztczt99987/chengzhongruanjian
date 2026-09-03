@@ -12,7 +12,10 @@ public class WeighRecord
     public string ScaleNo { get; set; } = "01";
     public string VehicleNo { get; set; } = "";
     public string? Goods { get; set; }
-    public string? Company { get; set; }
+    /// <summary>发货单位（原"单位"拆分）</summary>
+    public string? SenderCompany { get; set; }
+    /// <summary>收货单位（原"单位"拆分）</summary>
+    public string? ReceiverCompany { get; set; }
     public string? Spec { get; set; }
     public string? BatchNo { get; set; }
     public string? Remark { get; set; }
@@ -20,6 +23,8 @@ public class WeighRecord
     public double? GrossKg { get; set; }    // 毛重
     public double? TareKg { get; set; }     // 皮重
     public double? NetKg { get; set; }      // 净重
+    /// <summary>扣重（千克）：从净重中扣除的杂重，实收 = 净重 - 扣重</summary>
+    public double? DeductKg { get; set; }
 
     public DateTime? FirstTime { get; set; }
     public DateTime? SecondTime { get; set; }
@@ -35,6 +40,9 @@ public class WeighRecord
 
     /// <summary>一次磅保存时的重量（未配对阶段即当前称量值）</summary>
     public double? FirstWeightKg => FirstTime.HasValue ? GrossKg : null;
+
+    /// <summary>实收重量 = 净重 - 扣重（无扣重时即净重）</summary>
+    public double? ReceivedKg => NetKg.HasValue ? NetKg - (DeductKg ?? 0) : null;
 
     /// <summary>解析自定义字段值（JSON 无效时返回空字典）。</summary>
     public Dictionary<string, string> ParseExt()
