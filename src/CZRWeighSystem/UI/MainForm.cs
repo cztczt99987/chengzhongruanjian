@@ -637,6 +637,7 @@ public class MainForm : Form
         _grid.Columns.Add("Time", "时间");
         _grid.Columns.Add("Goods", "货物");
         _grid.CellDoubleClick += (_, _) => SaveSecond();
+        _grid.SelectionChanged += (_, _) => RefreshWeightBoxes();
 
         panel.Controls.Add(_grid);
         Controls.Add(panel);
@@ -909,6 +910,39 @@ public class MainForm : Form
         }
 
         _tsslSource.Text = $"数据源：{_manager.SourceDescription}";
+        RefreshWeightBoxes();
+    }
+
+    /// <summary>
+    /// 毛/皮/净三栏实时预览：
+    /// 选中未完成记录时 → 毛重=已存一次磅重量，皮重=当前稳定重量，净重=两者差值实时预览
+    /// （实际毛/皮按结算时大小值自动分配，此处仅直观展示）；
+    /// 未选中时 → 毛重栏显示当前稳定重量（即将保存的一次磅值），皮/净显示 "--"。
+    /// </summary>
+    private void RefreshWeightBoxes()
+    {
+        if (_grid.CurrentRow?.Tag is WeighRecord first)
+        {
+            _lblGross.Text = _cfg.FormatWeight(first.GrossKg ?? 0);
+            if (_manager.IsStable && _manager.StableKg > 0)
+            {
+                _lblTare.Text = _cfg.FormatWeight(_manager.StableKg);
+                _lblNet.Text = _cfg.FormatWeight(Math.Abs((first.GrossKg ?? 0) - _manager.StableKg));
+            }
+            else
+            {
+                _lblTare.Text = "--";
+                _lblNet.Text = "--";
+            }
+        }
+        else
+        {
+            _lblGross.Text = _manager.IsStable && _manager.StableKg > 0
+                ? _cfg.FormatWeight(_manager.StableKg)
+                : "--";
+            _lblTare.Text = "--";
+            _lblNet.Text = "--";
+        }
     }
 
     private void SetState(string msg, bool ok)
