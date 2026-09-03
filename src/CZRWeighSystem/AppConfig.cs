@@ -24,6 +24,9 @@ public class AppConfig
     public int DataBits { get; set; } = 8;
     public string Parity { get; set; } = "None";
     public string StopBits { get; set; } = "One";
+    /// <summary>仪表帧数字隐含小数位数：帧内数字 = 实际重量 × 10^该值。
+    /// 当前仪表为 2（如帧数字 4001 = 40.01kg）；帧内显式带小数点的仪表不受影响。</summary>
+    public int WeightDecimalDigits { get; set; } = 2;
 
     // ===== 称重参数（对应 PRD F10-02）=====
     /// <summary>稳定判定次数：连续 N 次采样一致判定稳定</summary>

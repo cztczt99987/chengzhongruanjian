@@ -149,7 +149,8 @@ public class WeighManager : IDisposable
         var cfg = AppConfig.Current;
         return new SerialWeightSource(cfg.PortName, cfg.BaudRate, cfg.DataBits,
             Enum.TryParse<Parity>(cfg.Parity, out var p) ? p : Parity.None,
-            Enum.TryParse<StopBits>(cfg.StopBits, out var s) ? s : StopBits.One);
+            Enum.TryParse<StopBits>(cfg.StopBits, out var s) ? s : StopBits.One,
+            cfg.WeightDecimalDigits);
     }
 
     /// <summary>

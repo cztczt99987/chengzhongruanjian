@@ -19,18 +19,20 @@ public class SerialWeightSource : IWeightSource
     private readonly int _dataBits;
     private readonly Parity _parity;
     private readonly StopBits _stopBits;
+    private readonly int _decimalDigits;    // 帧数字隐含小数位（帧数字 = 实际重量 × 10^该值）
 
     private SerialPort? _port;
     private readonly List<byte> _buffer = new();   // 接收缓冲（粘包/半包处理）
 
     public SerialWeightSource(string portName, int baudRate, int dataBits,
-                              Parity parity, StopBits stopBits)
+                              Parity parity, StopBits stopBits, int decimalDigits = 0)
     {
         _portName = portName;
         _baudRate = baudRate;
         _dataBits = dataBits;
         _parity = parity;
         _stopBits = stopBits;
+        _decimalDigits = decimalDigits;
     }
 
     public void Start()
@@ -137,9 +139,11 @@ public class SerialWeightSource : IWeightSource
 
     /// <summary>
     /// 解析单帧：剔除小数点/符号/状态字符后按数字解析。
+    /// 帧内显式小数点按其位置还原；无小数点时按隐含小数位还原
+    /// （帧数字 = 实际重量 × 10^隐含小数位，当前仪表为 2 位）。
     /// 返回 null 表示本帧无效。
     /// </summary>
-    private static double? ParseFrame(byte[] frame)
+    private double? ParseFrame(byte[] frame)
     {
         // frame[0]=0x02 帧头，frame[1] 通常为状态字节
         var sb = new System.Text.StringBuilder();
@@ -162,9 +166,9 @@ public class SerialWeightSource : IWeightSource
         if (sb.Length == 0) return null;
         if (!long.TryParse(sb.ToString(), out long raw)) return null;
 
-        // 仪表显示值通常为千克；按小数点位置还原
-        double display = dotPos < 0 ? raw : raw / Math.Pow(10, sb.Length - dotPos);
-        return display;
+        // 仪表显示值通常为千克；显式小数点优先，否则按隐含小数位还原
+        int digits = dotPos >= 0 ? sb.Length - dotPos : _decimalDigits;
+        return raw / Math.Pow(10, digits);
     }
 
     public void Dispose() => Stop();
