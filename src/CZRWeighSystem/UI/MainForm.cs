@@ -36,10 +36,13 @@ public class MainForm : Form
     private ToolStripStatusLabel _tsslState = null!;
     private ToolStripStatusLabel _tsslTime = null!;
 
-    // ===== 视频监控 =====
+    // ===== 视频监控（预览见菜单「视频监控」弹窗；抓拍由保存称重触发）=====
     private readonly Video.CameraManager _cameras = new();
-    private GroupBox _videoPanel = null!;
-    private readonly List<PictureBox> _picBoxes = [];
+
+    // ===== 采集信息列表（原视频区位置，展示最近称重记录）=====
+    private GroupBox _capturePanel = null!;
+    private DataGridView _captureGrid = null!;
+    private readonly Database.WeighRecordRepository _recordRepo = new();
 
     // ===== 界面构建 =====
     public MainForm()
@@ -57,7 +60,7 @@ public class MainForm : Form
         BuildInputPanel();
         BuildGrid();
         BuildButtons();
-        BuildVideoPanel();
+        BuildCapturePanel();
         BuildStatusBar();
 
         // 订阅业务事件（串口数据来自非 UI 线程，统一转发到 UI 线程）
@@ -68,13 +71,13 @@ public class MainForm : Form
         {
             _manager.Start();
             RefreshGrid();
+            RefreshCaptureList();
             SetState("就绪", true);
 
-            // 启动摄像头预览（对应 PRD F7-01）
+            // 启动摄像头取流（保存称重时自动抓拍用，预览见菜单「视频监控」）
             if (_cfg.CameraEnabled)
             {
                 _cameras.Start();
-                BindCameraFrames();
             }
 
             // 启动时及每 6 小时检查一次自动备份（对应 PRD F11-02）
@@ -90,54 +93,62 @@ public class MainForm : Form
         };
     }
 
-    // ---------- 视频监控面板（对应 PRD F7-01）----------
-    private void BuildVideoPanel()
+    // ---------- 采集信息列表面板（原视频监控区位置）----------
+    private void BuildCapturePanel()
     {
-        _videoPanel = new GroupBox
+        _capturePanel = new GroupBox
         {
-            Text = "视频监控（保存称重时自动抓拍留证）",
+            Text = "采集信息（最近称重记录）",
             Location = new Point(20, _videoY),
             Size = new Size(1330, _videoH),
             Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
-            // 最小高度：窗口缩到最小时仍保留一屏完整画面（避免标题被截/画面过小）
             MinimumSize = new Size(400, 140),
         };
 
-        // 按配置路数生成预览画面
-        int count = Math.Clamp(_cfg.CameraCount, 1, 4);
-        int pw = _videoPanel.ClientSize.Width / count - 8;
-        for (int i = 0; i < count; i++)
+        _captureGrid = new DataGridView
         {
-            var pic = new PictureBox
-            {
-                Location = new Point(8 + i * (pw + 8), 24),
-                Size = new Size(pw, _videoPanel.ClientSize.Height - 34),
-                SizeMode = PictureBoxSizeMode.Zoom,
-                BackColor = Color.Black,
-                // 只有最后一路随面板拉伸（吸收宽度变化）；其余各路固定宽度，
-                // 否则多路画面全部拉伸会互相重叠
-                Anchor = i == count - 1
-                    ? AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right
-                    : AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left,
-            };
-            _videoPanel.Controls.Add(pic);
-            _picBoxes.Add(pic);
-        }
-        Controls.Add(_videoPanel);
+            Location = new Point(8, 24),
+            Size = new Size(_capturePanel.ClientSize.Width - 16, _capturePanel.ClientSize.Height - 32),
+            Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+            ReadOnly = true,
+            AllowUserToAddRows = false,
+            AllowUserToDeleteRows = false,
+            RowHeadersVisible = false,
+            SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+            MultiSelect = false,
+            AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+            BackgroundColor = Color.White,
+            BorderStyle = BorderStyle.FixedSingle,
+        };
+        _captureGrid.Columns.Add("SerialNo", "流水号");
+        _captureGrid.Columns.Add("Time", "时间");
+        _captureGrid.Columns.Add("VehicleNo", "车号");
+        _captureGrid.Columns.Add("Goods", "货物");
+        _captureGrid.Columns.Add("Gross", "毛重");
+        _captureGrid.Columns.Add("Tare", "皮重");
+        _captureGrid.Columns.Add("Net", "净重");
+        _captureGrid.Columns.Add("Status", "状态");
+
+        _capturePanel.Controls.Add(_captureGrid);
+        Controls.Add(_capturePanel);
     }
 
-    /// <summary>启动各路画面的刷新订阅（摄像头启动后调用）。</summary>
-    private void BindCameraFrames()
+    /// <summary>刷新采集信息列表（最近 100 条称重记录，新记录在前）。</summary>
+    private void RefreshCaptureList()
     {
-        for (int i = 0; i < _cameras.Sources.Count && i < _picBoxes.Count; i++)
+        var list = _recordRepo.Query(null, null, "", "", "", "");
+        _captureGrid.Rows.Clear();
+        foreach (var r in list.Take(100))
         {
-            int idx = i;
-            var source = _cameras.Sources[idx];
-            source.PreviewFrameUpdated += () => SafeInvoke(() =>
-            {
-                _picBoxes[idx].Image = source.CurrentFrame;
-                _picBoxes[idx].Refresh();
-            });
+            _captureGrid.Rows.Add(
+                r.SerialNo,
+                r.FirstTime?.ToString("MM-dd HH:mm") ?? "",
+                r.VehicleNo,
+                r.Goods ?? "",
+                _cfg.FormatWeight(r.GrossKg ?? 0),
+                r.TareKg.HasValue ? _cfg.FormatWeight(r.TareKg.Value) : "--",
+                r.NetKg.HasValue ? _cfg.FormatWeight(r.NetKg.Value) : "--",
+                r.Status);
         }
     }
 
@@ -263,10 +274,13 @@ public class MainForm : Form
             f.ShowDialog(this);
         }));
 
-        // 视频菜单（对应 PRD F7-01：预览可隐藏）
+        // 视频菜单（对应 PRD F7-01：预览改为弹窗）
         var mVideo = new ToolStripMenuItem("视频(&V)");
-        mVideo.DropDownItems.Add(new ToolStripMenuItem("显示/隐藏监控画面", null, (_, _) =>
-            _videoPanel.Visible = !_videoPanel.Visible));
+        mVideo.DropDownItems.Add(new ToolStripMenuItem("视频监控", null, (_, _) =>
+        {
+            using var f = new VideoMonitorForm(_cameras);
+            f.ShowDialog(this);
+        }));
         menu.Items.Add(mVideo);
 
         mSource.DropDownItems.Add(new ToolStripSeparator());
@@ -543,8 +557,8 @@ public class MainForm : Form
     private int _inputPanelH = 190;     // 录入面板高度
     private int _buttonsY = 445;        // 操作按钮行 y
     private int _gridH = 280;           // 未完成列表高度（底边与按钮行对齐）
-    private int _videoY = 520;          // 视频区 y
-    private int _videoH = 270;          // 视频区高度（底边保持 790）
+    private int _videoY = 520;          // 采集信息列表区 y
+    private int _videoH = 270;          // 采集信息列表区高度（底边保持 790）
 
     /// <summary>车辆档案 → 车号输入框自动完成列表。</summary>
     private void LoadVehicleAutoComplete()
@@ -768,6 +782,7 @@ public class MainForm : Form
         {
             ClearInput();
             RefreshGrid();
+            RefreshCaptureList();
 
             // 结算完成自动抓拍留证（对应 PRD F7-02）
             if (record != null) CaptureFor(record.SerialNo);
