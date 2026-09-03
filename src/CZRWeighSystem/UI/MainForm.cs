@@ -261,6 +261,11 @@ public class MainForm : Form
             (_, _) => SwitchSource("Simulator")));
         mSource.DropDownItems.Add(new ToolStripMenuItem("串口仪表模式", null,
             (_, _) => SwitchSource("Serial")));
+        mSource.DropDownItems.Add(new ToolStripMenuItem("串口参数设置", null, (_, _) =>
+        {
+            using var f = new SerialSettingsDialog();
+            f.ShowDialog(this);
+        }));
 
         // 视频菜单（对应 PRD F7-01：预览可隐藏）
         var mVideo = new ToolStripMenuItem("视频(&V)");
