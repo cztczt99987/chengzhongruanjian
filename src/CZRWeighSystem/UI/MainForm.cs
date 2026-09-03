@@ -219,8 +219,17 @@ public class MainForm : Form
             MessageBox.Show(msg, ok ? "成功" : "错误",
                 MessageBoxButtons.OK, ok ? MessageBoxIcon.Information : MessageBoxIcon.Error);
         }));
+        // 用户管理（对应 PRD F1-02：新增用户/角色分配；限管理员）
+        if (AppSession.CurrentUser?.IsAdmin == true)
+        {
+            mSys.DropDownItems.Add(new ToolStripMenuItem("用户管理", null, (_, _) =>
+            {
+                using var f = new UserManagementForm();
+                f.ShowDialog(this);
+            }));
+        }
         // 打印设置（对应 PRD F9-04：纸张、联数、字段显隐、自动打印；限管理员）
-        if (AppSession.CurrentUser?.Role.Contains("管理员") == true)
+        if (AppSession.CurrentUser?.IsAdmin == true)
         {
             mSys.DropDownItems.Add(new ToolStripMenuItem("打印设置", null, (_, _) =>
             {
@@ -229,8 +238,8 @@ public class MainForm : Form
             }));
         }
         mSys.DropDownItems.Add(new ToolStripSeparator());
-        // 数据库设置（对应 PRD F9-05：单机 SQLite / 网络 SQL Server，仅超管可见）
-        if (AppSession.CurrentUser?.Role.Contains("超级管理员") == true)
+        // 数据库设置（对应 PRD F9-05：单机 SQLite / 网络 SQL Server，限管理员）
+        if (AppSession.CurrentUser?.IsAdmin == true)
         {
             mSys.DropDownItems.Add(new ToolStripMenuItem("数据库设置", null, (_, _) =>
             {

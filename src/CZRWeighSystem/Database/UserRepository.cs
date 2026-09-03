@@ -70,7 +70,7 @@ public class UserRepository
         cmd.Add("@display", "管理员");
         cmd.Add("@hash", hash);
         cmd.Add("@salt", salt);
-        cmd.Add("@role", "超级管理员");
+        cmd.Add("@role", User.RoleAdmin);
         cmd.Add("@now", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
         cmd.ExecuteNonQuery();
         Log.Info("已创建默认账号 admin（初始密码 123456，首次登录强制修改）");
@@ -179,6 +179,85 @@ public class UserRepository
 
         Log.Info($"用户修改密码成功：userId={userId}");
         return (true, "密码修改成功");
+    }
+
+    // ================ 用户管理（仅管理员，对应 PRD F1-02） ================
+
+    /// <summary>用户列表（按创建顺序，供用户管理界面展示）。</summary>
+    public List<User> GetAll()
+    {
+        var list = new List<User>();
+        using var conn = Db.CreateConnection();
+        const string sql = """
+            SELECT id, username, display_name, role, enabled, is_default_pwd,
+                   fail_count, lock_until, last_login
+            FROM t_user ORDER BY id;
+            """;
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            list.Add(new User
+            {
+                Id = reader.GetInt64(0),
+                Username = reader.GetString(1),
+                DisplayName = reader.GetString(2),
+                Role = reader.GetString(3),
+                Enabled = Convert.ToInt64(reader.GetValue(4)) == 1,
+                IsDefaultPwd = Convert.ToInt64(reader.GetValue(5)) == 1,
+                FailCount = (int)Convert.ToInt64(reader.GetValue(6)),
+                LockUntil = ParseTime(reader, 7),
+                LastLogin = ParseTime(reader, 8),
+            });
+        }
+        return list;
+    }
+
+    /// <summary>新增用户结果。</summary>
+    public record AddUserResult(bool Ok, string Message);
+
+    /// <summary>
+    /// 新增用户（管理员操作）：账号唯一、初始密码至少 6 位；
+    /// 创建后 is_default_pwd=1，首次登录强制修改密码。
+    /// </summary>
+    public AddUserResult AddUser(string username, string displayName, string role, string password)
+    {
+        username = username.Trim();
+        displayName = displayName.Trim();
+
+        if (username.Length == 0) return new AddUserResult(false, "请输入登录账号");
+        if (displayName.Length == 0) return new AddUserResult(false, "请输入姓名");
+        if (role != User.RoleAdmin && role != User.RoleWeigher)
+            return new AddUserResult(false, "角色无效");
+        if (string.IsNullOrWhiteSpace(password) || password.Length < 6)
+            return new AddUserResult(false, "初始密码长度至少 6 位");
+
+        using var conn = Db.CreateConnection();
+        if (GetByUsername(conn, username) != null)
+            return new AddUserResult(false, $"账号 {username} 已存在");
+
+        var (hash, salt) = HashPassword(password);
+        const string sql = """
+            INSERT INTO t_user
+                (username, display_name, password_hash, salt, role,
+                 enabled, is_default_pwd, created_at)
+            VALUES
+                (@username, @display, @hash, @salt, @role,
+                 1, 1, @now);
+            """;
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        cmd.Add("@username", username);
+        cmd.Add("@display", displayName);
+        cmd.Add("@hash", hash);
+        cmd.Add("@salt", salt);
+        cmd.Add("@role", role);
+        cmd.Add("@now", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+        cmd.ExecuteNonQuery();
+
+        Log.Info($"管理员新增用户：{username}（{role}）");
+        return new AddUserResult(true, $"用户 {username} 创建成功");
     }
 
     // ================ 内部查询 ================

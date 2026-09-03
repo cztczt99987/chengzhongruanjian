@@ -5,13 +5,21 @@ namespace CZRWeighSystem.Core;
 /// </summary>
 public class User
 {
+    /// <summary>角色：管理员（可进用户管理等管理功能）</summary>
+    public const string RoleAdmin = "管理员";
+    /// <summary>角色：称重员（仅称重业务操作）</summary>
+    public const string RoleWeigher = "称重员";
+
     public long Id { get; set; }
     /// <summary>登录账号（唯一）</summary>
     public string Username { get; set; } = "";
     /// <summary>显示名（司磅员姓名）</summary>
     public string DisplayName { get; set; } = "";
-    /// <summary>角色：操作员/统计员/管理员/超级管理员（对应第 3 章权限矩阵）</summary>
-    public string Role { get; set; } = "操作员";
+    /// <summary>角色：管理员/称重员（历史库可能存在"超级管理员"，按管理员对待）</summary>
+    public string Role { get; set; } = RoleWeigher;
+
+    /// <summary>是否管理员（含历史库遗留的"超级管理员"）。</summary>
+    public bool IsAdmin => Role.Contains(RoleAdmin);
     /// <summary>是否启用</summary>
     public bool Enabled { get; set; } = true;
     /// <summary>是否仍为初始密码（首次登录强制修改，对应 PRD 3 章说明）</summary>
