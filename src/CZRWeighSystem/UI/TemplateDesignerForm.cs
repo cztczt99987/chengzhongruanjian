@@ -46,7 +46,10 @@ public class TemplateDesignerForm : Form
         Operator = AppSession.DisplayName, Status = "已完成",
     };
 
-    public TemplateDesignerForm()
+    public TemplateDesignerForm() : this("") { }
+
+    /// <summary>带初始打开文件的构造（模板库"在设计器打开"用；加载失败保持默认模板）。</summary>
+    public TemplateDesignerForm(string openFile)
     {
         Text = "磅单模板设计器";
         StartPosition = FormStartPosition.CenterParent;
@@ -90,6 +93,27 @@ public class TemplateDesignerForm : Form
 
         InitHistory();
         RefreshList();
+
+        // 指定初始模板文件（模板库"在设计器打开"入口）
+        if (!string.IsNullOrWhiteSpace(openFile) && File.Exists(PrintTemplate.PathOf(openFile)))
+        {
+            try
+            {
+                _tpl = PrintTemplate.Load(openFile);
+                _fileName = Path.GetFileName(openFile);
+                _cboPaper.SelectedIndex = Math.Max(0, Array.FindIndex(
+                    PoundTicketPrinter.Papers, p => p.Key == _tpl.PaperKey));
+                RefreshList();
+                _canvas.Invalidate();
+                _dirty = false;
+                InitHistory();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("模板加载失败：" + ex.Message, "错误",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
     }
 
     // ==================== 布局 ====================

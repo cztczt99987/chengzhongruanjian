@@ -243,6 +243,12 @@ public class MainForm : Form
                 using var f = new PrintSettingsDialog();
                 f.ShowDialog(this);
             }));
+            // 磅单模板管理（模板库：分类/搜索/预览/启用/复制/重命名/删除）
+            mSys.DropDownItems.Add(new ToolStripMenuItem("磅单模板管理", null, (_, _) =>
+            {
+                using var f = new TemplateLibraryForm();
+                f.ShowDialog(this);
+            }));
         }
         mSys.DropDownItems.Add(new ToolStripSeparator());
         // 数据库设置（对应 PRD F9-05：单机 SQLite / 网络 SQL Server，限管理员）

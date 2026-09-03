@@ -36,11 +36,11 @@ public class PrintSettingsDialog : Form
         ShowInTaskbar = false;
         AutoScaleMode = AutoScaleMode.Dpi;   // 高 DPI 下避免文字截断
         Font = new Font("Microsoft YaHei UI", 10F);
-        Size = new Size(470, 585);
+        Size = new Size(470, 600);
 
         // 打印模板（二期：启用后版式由模板决定，纸张/字段显隐仅对内置版式生效）
         var grpTpl = new GroupBox
-        { Text = "打印模板", Location = new Point(12, 10), Size = new Size(430, 96) };
+        { Text = "打印模板", Location = new Point(12, 10), Size = new Size(430, 110) };
         _cboTemplate = new ComboBox
         {
             DropDownStyle = ComboBoxStyle.DropDownList,
@@ -51,14 +51,21 @@ public class PrintSettingsDialog : Form
         var btnDesigner = new Button
         {
             Text = "模板设计器",
-            Location = new Point(316, 28),
-            Size = new Size(100, 30),
+            Location = new Point(316, 24),
+            Size = new Size(100, 28),
         };
         btnDesigner.Click += (_, _) => OpenDesigner();
+        var btnManage = new Button
+        {
+            Text = "管理模板",
+            Location = new Point(316, 56),
+            Size = new Size(100, 28),
+        };
+        btnManage.Click += (_, _) => OpenManager();
         var lblTplHint = new Label
         {
             Text = "选择模板后按模板版式打印；纸张与字段勾选仅对内置版式生效。",
-            Location = new Point(15, 66),
+            Location = new Point(15, 84),
             AutoSize = true,
             ForeColor = Color.FromArgb(96, 96, 96),
         };
@@ -70,7 +77,7 @@ public class PrintSettingsDialog : Form
 
         // 纸张与联数
         var grpPaper = new GroupBox
-        { Text = "纸张与联数", Location = new Point(12, 114), Size = new Size(430, 130) };
+        { Text = "纸张与联数", Location = new Point(12, 128), Size = new Size(430, 130) };
         _cboPaper = new ComboBox
         {
             DropDownStyle = ComboBoxStyle.DropDownList,
@@ -102,7 +109,7 @@ public class PrintSettingsDialog : Form
 
         // 字段显隐
         var grpFields = new GroupBox
-        { Text = "磅单字段（勾选＝打印）", Location = new Point(12, 252), Size = new Size(430, 232) };
+        { Text = "磅单字段（勾选＝打印）", Location = new Point(12, 266), Size = new Size(430, 232) };
         _lstFields = new CheckedListBox
         {
             CheckOnClick = true,
@@ -117,13 +124,13 @@ public class PrintSettingsDialog : Form
         grpFields.Controls.Add(_lstFields);
 
         var btnPreview = new Button
-        { Text = "预览效果", Location = new Point(12, 496), Size = new Size(110, 34) };
+        { Text = "预览效果", Location = new Point(12, 510), Size = new Size(110, 34) };
         btnPreview.Click += (_, _) => Preview();
 
         var btnOk = new Button
         {
             Text = "保存",
-            Location = new Point(244, 496),
+            Location = new Point(244, 510),
             Size = new Size(100, 34),
             BackColor = Color.FromArgb(0, 122, 204),
             ForeColor = Color.White,
@@ -132,7 +139,7 @@ public class PrintSettingsDialog : Form
         btnOk.Click += (_, _) => SaveAndClose();
 
         var btnCancel = new Button
-        { Text = "取消", Location = new Point(354, 496), Size = new Size(88, 34) };
+        { Text = "取消", Location = new Point(354, 510), Size = new Size(88, 34) };
         btnCancel.Click += (_, _) => { RestoreSnapshot(); Close(); };
 
         Controls.AddRange(new Control[] { grpTpl, grpPaper, grpFields, btnPreview, btnOk, btnCancel });
@@ -175,6 +182,15 @@ public class PrintSettingsDialog : Form
         RefreshTemplateItems();
         if (!string.IsNullOrWhiteSpace(f.CurrentFile))
             SelectTemplateInCombo(f.CurrentFile);
+    }
+
+    /// <summary>打开模板库管理；返回后按当前配置刷新模板下拉（管理中可能已启用其他模板）。</summary>
+    private void OpenManager()
+    {
+        using var f = new TemplateLibraryForm();
+        f.ShowDialog(this);
+        RefreshTemplateItems();
+        SelectTemplateInCombo(AppConfig.Current.PrintTemplateFile);
     }
 
     /// <summary>把界面选择套用到配置对象（不落盘）。</summary>
