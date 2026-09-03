@@ -68,7 +68,7 @@ public static class PoundTicketPrinter
     {
         try
         {
-            using var doc = BuildDocument(r);
+            using var doc = BuildRecordDocument(r, copies: 0);
             using var dialog = new PrintDialog
             {
                 Document = doc,
@@ -93,7 +93,7 @@ public static class PoundTicketPrinter
     /// </summary>
     public static void PrintPreview(WeighRecord r)
     {
-        using var doc = BuildDocument(r);
+        using var doc = BuildRecordDocument(r, copies: 0);
         using var preview = new PrintPreviewDialog
         {
             Document = doc,
@@ -149,15 +149,17 @@ public static class PoundTicketPrinter
     }
 
     /// <summary>
-    /// 构建打印文档：启用模板时按模板纸张与版式渲染，否则走内置版式；
+    /// 构建单张磅单打印文档：启用模板时按模板纸张与版式渲染，否则走内置版式；
     /// 联数逐页输出（对应 F5-03 一式 N 联）。
+    /// copies：联数；传 0 表示取全局打印设置的联数（批量导出 PDF 等场景可传 1）。
     /// </summary>
-    private static PrintDocument BuildDocument(WeighRecord r)
+    public static PrintDocument BuildRecordDocument(WeighRecord r, int copies)
     {
         var cfg = AppConfig.Current;
         var tpl = LoadActiveTemplate();
         int idx = Array.FindIndex(Papers, p => p.Key == (tpl?.PaperKey ?? cfg.PrintPaper));
         var paper = idx >= 0 ? Papers[idx] : Papers[0];
+        int pages = copies > 0 ? copies : Math.Max(1, cfg.PrintCopies);
 
         var doc = new PrintDocument { DocumentName = $"磅单_{r.SerialNo}" };
         doc.DefaultPageSettings.PaperSize = new PaperSize(paper.Name, paper.W, paper.H);
@@ -166,20 +168,81 @@ public static class PoundTicketPrinter
         int printed = 0;
         doc.PrintPage += (_, e) =>
         {
-            if (tpl != null)
-            {
-                // 模板模式：元素坐标为毫米，平移到边距起点后按设备分辨率渲染
-                e.Graphics!.TranslateTransform(e.MarginBounds.X, e.MarginBounds.Y);
-                TemplateTicketRenderer.Render(tpl, e.Graphics, r, cfg, e.Graphics.DpiX / 25.4f);
-            }
-            else
-            {
-                DrawTicket(e.Graphics, e.MarginBounds, r);
-            }
+            RenderRecord(tpl, e.Graphics!, e.MarginBounds, r);
             printed++;
-            e.HasMorePages = printed < Math.Max(1, cfg.PrintCopies);
+            e.HasMorePages = printed < pages;
         };
         return doc;
+    }
+
+    /// <summary>
+    /// 构建批量打印文档：多张磅单合并为一个打印任务，每张按全局联数逐页输出。
+    /// 所有记录共用启用模板（或内置版式）与解析出的纸张。
+    /// </summary>
+    public static PrintDocument BuildBatchDocument(IReadOnlyList<WeighRecord> records)
+    {
+        var cfg = AppConfig.Current;
+        var tpl = LoadActiveTemplate();
+        int idx = Array.FindIndex(Papers, p => p.Key == (tpl?.PaperKey ?? cfg.PrintPaper));
+        var paper = idx >= 0 ? Papers[idx] : Papers[0];
+        int copies = Math.Max(1, cfg.PrintCopies);
+
+        var doc = new PrintDocument { DocumentName = $"磅单批量打印_{records.Count}张" };
+        doc.DefaultPageSettings.PaperSize = new PaperSize(paper.Name, paper.W, paper.H);
+        doc.DefaultPageSettings.Margins = new Margins(40, 40, 40, 40);
+
+        int recordIdx = 0, pageInRecord = 0;
+        doc.PrintPage += (_, e) =>
+        {
+            RenderRecord(tpl, e.Graphics!, e.MarginBounds, records[recordIdx]);
+            pageInRecord++;
+            if (pageInRecord >= copies)
+            {
+                recordIdx++;
+                pageInRecord = 0;
+            }
+            e.HasMorePages = recordIdx < records.Count;
+        };
+        return doc;
+    }
+
+    /// <summary>
+    /// 批量打印：一次打印对话框，多张磅单合并为单个打印任务（返回 false=用户取消或失败）。
+    /// </summary>
+    public static bool PrintBatch(IReadOnlyList<WeighRecord> records)
+    {
+        if (records.Count == 0) return false;
+        try
+        {
+            using var doc = BuildBatchDocument(records);
+            using var dialog = new PrintDialog { Document = doc, UseEXDialog = true };
+            if (dialog.ShowDialog() != DialogResult.OK) return false;
+            doc.Print();
+            Log.Info($"批量打印磅单：{records.Count} 张");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error("批量打印磅单失败", ex);
+            MessageBox.Show("批量打印失败：" + ex.Message, "错误",
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return false;
+        }
+    }
+
+    /// <summary>按模板（或内置版式）渲染单张磅单页面。</summary>
+    private static void RenderRecord(PrintTemplate? tpl, Graphics g, Rectangle bounds, WeighRecord r)
+    {
+        if (tpl != null)
+        {
+            // 模板模式：元素坐标为毫米，平移到边距起点后按设备分辨率渲染
+            g.TranslateTransform(bounds.X, bounds.Y);
+            TemplateTicketRenderer.Render(tpl, g, r, AppConfig.Current, g.DpiX / 25.4f);
+        }
+        else
+        {
+            DrawTicket(g, bounds, r);
+        }
     }
 
     // ==================== 绘制 ====================
