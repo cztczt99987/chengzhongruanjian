@@ -485,7 +485,7 @@ public class MainForm : Form
         });
 
         // 回车键流转录入（对应 PRD F2-05）：
-        // 扣重→货物→规格→发货单位→收货单位→批次→备注→保存一次磅
+        // 扣重→货物→规格→发货单位→收货单位→批次→备注→保存（智能判断一次/二次磅）
         Control[] flow = { _txtDeduct, _txtGoods, _txtSpec, _txtSender,
                            _txtReceiver, _txtBatch, _txtRemark };
         for (int i = 0; i < flow.Length; i++)
@@ -499,7 +499,7 @@ public class MainForm : Form
                 if (idx < flow.Length - 1)
                     flow[idx + 1].Focus();
                 else
-                    SaveFirst();     // 最后一项回车直接保存一次磅
+                    Save();          // 最后一项回车直接保存（智能判断一次/二次磅）
             };
         }
 
