@@ -33,7 +33,7 @@ public class AppConfig
     /// <summary>最大量程（千克），超过判定超载</summary>
     public double MaxCapacityKg { get; set; } = 100000;
     /// <summary>显示单位：t=吨 / kg=千克</summary>
-    public string Unit { get; set; } = "t";
+    public string Unit { get; set; } = "kg";
     /// <summary>磅号（一机双磅时区分两台磅，骨架暂用单磅）</summary>
     public string ScaleNo { get; set; } = "01";
 
