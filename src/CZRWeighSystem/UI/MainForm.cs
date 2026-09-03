@@ -15,6 +15,7 @@ public class MainForm : Form
     // ===== 控件 =====
     private Label _lblWeight = null!;        // 大字实时重量
     private Label _lblStable = null!;        // 稳定/动态指示
+    private Label _lblComm = null!;          // 通讯状态指示（绿=正常，红=未通讯/中断）
     private Label _lblGross = null!;         // 毛重
     private Label _lblTare = null!;          // 皮重
     private Label _lblNet = null!;           // 净重
@@ -65,7 +66,11 @@ public class MainForm : Form
 
         // 订阅业务事件（串口数据来自非 UI 线程，统一转发到 UI 线程）
         _manager.WeightUpdated += () => SafeInvoke(OnWeightUpdated);
-        _manager.SourceError += msg => SafeInvoke(() => SetState("数据源异常：" + msg, false));
+        _manager.SourceError += msg => SafeInvoke(() =>
+        {
+            SetState("数据源异常：" + msg, false);
+            UpdateCommIndicator();   // 通讯出错 → 指示灯立即变红
+        });
 
         Load += (_, _) =>
         {
@@ -329,6 +334,17 @@ public class MainForm : Form
             TextAlign = ContentAlignment.MiddleLeft,
         };
 
+        // 通讯状态指示（稳定指示右侧）：启动时未通讯显示红色，收到仪表数据后变绿
+        _lblComm = new Label
+        {
+            Text = "● 通讯",
+            Font = new Font("Microsoft YaHei UI", 14F, FontStyle.Bold),
+            ForeColor = Color.Red,
+            Location = new Point(190, 180),
+            Size = new Size(160, 34),
+            TextAlign = ContentAlignment.MiddleLeft,
+        };
+
         // 车/皮/净三栏（对应 PRD 5.2 界面区域 1）
         // 注意：不能用 Left+Right 锚定——窗口变宽时三栏各自拉伸会互相遮盖，
         // 改为固定锚定 + Resize 时在重量框右侧均匀铺开（见 LayoutWeightBoxes）
@@ -364,6 +380,7 @@ public class MainForm : Form
 
         Controls.Add(_lblWeight);
         Controls.Add(_lblStable);
+        Controls.Add(_lblComm);
 
         // 窗口尺寸变化时重新铺开三栏；
         // DPI 缩放发生在句柄创建之后，缩放过程会覆盖重排结果，
@@ -702,9 +719,13 @@ public class MainForm : Form
         _status.Items.AddRange(new ToolStripItem[] { _tsslSource, _tsslState, _tsslTime });
         Controls.Add(_status);
 
-        // 每秒刷新时间显示
+        // 每秒刷新时间显示与通讯指示（通讯中断靠超时检测，需要定时刷新）
         var timer = new System.Windows.Forms.Timer { Interval = 1000 };
-        timer.Tick += (_, _) => _tsslTime.Text = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+        timer.Tick += (_, _) =>
+        {
+            _tsslTime.Text = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            UpdateCommIndicator();
+        };
         timer.Start();
     }
 
@@ -928,7 +949,17 @@ public class MainForm : Form
         }
 
         _tsslSource.Text = $"数据源：{_manager.SourceDescription}";
+        UpdateCommIndicator();
         RefreshWeightBoxes();
+    }
+
+    /// <summary>
+    /// 刷新通讯状态指示（稳定指示右侧）：
+    /// 尚未通讯过或通讯中断（超时/报错）→ 红色；正常收到仪表数据 → 绿色。
+    /// </summary>
+    private void UpdateCommIndicator()
+    {
+        _lblComm.ForeColor = _manager.IsCommAlive ? Color.Green : Color.Red;
     }
 
     /// <summary>

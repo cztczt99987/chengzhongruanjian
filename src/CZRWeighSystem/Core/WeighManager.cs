@@ -14,6 +14,11 @@ public class WeighManager : IDisposable
     private IWeightSource _source;
     private StabilityFilter _filter;
 
+    // ===== 通讯状态（首页通讯指示灯用）=====
+    private DateTime? _lastDataTime;          // 最近一次收到仪表数据的时间
+    private bool _errorSinceLastData = true;  // 启动时尚未通讯，视为异常（红色）
+    private const int CommTimeoutSeconds = 5; // 超过该秒数无新数据视为通讯中断
+
     /// <summary>实时重量（千克），由数据源驱动更新</summary>
     public double CurrentKg { get; private set; }
 
@@ -49,20 +54,28 @@ public class WeighManager : IDisposable
     public string SourceDescription => _source.Describe();
 
     /// <summary>
+    /// 通讯是否正常：收到过数据、错误已恢复、且 5 秒内有新数据。
+    /// 尚未通讯过或通讯中断（超时/报错）时为 false。
+    /// </summary>
+    public bool IsCommAlive => !_errorSinceLastData
+        && _lastDataTime.HasValue
+        && (DateTime.Now - _lastDataTime.Value).TotalSeconds < CommTimeoutSeconds;
+
+    /// <summary>
     /// 保存一次磅（对应 PRD 4.1：保存后进入"未完成"状态，等待二次磅配对）。
     /// </summary>
     /// <param name="vehicleNo">车号（必填）</param>
-    /// <param name="manualKg">手工补录重量；为空时取当前稳定重量</param>
+    /// <param name="deductKg">扣重（千克）：从净重中扣除的杂重</param>
     /// <returns>(是否成功, 提示消息, 保存的记录)</returns>
     public (bool Ok, string Message, WeighRecord? Record) SaveFirstWeigh(string vehicleNo, string? goods,
-        string? company, string? spec, string? batchNo, string? remark,
-        double? manualKg, string? operatorName, Dictionary<string, string>? ext = null)
+        string? senderCompany, string? receiverCompany, string? spec, string? batchNo, string? remark,
+        double? deductKg, string? operatorName, Dictionary<string, string>? ext = null)
     {
         // ---- 入参校验 ----
         if (string.IsNullOrWhiteSpace(vehicleNo))
-            return (false, "请输入车号", null);
+            return (false, "请选择车号", null);
 
-        var (weight, err) = ResolveWeight(manualKg);
+        var (weight, err) = ResolveWeight();
         if (weight == null) return (false, err!, null);
 
         if (IsOverload)
@@ -78,13 +91,14 @@ public class WeighManager : IDisposable
             ScaleNo = AppConfig.Current.ScaleNo,
             VehicleNo = vehicleNo.Trim(),
             Goods = goods?.Trim(),
-            Company = company?.Trim(),
+            SenderCompany = senderCompany?.Trim(),
+            ReceiverCompany = receiverCompany?.Trim(),
             Spec = spec?.Trim(),
             BatchNo = batchNo?.Trim(),
             Remark = remark?.Trim(),
             GrossKg = weight.Value,          // 未配对阶段暂存一次磅重量
+            DeductKg = deductKg,
             Operator = operatorName,
-            IsManual = manualKg.HasValue,
             ExtJson = WeighRecord.ExtToJson(ext),
         };
         _repo.InsertFirstWeigh(record);
@@ -161,6 +175,7 @@ public class WeighManager : IDisposable
         source.WeightReceived += OnWeightReceived;
         source.ErrorOccurred += msg =>
         {
+            _errorSinceLastData = true;   // 通讯出错 → 指示灯立即变红，直到恢复收数
             Log.Error("数据源错误：" + msg);
             SourceError?.Invoke(msg);
         };
@@ -169,6 +184,9 @@ public class WeighManager : IDisposable
     private void OnWeightReceived(WeightData data)
     {
         _filter.Push(data.ValueKg);
+
+        _lastDataTime = data.Time;      // 收到数据 → 通讯恢复正常（指示灯变绿）
+        _errorSinceLastData = false;
 
         CurrentKg = data.ValueKg;
         WeightUpdated?.Invoke();
