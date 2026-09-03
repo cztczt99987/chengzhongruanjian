@@ -11,10 +11,6 @@ public class AppConfig
     /// <summary>当前使用的配置实例</summary>
     public static AppConfig Current { get; private set; } = new();
 
-    // ===== 数据源 =====
-    /// <summary>数据源模式：Simulator=模拟数据 / Serial=串口仪表</summary>
-    public string DataSourceMode { get; set; } = "Simulator";
-
     // ===== 数据库（对应 PRD F9-05：单机 SQLite / 网络 SQL Server）=====
     /// <summary>数据库类型：Sqlite=单机 / SqlServer=网络</summary>
     public string DatabaseType { get; set; } = "Sqlite";

@@ -257,10 +257,6 @@ public class MainForm : Form
         menu.Items.Add(mBase);
 
         var mSource = new ToolStripMenuItem("数据源(&S)");
-        mSource.DropDownItems.Add(new ToolStripMenuItem("模拟数据模式", null,
-            (_, _) => SwitchSource("Simulator")));
-        mSource.DropDownItems.Add(new ToolStripMenuItem("串口仪表模式", null,
-            (_, _) => SwitchSource("Serial")));
         mSource.DropDownItems.Add(new ToolStripMenuItem("串口参数设置", null, (_, _) =>
         {
             using var f = new SerialSettingsDialog();
@@ -280,12 +276,6 @@ public class MainForm : Form
         menu.Items.Add(mSource);
         MainMenuStrip = menu;
         Controls.Add(menu);
-    }
-
-    private void SwitchSource(string mode)
-    {
-        _manager.SwitchSource(mode);
-        SetState($"已切换：{(mode == "Serial" ? "串口仪表" : "模拟数据")}", true);
     }
 
     // ---------- 重量显示区 ----------

@@ -36,7 +36,7 @@ public class WeighManager : IDisposable
     {
         var cfg = AppConfig.Current;
         _filter = new StabilityFilter(cfg.StableCount, cfg.StableToleranceKg);
-        _source = CreateSource(cfg.DataSourceMode);
+        _source = CreateSerialSource();
         AttachSource(_source);
     }
 
@@ -44,24 +44,6 @@ public class WeighManager : IDisposable
     /// 启动数据源，开始接收重量数据。
     /// </summary>
     public void Start() => _source.Start();
-
-    /// <summary>
-    /// 切换数据源（模拟器 / 串口）。
-    /// </summary>
-    public void SwitchSource(string mode)
-    {
-        _source.Stop();
-        _source.Dispose();
-
-        AppConfig.Current.DataSourceMode = mode;
-        AppConfig.Current.Save();
-
-        _filter.Reset();
-        CurrentKg = 0;
-        _source = CreateSource(mode);
-        AttachSource(_source);
-        _source.Start();
-    }
 
     /// <summary>当前数据源描述（状态栏显示用）。</summary>
     public string SourceDescription => _source.Describe();
@@ -161,17 +143,13 @@ public class WeighManager : IDisposable
         return (StableKg, null);
     }
 
-    /// <summary>按配置创建数据源。</summary>
-    private static IWeightSource CreateSource(string mode)
+    /// <summary>按配置创建串口数据源。</summary>
+    private static SerialWeightSource CreateSerialSource()
     {
         var cfg = AppConfig.Current;
-        if (mode == "Serial")
-        {
-            return new SerialWeightSource(cfg.PortName, cfg.BaudRate, cfg.DataBits,
-                Enum.TryParse<Parity>(cfg.Parity, out var p) ? p : Parity.None,
-                Enum.TryParse<StopBits>(cfg.StopBits, out var s) ? s : StopBits.One);
-        }
-        return new SimulatedWeightSource();
+        return new SerialWeightSource(cfg.PortName, cfg.BaudRate, cfg.DataBits,
+            Enum.TryParse<Parity>(cfg.Parity, out var p) ? p : Parity.None,
+            Enum.TryParse<StopBits>(cfg.StopBits, out var s) ? s : StopBits.One);
     }
 
     /// <summary>

@@ -4,9 +4,9 @@ namespace CZRWeighSystem.Comm;
 
 /// <summary>
 /// 串口称重数据源（对应 PRD 5.6 / F6-01、F6-02）。
-/// 数据帧解析采用"通用连续帧"方式：帧头 0x02 ... 帧尾 0x0D，
-/// 中间内容剔除小数点、正负号与状态字符后按数字解析，
-/// 兼容耀华 XK3190 系列、托利多 IND 等常见仪表的连续发送格式。
+/// 数据帧解析采用"通用连续帧"方式：帧头 0x02，帧尾 0x0D(CR) 或 0x03(ETX)，
+/// 中间内容剔除小数点、正负号与状态字符后按数字解析。
+/// 已实测兼容仪表帧：02 2B 30...31 42 03（STX+'+'+8位数字+状态字符+ETX，12 字节定长）。
 /// 注意：各仪表具体位定义请以说明书为准；多协议支持（策略模式）按 F6-02 后续扩展。
 /// </summary>
 public class SerialWeightSource : IWeightSource
@@ -101,7 +101,7 @@ public class SerialWeightSource : IWeightSource
     }
 
     /// <summary>
-    /// 从缓冲中提取完整帧：0x02 ... 0x0D，并解析重量。
+    /// 从缓冲中提取完整帧：帧头 0x02，帧尾 0x0D(CR) 或 0x03(ETX)，并解析重量。
     /// </summary>
     private void ParseBuffer()
     {
@@ -114,8 +114,10 @@ public class SerialWeightSource : IWeightSource
                 continue;
             }
 
-            // 2. 查找帧尾
-            int end = _buffer.IndexOf((byte)0x0D);
+            // 2. 查找帧尾：兼容 0x0D(CR) 与 0x03(ETX)，取更早出现的那个
+            int endCr = _buffer.IndexOf((byte)0x0D);
+            int endEtx = _buffer.IndexOf((byte)0x03);
+            int end = endCr < 0 || (endEtx >= 0 && endEtx < endCr) ? endEtx : endCr;
             if (end < 0)
             {
                 // 半包：数据不足一帧，等待下次接收（超长保护）
