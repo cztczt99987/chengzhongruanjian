@@ -166,9 +166,10 @@ public class SerialWeightSource : IWeightSource
         if (sb.Length == 0) return null;
         if (!long.TryParse(sb.ToString(), out long raw)) return null;
 
-        // 仪表显示值通常为千克；显式小数点优先，否则按隐含小数位还原
+        // 仪表显示值通常为千克；显式小数点优先，否则按隐含小数位还原。
+        // 本秤最小分度值 1kg：还原后四舍五入取整，显示/稳定判定/保存/磅单打印全链路无小数
         int digits = dotPos >= 0 ? sb.Length - dotPos : _decimalDigits;
-        return raw / Math.Pow(10, digits);
+        return Math.Round(raw / Math.Pow(10, digits), MidpointRounding.AwayFromZero);
     }
 
     public void Dispose() => Stop();
