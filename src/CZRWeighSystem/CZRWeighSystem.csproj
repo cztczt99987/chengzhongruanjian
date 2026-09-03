@@ -21,6 +21,13 @@
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
     <!-- 串口驱动（.NET 9+ 桌面框架不再内置，需显式引用） -->
     <PackageReference Include="System.IO.Ports" Version="8.0.0" />
+    <!-- 二维码生成（磅单模板二维码元素用，MIT 协议） -->
+    <PackageReference Include="QRCoder" Version="1.8.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 允许测试项目访问 internal 成员（如渲染器颜色解析） -->
+    <InternalsVisibleTo Include="CZRWeighSystem.Tests" />
   </ItemGroup>
 
 </Project>
