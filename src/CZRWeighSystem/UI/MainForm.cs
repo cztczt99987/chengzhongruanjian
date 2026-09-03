@@ -429,6 +429,7 @@ public class MainForm : Form
         panel.Controls.Add(L("车号：", lx, Row(0) + 3));
         _txtVehicle = NewTextBox(lInX, Row(0), 240);
         _txtVehicle.ReadOnly = true;
+        _txtVehicle.TextChanged += (_, _) => UpdateSaveButton();   // 车号变化（选牌/清空）实时刷新保存按钮模式
         var btnVehicle = _btnVehicle = new Button
         {
             Text = "选择车牌", Location = new Point(lInX + 248, Row(0) - 1), Size = new Size(92, 30),
