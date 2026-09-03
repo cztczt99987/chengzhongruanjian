@@ -12,6 +12,7 @@ public class UserManagementForm : Form
     private readonly UserRepository _repo = new();
     private DataGridView _grid = null!;      // 用户列表
     private Button _btnAdd = null!;          // 新增用户
+    private Button _btnDelete = null!;       // 删除用户
 
     public UserManagementForm()
     {
@@ -76,6 +77,18 @@ public class UserManagementForm : Form
                 RefreshGrid();
         };
 
+        _btnDelete = new Button
+        {
+            Text = "删除用户",
+            Location = new Point(150, 355),
+            Size = new Size(120, 38),
+            Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
+            BackColor = Color.FromArgb(192, 0, 0),
+            ForeColor = Color.White,
+            FlatStyle = FlatStyle.Flat,
+        };
+        _btnDelete.Click += (_, _) => DoDelete();
+
         var btnClose = new Button
         {
             Text = "关  闭",
@@ -86,7 +99,7 @@ public class UserManagementForm : Form
         };
         btnClose.Click += (_, _) => Close();
 
-        Controls.AddRange(new Control[] { _grid, _btnAdd, btnClose });
+        Controls.AddRange(new Control[] { _grid, _btnAdd, _btnDelete, btnClose });
     }
 
     /// <summary>刷新用户列表。</summary>
@@ -95,12 +108,35 @@ public class UserManagementForm : Form
         _grid.Rows.Clear();
         foreach (var u in _repo.GetAll())
         {
-            _grid.Rows.Add(
+            int i = _grid.Rows.Add(
                 u.Username,
                 u.DisplayName,
                 u.Role,
                 u.Enabled ? "启用" : "停用",
                 u.LastLogin?.ToString("yyyy-MM-dd HH:mm") ?? "从未登录");
+            _grid.Rows[i].Tag = u;    // 行 Tag 保存用户对象，删除时取 Id
         }
+    }
+
+    /// <summary>删除选中用户（确认后执行；规则见 UserRepository.DeleteUser）。</summary>
+    private void DoDelete()
+    {
+        if (_grid.CurrentRow?.Tag is not User u)
+        {
+            MessageBox.Show("请先选择要删除的用户", "提示",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        var answer = MessageBox.Show(
+            $"确定删除用户 [{u.Username}]（{u.DisplayName}）？\n删除后无法恢复！",
+            "删除确认", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+        if (answer != DialogResult.Yes) return;
+
+        var result = _repo.DeleteUser(u.Id, AppSession.CurrentUser!.Id);
+        MessageBox.Show(result.Message, result.Ok ? "成功" : "无法删除",
+            MessageBoxButtons.OK, result.Ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+
+        if (result.Ok) RefreshGrid();
     }
 }

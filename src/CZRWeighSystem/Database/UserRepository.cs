@@ -260,6 +260,34 @@ public class UserRepository
         return new AddUserResult(true, $"用户 {username} 创建成功");
     }
 
+    /// <summary>删除用户结果。</summary>
+    public record DeleteUserResult(bool Ok, string Message);
+
+    /// <summary>
+    /// 删除用户（管理员操作）：不允许删除当前登录账号自己；
+    /// 删除后系统必须仍保留至少一个启用的管理员账号。
+    /// </summary>
+    public DeleteUserResult DeleteUser(long userId, long currentUserId)
+    {
+        if (userId == currentUserId)
+            return new DeleteUserResult(false, "不能删除当前登录的账号");
+
+        using var conn = Db.CreateConnection();
+        var target = GetById(conn, userId);
+        if (target == null)
+            return new DeleteUserResult(false, "该用户不存在");
+        if (target.IsAdmin && CountEnabledAdmins(conn) <= 1)
+            return new DeleteUserResult(false, "系统必须保留至少一个管理员账号，请先创建其他管理员");
+
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "DELETE FROM t_user WHERE id=@id";
+        cmd.Add("@id", userId);
+        cmd.ExecuteNonQuery();
+
+        Log.Info($"管理员删除用户：{target.Username}");
+        return new DeleteUserResult(true, $"用户 {target.Username} 已删除");
+    }
+
     // ================ 内部查询 ================
 
     private static User? GetByUsername(DbConnection conn, string username)
@@ -287,6 +315,45 @@ public class UserRepository
             LockUntil = ParseTime(reader, 7),
             LastLogin = ParseTime(reader, 8),
         };
+    }
+
+    /// <summary>按主键读取用户（不存在返回 null）。</summary>
+    private static User? GetById(DbConnection conn, long id)
+    {
+        const string sql = """
+            SELECT id, username, display_name, role, enabled, is_default_pwd,
+                   fail_count, lock_until, last_login
+            FROM t_user WHERE id=@id;
+            """;
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        cmd.Add("@id", id);
+        using var reader = cmd.ExecuteReader();
+        if (!reader.Read()) return null;
+
+        return new User
+        {
+            Id = reader.GetInt64(0),
+            Username = reader.GetString(1),
+            DisplayName = reader.GetString(2),
+            Role = reader.GetString(3),
+            Enabled = Convert.ToInt64(reader.GetValue(4)) == 1,
+            IsDefaultPwd = Convert.ToInt64(reader.GetValue(5)) == 1,
+            FailCount = (int)Convert.ToInt64(reader.GetValue(6)),
+            LockUntil = ParseTime(reader, 7),
+            LastLogin = ParseTime(reader, 8),
+        };
+    }
+
+    /// <summary>
+    /// 统计启用的管理员数量（role 含"管理员"，兼容历史"超级管理员"）。
+    /// </summary>
+    private static int CountEnabledAdmins(DbConnection conn)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM t_user WHERE enabled=1 AND role LIKE @r";
+        cmd.Add("@r", "%管理员%");
+        return (int)Convert.ToInt64(cmd.ExecuteScalar());
     }
 
     private static string GetHash(DbConnection conn, long userId) =>
