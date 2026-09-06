@@ -19,6 +19,9 @@
   <ItemGroup>
     <!-- SQLite 数据库驱动（单机版数据库，无需安装数据库服务） -->
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.8" />
+    <!-- 显式升级 SQLitePCLRaw 原生库：2.1.6 内置 SQLite < 3.50.2 有高危漏洞
+         CVE-2025-6965 / GHSA-2m69-gcr7-jv3q，覆盖 Microsoft.Data.Sqlite 的传递依赖 2.1.6 -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.13" />
     <!-- SQL Server 驱动（网络版数据库，对应 PRD F9-05） -->
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
     <!-- 串口驱动（.NET 9+ 桌面框架不再内置，需显式引用） -->
