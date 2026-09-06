@@ -67,6 +67,9 @@ public class CameraSettingsDialog : Form
             AllowUserToDeleteRows = false,
             RowHeadersVisible = false,
             AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+            // 高 DPI 缩放下默认列头高度(23px)放不下中文，列头/行高按字体自适应
+            ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize,
+            AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCells,
             BackgroundColor = Color.White,
             BorderStyle = BorderStyle.FixedSingle,
             EditMode = DataGridViewEditMode.EditOnEnter,
