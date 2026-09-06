@@ -215,6 +215,14 @@ public class TemplateLibraryForm : Form
         preview.ShowDialog(this);
     }
 
+    /// <summary>新建模板：打开空白设计器，保存时命名并落入 templates/ 目录。</summary>
+    private void NewTemplate()
+    {
+        using var f = new TemplateDesignerForm("");   // 空文件名 = 新建模式
+        f.ShowDialog(this);
+        ReloadList();                                  // 设计器保存后刷新
+    }
+
     private void OpenInDesigner()
     {
         var it = Selected;
