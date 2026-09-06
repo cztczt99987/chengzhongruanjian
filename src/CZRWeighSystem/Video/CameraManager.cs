@@ -14,26 +14,33 @@ public class CameraManager : IDisposable
     /// <summary>全部摄像头源</summary>
     public IReadOnlyList<ICameraSource> Sources => _sources;
 
-    /// <summary>构建并启动全部摄像头（按配置的路数）。</summary>
+    /// <summary>构建并启动全部摄像头（按配置的摄像头列表，每行一路）。</summary>
     public void Start()
     {
         StopAll();
 
-        int count = AppConfig.Current.CameraCount;
-        // RTSP 地址列表（正式接入时按索引对应；为空则用模拟画面源）
-        var rtspUrls = AppConfig.Current.CameraRtspUrls
-            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var sources = BuildSources(AppConfig.Current);
+        foreach (var s in sources) s.Start();
+        _sources.AddRange(sources);
+        Log.Info($"摄像头已启动 {_sources.Count} 路");
+    }
 
-        for (int i = 0; i < count; i++)
+    /// <summary>
+    /// 按配置构建摄像头源（不启动）：列表每行一路画面，
+    /// 有取流地址用真实流（RtspCameraSource），地址留空用模拟画面（调试用）。
+    /// </summary>
+    internal static List<ICameraSource> BuildSources(AppConfig cfg)
+    {
+        var list = new List<ICameraSource>();
+        for (int i = 0; i < cfg.Cameras.Count; i++)
         {
-            string name = $"CAM{i + 1}";
-            ICameraSource source = i < rtspUrls.Length && rtspUrls[i].Length > 0
-                ? new RtspCameraSource(name, rtspUrls[i])   // 真实摄像头（FLV/HLS/RTMP/RTSP 地址）
-                : new SimulatedCameraSource(name);          // 模拟画面
-            source.Start();
-            _sources.Add(source);
+            var cam = cfg.Cameras[i];
+            string name = string.IsNullOrWhiteSpace(cam.Name) ? $"CAM{i + 1}" : cam.Name.Trim();
+            list.Add(string.IsNullOrWhiteSpace(cam.Url)
+                ? new SimulatedCameraSource(name)
+                : new RtspCameraSource(name, cam.Url.Trim()));
         }
-        Log.Info($"摄像头已启动 {count} 路");
+        return list;
     }
 
     /// <summary>

@@ -35,7 +35,8 @@ public class MainForm : Form
     private ToolStripStatusLabel _tsslTime = null!;
 
     // ===== 视频监控（预览见菜单「视频监控」弹窗；抓拍由保存称重触发）=====
-    private readonly Video.CameraManager _cameras = new();
+    // 摄像头设置保存后整体重建，故不可 readonly
+    private Video.CameraManager _cameras = new();
 
     // ===== 采集信息列表（原视频区位置，展示最近称重记录）=====
     private GroupBox _capturePanel = null!;
@@ -174,6 +175,15 @@ public class MainForm : Form
         if (files.Count > 0)
             SetState($"已抓拍 {files.Count} 张存证图片", true);
         return files.Count;
+    }
+
+    /// <summary>按最新配置重建摄像头源（摄像头设置保存后调用，立即生效）。</summary>
+    private void RestartCameras()
+    {
+        _cameras.Dispose();
+        _cameras = new Video.CameraManager();
+        if (_cfg.CameraEnabled) _cameras.Start();
+        SetState($"视频监控：{_cfg.Cameras.Count} 路", true);
     }
 
     // ---------- 菜单栏 ----------
@@ -315,6 +325,16 @@ public class MainForm : Form
             using var f = new VideoMonitorForm(_cameras);
             f.ShowDialog(this);
         }));
+        // 摄像头设置（多路取流地址配置；限管理员）
+        if (AppSession.CurrentUser?.IsAdmin == true)
+        {
+            mVideo.DropDownItems.Add(new ToolStripSeparator());
+            mVideo.DropDownItems.Add(new ToolStripMenuItem("摄像头设置", null, (_, _) =>
+            {
+                using var f = new CameraSettingsDialog();
+                if (f.ShowDialog(this) == DialogResult.OK) RestartCameras();
+            }));
+        }
         menu.Items.Add(mVideo);
 
         mSource.DropDownItems.Add(new ToolStripSeparator());

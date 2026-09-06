@@ -83,16 +83,8 @@ public class AppConfig
     /// <summary>是否启用视频监控与抓拍</summary>
     public bool CameraEnabled { get; set; } = true;
 
-    /// <summary>摄像头路数（1/2/4）</summary>
-    public int CameraCount { get; set; } = 4;
-
-    /// <summary>
-    /// 各路取流地址（分号分隔；留空或不足的路使用模拟画面源）。
-    /// 支持慧眼智巡/萤石平台"快速集成"生成的 HTTP-FLV / HLS(m3u8) / RTMP 地址，
-    /// 或摄像头本机 RTSP 地址（rtsp://admin:pwd@192.168.1.64:554/...）。
-    /// 第 N 个地址对应 CAM N 路。
-    /// </summary>
-    public string CameraRtspUrls { get; set; } = "";
+    /// <summary>摄像头列表（每设置一个即有一路画面；地址留空 = 该路显示模拟画面）</summary>
+    public List<CameraConfig> Cameras { get; set; } = [];
 
     /// <summary>配置文件完整路径</summary>
     private static string FilePath =>
@@ -148,4 +140,18 @@ public class AppConfig
         double value = Unit == "t" ? kg / 1000.0 : kg;
         return $"{value:0.##} {Unit}";
     }
+}
+
+/// <summary>单个摄像头配置（菜单「视频 → 摄像头设置」编辑）。</summary>
+public class CameraConfig
+{
+    /// <summary>摄像头名称（画面角标显示；留空按 CAM1/CAM2… 默认命名）</summary>
+    public string Name { get; set; } = "";
+
+    /// <summary>
+    /// 取流地址：慧眼智巡/萤石平台"快速集成"生成的 HTTP-FLV / HLS(m3u8) / RTMP 地址，
+    /// 或摄像头本机 RTSP 地址（rtsp://admin:pwd@192.168.1.64:554/...）。
+    /// 留空 = 该路显示模拟画面（调试用）。
+    /// </summary>
+    public string Url { get; set; } = "";
 }

@@ -34,7 +34,7 @@ public class VideoMonitorForm : Form
         {
             Controls.Add(new Label
             {
-                Text = "视频监控未启用或无可用摄像头。\r\n可在 config.json 中设置 CameraEnabled / CameraRtspUrls。",
+                Text = "视频监控未启用或未配置摄像头。\r\n请用管理员账号在菜单「视频 → 摄像头设置」中添加。",
                 Dock = DockStyle.Fill,
                 TextAlign = ContentAlignment.MiddleCenter,
                 ForeColor = Color.Gray,
