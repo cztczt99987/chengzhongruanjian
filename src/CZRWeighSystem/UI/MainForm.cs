@@ -1051,6 +1051,11 @@ public class MainForm : Form
                 _grid.Rows[i].DefaultCellStyle.ForeColor = Color.Firebrick;
             }
         }
+
+        // 列表重建后重估保存按钮模式：保存完成后清空车号触发 TextChanged 时，
+        // 旧选中行还在列表里会被误判为二次磅模式，导致按钮一直停留
+        // "保存二次磅（结算）"，必须按刷新后的新列表状态复位
+        UpdateSaveButton();
     }
 
     /// <summary>清空录入区并把焦点放回车号（对应 PRD F2-05）。</summary>
@@ -1113,10 +1118,11 @@ public class MainForm : Form
     }
 
     /// <summary>
-    /// 毛/皮/净三栏实时预览：
+    /// 毛/皮/净三栏显示（毛重只显示已保存的记录值，不镜像实时重量——
+    /// 实时重量仅在大屏显示，保存后毛重栏才会出现记录值）：
     /// 选中未完成记录时 → 毛重=已存一次磅重量，皮重=当前稳定重量，净重=两者差值实时预览
     /// （实际毛/皮按结算时大小值自动分配，此处仅直观展示）；
-    /// 未选中时 → 毛重栏显示当前稳定重量（即将保存的一次磅值），皮/净显示 "--"。
+    /// 未选中时 → 毛/皮/净均显示 "--"。
     /// </summary>
     private void RefreshWeightBoxes()
     {
@@ -1136,9 +1142,8 @@ public class MainForm : Form
         }
         else
         {
-            _lblGross.Text = _manager.IsStable && _manager.StableKg > 0
-                ? _cfg.FormatWeight(_manager.StableKg)
-                : "--";
+            // 未选中记录：毛重栏不跟随实时重量变化（毛重是保存后的结果值）
+            _lblGross.Text = "--";
             _lblTare.Text = "--";
             _lblNet.Text = "--";
         }

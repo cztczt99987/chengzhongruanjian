@@ -7,14 +7,18 @@ namespace CZRWeighSystem.Tests;
 /// <summary>
 /// 首次称重有效天数（超期未配对一次磅自动删除）测试。
 /// 使用测试输出目录下的 SQLite 库（Db.Initialize 幂等建表）。
+/// 与 MainFormWeighDisplayTests 同集合串行执行：其测试会清空共享库中的记录。
 /// </summary>
+[Collection("数据库顺序")]
 public class FirstWeighExpireTests
 {
     private readonly WeighRecordRepository _repo = new();
 
     static FirstWeighExpireTests()
     {
-        // 每次测试运行前重建空库：避免上次运行残留的记录影响断言
+        // 每次测试运行前重建空库：避免上次运行残留的记录影响断言。
+        // 先清空 SQLite 连接池（归池连接会一直占用文件句柄，否则 Delete 抛 IOException）
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         if (File.Exists(Db.DbPath)) File.Delete(Db.DbPath);
     }
 
