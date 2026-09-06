@@ -252,6 +252,12 @@ public class MainForm : Form
                 using var f = new PrintSettingsDialog();
                 f.ShowDialog(this);
             }));
+            // 称重设置（首次称重有效天数：超期未配对的一次磅自动删除；限管理员）
+            mSys.DropDownItems.Add(new ToolStripMenuItem("称重设置", null, (_, _) =>
+            {
+                using var f = new WeighSettingsDialog();
+                f.ShowDialog(this);
+            }));
             // 磅单模板管理（模板库：分类/搜索/预览/启用/复制/重命名/删除）
             mSys.DropDownItems.Add(new ToolStripMenuItem("磅单模板管理", null, (_, _) =>
             {
