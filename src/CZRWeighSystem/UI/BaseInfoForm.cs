@@ -5,7 +5,7 @@ namespace CZRWeighSystem.UI;
 
 /// <summary>
 /// 基础资料管理窗体（对应 PRD 5.9 / F9-01~F9-05）。
-/// 四个页签：车辆档案 / 货物档案 / 收发货单位档案 / 自定义字段。
+/// 两个页签：车辆档案 / 自定义字段（货物、收发货单位已随首页下拉框取消而移除）。
 /// 编辑方式：表格内直接编辑（单元格结束编辑即保存），
 /// 新增走对话框，删除需确认。导入 Excel 后续迭代（F9-05）。
 /// </summary>
@@ -17,8 +17,6 @@ public class BaseInfoForm : Form
 
     private TabControl _tabs = null!;
     private DataGridView _gridVehicle = null!;
-    private DataGridView _gridGoods = null!;
-    private DataGridView _gridCompany = null!;
     private DataGridView _gridField = null!;
 
     /// <summary>内部刷新标记：CellEndEdit 保存后重载时防递归</summary>
@@ -50,16 +48,6 @@ public class BaseInfoForm : Form
         _gridVehicle = BuildGrid();
         tabVehicle.Controls.Add(BuildGridPanel(_gridVehicle, "新增车辆", AddVehicle, DeleteVehicleRow));
         _tabs.TabPages.Add(tabVehicle);
-
-        var tabGoods = new TabPage("货物档案");
-        _gridGoods = BuildGrid();
-        tabGoods.Controls.Add(BuildGridPanel(_gridGoods, "新增货物", AddGoods, DeleteGoodsRow));
-        _tabs.TabPages.Add(tabGoods);
-
-        var tabCompany = new TabPage("收发货单位");
-        _gridCompany = BuildGrid();
-        tabCompany.Controls.Add(BuildGridPanel(_gridCompany, "新增单位", AddCompany, DeleteCompanyRow));
-        _tabs.TabPages.Add(tabCompany);
 
         var tabField = new TabPage("自定义字段");
         _gridField = BuildGrid();
@@ -145,8 +133,6 @@ public class BaseInfoForm : Form
     {
         _loading = true;
         LoadVehicleGrid();
-        LoadGoodsGrid();
-        LoadCompanyGrid();
         LoadFieldGrid();
         _loading = false;
     }
@@ -158,9 +144,7 @@ public class BaseInfoForm : Form
         switch (_tabs.SelectedIndex)
         {
             case 0: LoadVehicleGrid(); break;
-            case 1: LoadGoodsGrid(); break;
-            case 2: LoadCompanyGrid(); break;
-            case 3: LoadFieldGrid(); break;
+            case 1: LoadFieldGrid(); break;
         }
         _loading = false;
     }
@@ -206,71 +190,6 @@ public class BaseInfoForm : Form
         v.Phone = NullIfEmpty(row.Cells[3].Value?.ToString());
         v.Enabled = (row.Cells[4].Value?.ToString()) != "否";
         ShowResult(_repo.SaveVehicle(v));
-    }
-
-    private void LoadGoodsGrid()
-    {
-        var g = _gridGoods;
-        g.CellEndEdit -= GoodsCellSaved;
-        g.Columns.Clear();
-        g.Rows.Clear();
-        g.Columns.Add(Col("Name", "货物名称"));
-        g.Columns.Add(Col("Spec", "规格"));
-        g.Columns.Add(Col("Unit", "计量单位"));
-        g.Columns.Add(Col("Rate", "默认扣率(%)"));
-        g.Columns.Add(Col("Enabled", "启用"));
-        foreach (var x in _repo.GetGoods())
-        {
-            int i = g.Rows.Add(x.Name, x.Spec ?? "", x.Unit ?? "",
-                x.DeductRate?.ToString("0.##") ?? "", x.Enabled ? "是" : "否");
-            g.Rows[i].Tag = x;
-        }
-        g.CellEndEdit += GoodsCellSaved;
-    }
-
-    private void GoodsCellSaved(object? sender, DataGridViewCellEventArgs e)
-    {
-        if (_loading || e.RowIndex < 0) return;
-        if (_gridGoods.Rows[e.RowIndex].Tag is not GoodsInfo x) return;
-        var row = _gridGoods.Rows[e.RowIndex];
-        x.Name = row.Cells[0].Value?.ToString() ?? "";
-        x.Spec = NullIfEmpty(row.Cells[1].Value?.ToString());
-        x.Unit = NullIfEmpty(row.Cells[2].Value?.ToString());
-        x.DeductRate = double.TryParse(row.Cells[3].Value?.ToString(), out double rate) ? rate : null;
-        x.Enabled = (row.Cells[4].Value?.ToString()) != "否";
-        ShowResult(_repo.SaveGoods(x));
-    }
-
-    private void LoadCompanyGrid()
-    {
-        var g = _gridCompany;
-        g.CellEndEdit -= CompanyCellSaved;
-        g.Columns.Clear();
-        g.Rows.Clear();
-        g.Columns.Add(Col("Name", "单位名称"));
-        g.Columns.Add(Col("Type", "类型"));
-        g.Columns.Add(Col("Contact", "联系人"));
-        g.Columns.Add(Col("Phone", "联系电话"));
-        g.Columns.Add(Col("Enabled", "启用"));
-        foreach (var c in _repo.GetCompanies())
-        {
-            int i = g.Rows.Add(c.Name, c.Type, c.Contact ?? "", c.Phone ?? "", c.Enabled ? "是" : "否");
-            g.Rows[i].Tag = c;
-        }
-        g.CellEndEdit += CompanyCellSaved;
-    }
-
-    private void CompanyCellSaved(object? sender, DataGridViewCellEventArgs e)
-    {
-        if (_loading || e.RowIndex < 0) return;
-        if (_gridCompany.Rows[e.RowIndex].Tag is not CompanyInfo c) return;
-        var row = _gridCompany.Rows[e.RowIndex];
-        c.Name = row.Cells[0].Value?.ToString() ?? "";
-        c.Type = row.Cells[1].Value?.ToString() ?? "收货";
-        c.Contact = NullIfEmpty(row.Cells[2].Value?.ToString());
-        c.Phone = NullIfEmpty(row.Cells[3].Value?.ToString());
-        c.Enabled = (row.Cells[4].Value?.ToString()) != "否";
-        ShowResult(_repo.SaveCompany(c));
     }
 
     // ================== 自定义字段页签 ==================
@@ -339,27 +258,9 @@ public class BaseInfoForm : Form
         ReloadCurrent();
     }
 
-    private void AddGoods()
-    {
-        string? name = Prompt("请输入货物名称：", "新增货物");
-        if (string.IsNullOrWhiteSpace(name)) return;
-        ShowResult(_repo.SaveGoods(new GoodsInfo { Name = name }));
-        ReloadCurrent();
-    }
-
-    private void AddCompany()
-    {
-        string? name = Prompt("请输入单位名称：", "新增单位");
-        if (string.IsNullOrWhiteSpace(name)) return;
-        ShowResult(_repo.SaveCompany(new CompanyInfo { Name = name }));
-        ReloadCurrent();
-    }
-
     // ================== 删除 ==================
 
     private void DeleteVehicleRow() => DeleteRow(_gridVehicle, id => _repo.DeleteVehicle(id));
-    private void DeleteGoodsRow() => DeleteRow(_gridGoods, id => _repo.DeleteGoods(id));
-    private void DeleteCompanyRow() => DeleteRow(_gridCompany, id => _repo.DeleteCompany(id));
 
     private void DeleteRow(DataGridView grid, Func<long, (bool, string)> delete)
     {

@@ -8,7 +8,7 @@ namespace CZRWeighSystem.Database;
 
 /// <summary>
 /// 基础资料仓储（对应 PRD 5.9 基础资料管理）。
-/// 覆盖车辆 / 货物 / 收发货单位三组档案的增删改查（F8-01~F8-03、F8-05）。
+/// 覆盖车辆档案的增删改查（F8-01；货物/收发货单位档案已移除）。
 /// 双数据库兼容（SQLite / SQL Server）。
 /// </summary>
 public class BaseInfoRepository
@@ -61,104 +61,6 @@ public class BaseInfoRepository
 
     public (bool Ok, string Message) DeleteVehicle(long id) =>
         ExecDelete("t_vehicle", id, "车辆");
-
-    // ==================== 货物档案 ====================
-
-    public List<GoodsInfo> GetGoods(bool onlyEnabled = false)
-    {
-        using var conn = Db.CreateConnection();
-        var sql = "SELECT id, name, spec, unit, deduct_rate, enabled FROM t_goods";
-        if (onlyEnabled) sql += " WHERE enabled=1";
-        sql += " ORDER BY name";
-
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = sql;
-        using var r = cmd.ExecuteReader();
-        var list = new List<GoodsInfo>();
-        while (r.Read())
-        {
-            list.Add(new GoodsInfo
-            {
-                Id = Convert.ToInt64(r.GetValue(0)),
-                Name = r.GetString(1),
-                Spec = r.IsDBNull(2) ? null : r.GetString(2),
-                Unit = r.IsDBNull(3) ? null : r.GetString(3),
-                DeductRate = r.IsDBNull(4) ? null : Convert.ToDouble(r.GetValue(4)),
-                Enabled = Convert.ToInt64(r.GetValue(5)) == 1,
-            });
-        }
-        return list;
-    }
-
-    public (bool Ok, string Message) SaveGoods(GoodsInfo g)
-    {
-        if (string.IsNullOrWhiteSpace(g.Name))
-            return (false, "货物名称不能为空");
-        return Exec(
-            "INSERT INTO t_goods (name, spec, unit, deduct_rate, enabled) VALUES (@name, @spec, @unit, @rate, @en)",
-            "UPDATE t_goods SET name=@name, spec=@spec, unit=@unit, deduct_rate=@rate, enabled=@en WHERE id=@id",
-            cmd =>
-            {
-                cmd.Add("@name", g.Name.Trim());
-                cmd.Add("@spec", g.Spec);
-                cmd.Add("@unit", g.Unit);
-                cmd.Add("@rate", g.DeductRate);
-                cmd.Add("@en", g.Enabled ? 1 : 0);
-                cmd.Add("@id", g.Id);
-            }, g.Id == 0, "货物");
-    }
-
-    public (bool Ok, string Message) DeleteGoods(long id) =>
-        ExecDelete("t_goods", id, "货物");
-
-    // ==================== 收/发货单位档案 ====================
-
-    public List<CompanyInfo> GetCompanies(bool onlyEnabled = false)
-    {
-        using var conn = Db.CreateConnection();
-        var sql = "SELECT id, name, type, contact, phone, enabled FROM t_company";
-        if (onlyEnabled) sql += " WHERE enabled=1";
-        sql += " ORDER BY name";
-
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = sql;
-        using var r = cmd.ExecuteReader();
-        var list = new List<CompanyInfo>();
-        while (r.Read())
-        {
-            list.Add(new CompanyInfo
-            {
-                Id = Convert.ToInt64(r.GetValue(0)),
-                Name = r.GetString(1),
-                Type = r.GetString(2),
-                Contact = r.IsDBNull(3) ? null : r.GetString(3),
-                Phone = r.IsDBNull(4) ? null : r.GetString(4),
-                Enabled = Convert.ToInt64(r.GetValue(5)) == 1,
-            });
-        }
-        return list;
-    }
-
-    public (bool Ok, string Message) SaveCompany(CompanyInfo c)
-    {
-        if (string.IsNullOrWhiteSpace(c.Name))
-            return (false, "单位名称不能为空");
-        return Exec(
-            "INSERT INTO t_company (name, type, contact, phone, enabled) VALUES (@name, @type, @contact, @phone, @en)",
-            "UPDATE t_company SET name=@name, type=@type, contact=@contact, phone=@phone, enabled=@en WHERE id=@id",
-            cmd =>
-            {
-                cmd.Add("@name", c.Name.Trim());
-                cmd.Add("@type", c.Type);
-                cmd.Add("@contact", c.Contact);
-                cmd.Add("@phone", c.Phone);
-                cmd.Add("@en", c.Enabled ? 1 : 0);
-                cmd.Add("@id", c.Id);
-            }, c.Id == 0, "单位");
-    }
-
-    public (bool Ok, string Message) DeleteCompany(long id) =>
-        ExecDelete("t_company", id, "单位");
 
     // ==================== 通用执行 ====================
 

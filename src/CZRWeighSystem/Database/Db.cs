@@ -210,24 +210,6 @@ public static class Db
         );
         CREATE INDEX IF NOT EXISTS idx_audit_record ON t_record_audit(record_id);
 
-        CREATE TABLE IF NOT EXISTS t_goods (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            name        TEXT NOT NULL UNIQUE,
-            spec        TEXT,
-            unit        TEXT,
-            deduct_rate REAL,
-            enabled     INTEGER NOT NULL DEFAULT 1
-        );
-
-        CREATE TABLE IF NOT EXISTS t_company (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            name        TEXT NOT NULL,
-            type        TEXT NOT NULL DEFAULT '收货',
-            contact     TEXT,
-            phone       TEXT,
-            enabled     INTEGER NOT NULL DEFAULT 1
-        );
-
         CREATE TABLE IF NOT EXISTS t_custom_field (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             name        TEXT NOT NULL UNIQUE,
@@ -298,24 +280,6 @@ public static class Db
             new_value  NVARCHAR(200),
             operator   NVARCHAR(20),
             time       NVARCHAR(20)
-        );
-        IF OBJECT_ID(N't_goods', N'U') IS NULL
-        CREATE TABLE t_goods (
-            id          BIGINT IDENTITY(1,1) PRIMARY KEY,
-            name        NVARCHAR(50) NOT NULL UNIQUE,
-            spec        NVARCHAR(50),
-            unit        NVARCHAR(20),
-            deduct_rate FLOAT,
-            enabled     BIT NOT NULL DEFAULT 1
-        );
-        IF OBJECT_ID(N't_company', N'U') IS NULL
-        CREATE TABLE t_company (
-            id          BIGINT IDENTITY(1,1) PRIMARY KEY,
-            name        NVARCHAR(100) NOT NULL,
-            type        NVARCHAR(10) NOT NULL DEFAULT N'收货',
-            contact     NVARCHAR(30),
-            phone       NVARCHAR(20),
-            enabled     BIT NOT NULL DEFAULT 1
         );
         IF OBJECT_ID(N't_custom_field', N'U') IS NULL
         CREATE TABLE t_custom_field (
