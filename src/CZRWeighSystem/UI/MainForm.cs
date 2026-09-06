@@ -21,13 +21,9 @@ public class MainForm : Form
     private Label _lblNet = null!;           // 净重
     private readonly List<GroupBox> _weightBoxes = [];   // 毛/皮/净三栏（随窗口铺开）
     private TextBox _txtVehicle = null!;     // 车号（弹窗软键盘选择，只读）
-    private TextBox _txtGoods = null!;       // 货物
-    private TextBox _txtSender = null!;      // 发货单位
-    private TextBox _txtReceiver = null!;    // 收货单位
-    private TextBox _txtSpec = null!;        // 规格
-    private TextBox _txtBatch = null!;       // 批次
-    private TextBox _txtRemark = null!;      // 备注
     private TextBox _txtDeduct = null!;      // 扣重
+    private TextBox _txtGoods = null!;       // 货物
+    private TextBox _txtRemark = null!;      // 备注
     private TextBox _txtOperator = null!;    // 司磅员
     private Label _lblTareHint = null!;      // 车号档案默认皮重提示
     private Button _btnVehicle = null!;      // 选择车牌按钮
@@ -462,47 +458,33 @@ public class MainForm : Form
         panel.Controls.Add(L($"扣重({_cfg.Unit})：", rx, Row(0) + 3));
         _txtDeduct = NewTextBox(rInX, Row(0), rInW);
 
-        // ---- 行2：货物 ｜ 规格 ----
+        // ---- 行2：货物 ｜ 司磅员 ----
         panel.Controls.Add(L("货物：", lx, Row(1) + 3));
         _txtGoods = NewTextBox(lInX, Row(1), lInW);
-        panel.Controls.Add(L("规格：", rx, Row(1) + 3));
-        _txtSpec = NewTextBox(rInX, Row(1), rInW);
-
-        // ---- 行3：发货单位 ｜ 收货单位 ----
-        panel.Controls.Add(L("发货单位：", lx, Row(2) + 3));
-        _txtSender = NewTextBox(lInX, Row(2), lInW);
-        panel.Controls.Add(L("收货单位：", rx, Row(2) + 3));
-        _txtReceiver = NewTextBox(rInX, Row(2), rInW);
-
-        // ---- 行4：批次 ｜ 司磅员 ----
-        panel.Controls.Add(L("批次：", lx, Row(3) + 3));
-        _txtBatch = NewTextBox(lInX, Row(3), lInW);
-        panel.Controls.Add(L("司磅员：", rx, Row(3) + 3));
-        _txtOperator = NewTextBox(rInX, Row(3), rInW);
+        panel.Controls.Add(L("司磅员：", rx, Row(1) + 3));
+        _txtOperator = NewTextBox(rInX, Row(1), rInW);
         _txtOperator.Text = AppSession.DisplayName;   // 司磅员=当前登录用户，自动记录
         _txtOperator.ReadOnly = true;                  // 不允许手工修改
 
-        // ---- 行5：备注 ｜ 车号相关提示（默认皮重/待配对）----
-        panel.Controls.Add(L("备注：", lx, Row(4) + 3));
-        _txtRemark = NewTextBox(lInX, Row(4), lInW);
+        // ---- 行3：备注 ｜ 车号相关提示（待配对）----
+        panel.Controls.Add(L("备注：", lx, Row(2) + 3));
+        _txtRemark = NewTextBox(lInX, Row(2), lInW);
         _lblTareHint = new Label
         {
             Text = "",
             AutoSize = true,
-            Location = new Point(rInX, Row(4) + 4),
+            Location = new Point(rInX, Row(2) + 4),
             ForeColor = Color.FromArgb(0, 102, 204),
         };
 
         panel.Controls.AddRange(new Control[] {
             _txtVehicle, btnVehicle, _txtDeduct,
-            _txtGoods, _txtSpec, _txtSender, _txtReceiver,
-            _txtBatch, _txtOperator, _txtRemark, _lblTareHint,
+            _txtGoods, _txtOperator, _txtRemark, _lblTareHint,
         });
 
         // 回车键流转录入（对应 PRD F2-05）：
-        // 扣重→货物→规格→发货单位→收货单位→批次→备注→保存（智能判断一次/二次磅）
-        Control[] flow = { _txtDeduct, _txtGoods, _txtSpec, _txtSender,
-                           _txtReceiver, _txtBatch, _txtRemark };
+        // 扣重→货物→备注→保存（智能判断一次/二次磅）
+        Control[] flow = { _txtDeduct, _txtGoods, _txtRemark };
         for (int i = 0; i < flow.Length; i++)
         {
             int idx = i;
@@ -518,9 +500,9 @@ public class MainForm : Form
             };
         }
 
-        // 自定义字段（自定义表单）：从第 6 行起，延续两列对称布局
+        // 自定义字段（自定义表单）：从第 4 行起，延续两列对称布局
         var fields = _fieldRepo.GetAll(enabledOnly: true);
-        int row = 5;
+        int row = 3;
         for (int i = 0; i < fields.Count; i++)
         {
             var def = fields[i];
@@ -552,7 +534,7 @@ public class MainForm : Form
 
         // 布局参数随录入面板高度顺移：按钮行、列表高度、采集列表区
         // （采集列表区底边保持 790 不变，行数越多越矮，最少保 140）
-        int rowsUsed = fields.Count > 0 ? row : 5;
+        int rowsUsed = fields.Count > 0 ? row : 3;
         _inputPanelH = Row(rowsUsed - 1) + 44;
         _buttonsY = 225 + _inputPanelH + 30;
         _gridH = _buttonsY + 60 - 225;
@@ -814,8 +796,8 @@ public class MainForm : Form
             $"车号：{_txtVehicle.Text}  重量：{weightText}")) return;
 
         var (ok, msg, firstRecord) = _manager.SaveFirstWeigh(
-            _txtVehicle.Text, _txtGoods.Text, _txtSender.Text, _txtReceiver.Text,
-            _txtSpec.Text, _txtBatch.Text, _txtRemark.Text,
+            _txtVehicle.Text, _txtGoods.Text, null, null,
+            null, null, _txtRemark.Text,
             deduct, _txtOperator.Text, ext);
 
         MessageBox.Show(msg, ok ? "成功" : "提示",
@@ -963,10 +945,6 @@ public class MainForm : Form
         _txtVehicle.Clear();
         _txtDeduct.Clear();
         _txtGoods.Clear();
-        _txtSpec.Clear();
-        _txtSender.Clear();
-        _txtReceiver.Clear();
-        _txtBatch.Clear();
         _txtRemark.Clear();
         foreach (var (_, input) in _customInputs)
         {
