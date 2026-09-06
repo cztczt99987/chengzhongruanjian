@@ -75,17 +75,17 @@ public class VehiclePadDialog : Form
         };
         Controls.Add(tabs);
 
-        // 每页放一个流式布局面板；AutoScroll 兜底，高 DPI 极端缩放时也不丢按键
-        TabPage Page(string title, out FlowLayoutPanel flow)
+        // 每页一个标签页；省份页放流式面板，字母/数字页由下方分栏 GroupBox 自行填充
+        TabPage Page(string title)
         {
             var page = new TabPage(title) { Padding = new Padding(8) };
-            flow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true };
-            page.Controls.Add(flow);
             tabs.TabPages.Add(page);
             return page;
         }
-        var pageProvince = Page("省份简称", out var flowProvince);
-        var pageAlnum = Page("字母 / 数字", out _);
+        var pageProvince = Page("省份简称");
+        var flowProvince = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true };
+        pageProvince.Controls.Add(flowProvince);
+        var pageAlnum = Page("字母 / 数字");
 
         // 字母 / 数字页分栏：左侧字母、右侧数字与特殊标识，分区排列方便查找
         FlowLayoutPanel FlowIn(GroupBox box)
