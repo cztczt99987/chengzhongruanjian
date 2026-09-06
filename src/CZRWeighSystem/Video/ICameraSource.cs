@@ -4,7 +4,7 @@ namespace CZRWeighSystem.Video;
 /// 单路摄像头抽象接口（对应 PRD 5.7 视频监控与抓拍）。
 /// 实现类：
 ///   SimulatedCameraSource —— 模拟画面（开发调试用）
-///   RtspCameraSource      —— 真实网络摄像头（V1.1 后续接入 LibVLCSharp/FFmpeg）
+///   RtspCameraSource      —— 真实网络摄像头（LibVLCSharp 解码 FLV/HLS/RTMP/RTSP）
 /// </summary>
 public interface ICameraSource : IDisposable
 {

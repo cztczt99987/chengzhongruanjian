@@ -28,7 +28,7 @@ public class CameraManager : IDisposable
         {
             string name = $"CAM{i + 1}";
             ICameraSource source = i < rtspUrls.Length && rtspUrls[i].Length > 0
-                ? new RtspCameraSource(name, rtspUrls[i])   // 真实摄像头（待接入 SDK 后可用）
+                ? new RtspCameraSource(name, rtspUrls[i])   // 真实摄像头（FLV/HLS/RTMP/RTSP 地址）
                 : new SimulatedCameraSource(name);          // 模拟画面
             source.Start();
             _sources.Add(source);

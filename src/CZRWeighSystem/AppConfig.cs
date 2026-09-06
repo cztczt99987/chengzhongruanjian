@@ -87,9 +87,10 @@ public class AppConfig
     public int CameraCount { get; set; } = 4;
 
     /// <summary>
-    /// 各路 RTSP 地址（分号分隔；留空或不足的路使用模拟画面源）。
-    /// 例：rtsp://admin:pwd@192.168.1.64:554/Streaming/Channels/101;rtsp://admin:pwd@192.168.1.65:554/...
-    /// 真实画面需接入 LibVLCSharp/FFmpeg 解码 SDK（见 RtspCameraSource 注释）。
+    /// 各路取流地址（分号分隔；留空或不足的路使用模拟画面源）。
+    /// 支持慧眼智巡/萤石平台"快速集成"生成的 HTTP-FLV / HLS(m3u8) / RTMP 地址，
+    /// 或摄像头本机 RTSP 地址（rtsp://admin:pwd@192.168.1.64:554/...）。
+    /// 第 N 个地址对应 CAM N 路。
     /// </summary>
     public string CameraRtspUrls { get; set; } = "";
 

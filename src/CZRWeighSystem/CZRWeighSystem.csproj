@@ -12,6 +12,8 @@
     <AssemblyName>CZRWeighSystem</AssemblyName>
     <!-- 生成中文资源，保证界面中文正常 -->
     <SatelliteResourceLanguages>zh-Hans</SatelliteResourceLanguages>
+    <!-- x64 进程：VLC 原生解码库（libvlc/win-x64）要求位次匹配 -->
+    <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
 
   <ItemGroup>
@@ -23,6 +25,10 @@
     <PackageReference Include="System.IO.Ports" Version="8.0.0" />
     <!-- 二维码生成（磅单模板二维码元素用，MIT 协议） -->
     <PackageReference Include="QRCoder" Version="1.8.0" />
+    <!-- 视频流解码播放（萤石/慧眼智巡平台 FLV、HLS、RTMP、RTSP 通用，LGPL-2.1） -->
+    <PackageReference Include="LibVLCSharp" Version="3.10.1" />
+    <!-- VLC 原生内核（自动复制到输出目录 libvlc\win-x64，MPL-2.0） -->
+    <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.23.1" />
   </ItemGroup>
 
   <ItemGroup>
