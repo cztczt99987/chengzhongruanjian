@@ -59,6 +59,9 @@ public class TemplateDesignerForm : Form
         MinimumSize = new Size(1000, 640);
 
         _canvas = new Canvas(this);
+        // Fill 画布必须最先加入：WinForms 停靠按加入逆序处理，后加入的 Top/Bottom/Left/Right
+        // 优先占位，画布才能拿到真正的剩余区域（否则 0×0 不可见，点击元素无任何反应）
+        Controls.Add(_canvas);
 
         BuildToolbar();
         BuildSide();
@@ -244,7 +247,6 @@ public class TemplateDesignerForm : Form
         var rightHolder = new Panel { Dock = DockStyle.Right, Width = 260 };
         rightHolder.Controls.Add(_grid);
 
-        Controls.Add(_canvas);          // 中间（填充剩余）
         Controls.Add(leftHolder);
         Controls.Add(rightHolder);
     }
@@ -592,6 +594,7 @@ public class TemplateDesignerForm : Form
         public Canvas(TemplateDesignerForm owner)
         {
             _owner = owner;
+            Dock = DockStyle.Fill;               // 中间画布填充剩余区域
             DoubleBuffered = true;
             BackColor = Color.FromArgb(96, 96, 96);
             Cursor = Cursors.Cross;
