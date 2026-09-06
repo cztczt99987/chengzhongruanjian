@@ -159,13 +159,6 @@ internal static class Program
         new DatabaseSettingsDialog(),
         new PrintSettingsDialog(),
         new TemplateDesignerForm(),
-        new RecordEditDialog(new WeighRecord
-        {
-            SerialNo = "TEST-01-0001", VehicleNo = "A12345",
-            GrossKg = 30000, TareKg = 10000, NetKg = 20000,
-            SenderCompany = "供货商A", ReceiverCompany = "收货商B", DeductKg = 100,
-            Goods = "煤炭", Status = "已完成",
-        }),
         new VoidReasonDialog("TEST-01-0001"),
         new CaptureViewForm("TEST-01-0001",
             [Path.Combine(Path.GetTempPath(), "dpi_verify_cap.jpg")]),

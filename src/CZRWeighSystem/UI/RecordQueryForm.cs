@@ -274,23 +274,14 @@ public class RecordQueryForm : Form
         Controls.Add(btnBatchPrint);
         Controls.Add(btnExportPdf);
 
-        // 管理员专属：修改 / 作废 / 留痕（对应 PRD F3-03、F3-04）
+        // 管理员专属：作废 / 留痕（对应 PRD F3-04）。
+        // 记录不可修改：称重数据一经保存即固化，错误记录通过"作废 + 重新过磅"修正
         if (_canManage)
         {
-            var btnEdit = new Button
-            {
-                Text = "修改记录",
-                Location = new Point(20, 608),
-                Size = new Size(110, 36),
-                BackColor = Color.FromArgb(0, 122, 204),
-                ForeColor = Color.White,
-                FlatStyle = FlatStyle.Flat,
-                Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
-            };
             var btnVoid = new Button
             {
                 Text = "作废记录",
-                Location = new Point(140, 608),
+                Location = new Point(20, 608),
                 Size = new Size(110, 36),
                 BackColor = Color.FromArgb(200, 60, 60),
                 ForeColor = Color.White,
@@ -300,15 +291,13 @@ public class RecordQueryForm : Form
             var btnAudit = new Button
             {
                 Text = "查看留痕",
-                Location = new Point(260, 608),
+                Location = new Point(140, 608),
                 Size = new Size(110, 36),
                 FlatStyle = FlatStyle.Flat,
                 Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
             };
-            btnEdit.Click += (_, _) => EditRecord();
             btnVoid.Click += (_, _) => VoidRecord();
             btnAudit.Click += (_, _) => ShowAudits();
-            Controls.Add(btnEdit);
             Controls.Add(btnVoid);
             Controls.Add(btnAudit);
         }
@@ -377,33 +366,6 @@ public class RecordQueryForm : Form
                  + (errors.Count > 5 ? "\n……" : "");
         MessageBox.Show(msg, "导出完成", MessageBoxButtons.OK,
             errors.Count > 0 ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
-    }
-
-    /// <summary>修改选中记录（管理员，逐字段留痕，对应 PRD F3-03）。</summary>
-    private void EditRecord()
-    {
-        var r = SelectedRecord;
-        if (r == null)
-        {
-            MessageBox.Show("请先选择一条记录", "提示",
-                MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
-        }
-        if (r.Status == "已作废")
-        {
-            MessageBox.Show("已作废记录不能修改", "提示",
-                MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
-        }
-
-        using var dlg = new RecordEditDialog(r);
-        if (dlg.ShowDialog(this) != DialogResult.OK || dlg.Result == null) return;
-
-        var (ok, msg) = _auditRepo.UpdateRecord(
-            r.Id, dlg.Result, Core.AppSession.DisplayName);
-        MessageBox.Show(msg, ok ? "成功" : "提示",
-            MessageBoxButtons.OK, ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
-        if (ok) DoQuery();
     }
 
     /// <summary>作废选中记录（管理员，原因留痕，对应 PRD F3-04）。</summary>

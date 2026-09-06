@@ -5,8 +5,8 @@ using CZRWeighSystem.Utils;
 namespace CZRWeighSystem.Database;
 
 /// <summary>
-/// 称重记录作废与修改留痕（对应 PRD F3-03/F3-04）。
-/// 修改与作废均写入 t_record_audit，留痕只增不删；
+/// 称重记录作废留痕（对应 PRD F3-04）。
+/// 记录不可修改；作废写入 t_record_audit，留痕只增不删；
 /// 全程数据库事务保证"更新记录+写留痕"的原子性。
 /// 双数据库兼容（SQLite / SQL Server）。
 /// </summary>
@@ -58,138 +58,6 @@ public class RecordAuditRepository
     }
 
     /// <summary>
-    /// 修改记录（管理员操作）：逐字段比对生成留痕；
-    /// 毛重/皮重变化时自动重算净重（净重=|毛-皮|）并留痕。
-    /// </summary>
-    public (bool Ok, string Message) UpdateRecord(long recordId, RecordEditValues v, string operatorName)
-    {
-        using var conn = Db.CreateConnection();
-        using var tx = conn.BeginTransaction();
-        try
-        {
-            var old = GetById(conn, recordId);
-            if (old == null) return (false, "记录不存在");
-            if (old.Status == "已作废") return (false, "已作废记录不能修改");
-
-            var now = DateTime.Now;
-            int auditCount = 0;
-
-            // ---- 文本字段比对 ----
-            void CheckText(string field, string label, string? oldVal, string? newVal)
-            {
-                newVal = string.IsNullOrWhiteSpace(newVal) ? null : newVal.Trim();
-                if ((oldVal ?? "") == (newVal ?? "")) return;
-                UpdateField(conn, tx, recordId, field, newVal);
-                InsertAudit(conn, tx, new RecordAudit
-                {
-                    RecordId = recordId, Action = "修改", Field = label,
-                    OldValue = oldVal, NewValue = newVal,
-                    Operator = operatorName, Time = now,
-                });
-                auditCount++;
-            }
-
-            CheckText("vehicle_no", "车号", old.VehicleNo, v.VehicleNo);
-            CheckText("goods", "货物", old.Goods, v.Goods);
-            CheckText("sender_company", "发货单位", old.SenderCompany, v.SenderCompany);
-            CheckText("receiver_company", "收货单位", old.ReceiverCompany, v.ReceiverCompany);
-            CheckText("spec", "规格", old.Spec, v.Spec);
-            CheckText("batch_no", "批次", old.BatchNo, v.BatchNo);
-            CheckText("remark", "备注", old.Remark, v.Remark);
-
-            // ---- 自定义字段比对（值存 ext_json，逐字段留痕）----
-            var oldExt = old.ParseExt();
-            var newExt = v.Ext ?? [];
-            var merged = new Dictionary<string, string>(oldExt);
-            bool extDirty = false;
-            foreach (var (name, val) in newExt)
-            {
-                string nv = val.Trim();
-                oldExt.TryGetValue(name, out string? ov);
-                if ((ov ?? "") == nv) continue;
-                if (nv.Length == 0) merged.Remove(name); else merged[name] = nv;
-                InsertAudit(conn, tx, new RecordAudit
-                {
-                    RecordId = recordId, Action = "修改", Field = name,
-                    OldValue = ov, NewValue = nv.Length == 0 ? null : nv,
-                    Operator = operatorName, Time = now,
-                });
-                auditCount++;
-                extDirty = true;
-            }
-            foreach (var name in oldExt.Keys.Where(k => !newExt.ContainsKey(k)).ToList())
-            {
-                merged.Remove(name);
-                InsertAudit(conn, tx, new RecordAudit
-                {
-                    RecordId = recordId, Action = "修改", Field = name,
-                    OldValue = oldExt[name], NewValue = null,
-                    Operator = operatorName, Time = now,
-                });
-                auditCount++;
-                extDirty = true;
-            }
-            if (extDirty)
-                UpdateField(conn, tx, recordId, "ext_json", WeighRecord.ExtToJson(merged));
-
-            // ---- 重量字段比对（改毛/皮自动重算净重）----
-            double oldGross = old.GrossKg ?? 0, oldTare = old.TareKg ?? 0;
-            if (Math.Abs(v.GrossKg - oldGross) > 0.001)
-            {
-                UpdateField(conn, tx, recordId, "gross_kg", v.GrossKg);
-                InsertAudit(conn, tx, new RecordAudit
-                {
-                    RecordId = recordId, Action = "修改", Field = "毛重",
-                    OldValue = oldGross.ToString(), NewValue = v.GrossKg.ToString(),
-                    Operator = operatorName, Time = now,
-                });
-                auditCount++;
-            }
-            if (Math.Abs(v.TareKg - oldTare) > 0.001)
-            {
-                UpdateField(conn, tx, recordId, "tare_kg", v.TareKg);
-                InsertAudit(conn, tx, new RecordAudit
-                {
-                    RecordId = recordId, Action = "修改", Field = "皮重",
-                    OldValue = oldTare.ToString(), NewValue = v.TareKg.ToString(),
-                    Operator = operatorName, Time = now,
-                });
-                auditCount++;
-            }
-
-            // 净重跟随重算（有任一重量修改时）
-            if (Math.Abs(v.GrossKg - oldGross) > 0.001 || Math.Abs(v.TareKg - oldTare) > 0.001)
-            {
-                double net = Math.Abs(v.GrossKg - v.TareKg);
-                UpdateField(conn, tx, recordId, "net_kg", net);
-                InsertAudit(conn, tx, new RecordAudit
-                {
-                    RecordId = recordId, Action = "修改", Field = "净重",
-                    OldValue = old.NetKg?.ToString(), NewValue = net.ToString(),
-                    Operator = operatorName, Time = now,
-                });
-                auditCount++;
-            }
-
-            if (auditCount == 0)
-            {
-                tx.Rollback();
-                return (false, "没有需要修改的内容");
-            }
-
-            tx.Commit();
-            Log.Info($"记录修改：recordId={recordId} 共 {auditCount} 处变更，操作人：{operatorName}");
-            return (true, $"修改成功（{auditCount} 处变更已留痕）");
-        }
-        catch (Exception ex)
-        {
-            tx.Rollback();
-            Log.Error("修改记录失败", ex);
-            return (false, "修改失败：" + ex.Message);
-        }
-    }
-
-    /// <summary>
     /// 查询某条记录的全部留痕（按时间正序）。
     /// </summary>
     public List<RecordAudit> GetAudits(long recordId)
@@ -232,18 +100,6 @@ public class RecordAuditRepository
         cmd.Add("@id", id);
         using var reader = cmd.ExecuteReader();
         return reader.Read() ? MapRecord(reader) : null;
-    }
-
-    /// <summary>更新单字段。</summary>
-    private static void UpdateField(DbConnection conn, DbTransaction tx,
-        long id, string field, object? value)
-    {
-        using var cmd = conn.CreateCommand();
-        cmd.Transaction = tx;
-        cmd.CommandText = $"UPDATE t_weigh_record SET {field}=@v WHERE id=@id";
-        cmd.Add("@v", value);
-        cmd.Add("@id", id);
-        cmd.ExecuteNonQuery();
     }
 
     /// <summary>写留痕。</summary>
@@ -302,28 +158,4 @@ public class RecordAuditRepository
         int i = r.GetOrdinal(col);
         return r.IsDBNull(i) ? null : Convert.ToDouble(r.GetValue(i));
     }
-}
-
-/// <summary>
-/// 记录修改的可编辑字段值（供 UpdateRecord 使用）。
-/// </summary>
-public class RecordEditValues
-{
-    public string VehicleNo { get; set; } = "";
-    public string? Goods { get; set; }
-    /// <summary>发货单位（原"单位"拆分）</summary>
-    public string? SenderCompany { get; set; }
-    /// <summary>收货单位（原"单位"拆分）</summary>
-    public string? ReceiverCompany { get; set; }
-    public string? Spec { get; set; }
-    public string? BatchNo { get; set; }
-    public string? Remark { get; set; }
-    /// <summary>毛重（千克）</summary>
-    public double GrossKg { get; set; }
-    /// <summary>皮重（千克）</summary>
-    public double TareKg { get; set; }
-    /// <summary>扣重（千克），null = 不修改</summary>
-    public double? DeductKg { get; set; }
-    /// <summary>自定义字段值（null = 不修改扩展字段）</summary>
-    public Dictionary<string, string>? Ext { get; set; }
 }
