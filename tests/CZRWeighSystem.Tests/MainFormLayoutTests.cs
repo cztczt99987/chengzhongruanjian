@@ -67,4 +67,16 @@ public class MainFormLayoutTests
         Assert.Equal("流水号", s.FirstColumnHeader);
         Assert.Equal("状态", s.LastColumnHeader);
     }
+
+    [Theory]
+    [InlineData(1, 1, 1)]   // 1 路：独占整块区域
+    [InlineData(2, 1, 2)]   // 2 路：纵向两行（窄长区域单路画面更宽）
+    [InlineData(3, 2, 2)]   // 3 路起：两列网格，避免每格过扁
+    [InlineData(4, 2, 2)]
+    [InlineData(5, 2, 3)]
+    public void 视频网格分布_按路数自适应(int count, int expectCols, int expectRows)
+    {
+        var (cols, rows) = MainForm.VideoGridSize(count);
+        Assert.Equal((expectCols, expectRows), (cols, rows));
+    }
 }

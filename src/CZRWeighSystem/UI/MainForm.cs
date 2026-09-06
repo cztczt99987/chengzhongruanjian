@@ -200,7 +200,7 @@ public class MainForm : Form
 
     /// <summary>
     /// 按当前摄像头源重建首页内嵌预览（启动及摄像头设置保存后调用）。
-    /// 多路画面纵向平铺；与保存抓拍、大屏弹窗共享同一批取流源。
+    /// 网格分布见 VideoGridSize；与保存抓拍、大屏弹窗共享同一批取流源。
     /// </summary>
     private void FillVideoPanel()
     {
@@ -221,14 +221,15 @@ public class MainForm : Form
         }
 
         var sources = _cameras.Sources;
-        int rows = sources.Count;
+        var (cols, rows) = VideoGridSize(sources.Count);
         var table = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 1,
+            ColumnCount = cols,
             RowCount = rows,
         };
-        table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        for (int i = 0; i < cols; i++)
+            table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / cols));
         for (int i = 0; i < rows; i++)
             table.RowStyles.Add(new RowStyle(SizeType.Percent, 100f / rows));
 
@@ -253,6 +254,13 @@ public class MainForm : Form
                 ForeColor = Color.White,
             });
 
+            // 双击画面打开大屏监控弹窗（多路小画面时查看细节）
+            pic.DoubleClick += (_, _) =>
+            {
+                using var f = new VideoMonitorForm(_cameras);
+                f.ShowDialog(this);
+            };
+
             // 帧刷新：可能来自非 UI 线程，转发到 UI 线程（窗体关闭后不再处理）
             void OnFrame()
             {
@@ -275,6 +283,13 @@ public class MainForm : Form
         }
         _videoPanel.Controls.Add(table);
     }
+
+    /// <summary>
+    /// 首页视频区网格分布：1~2 路纵向铺满（窄长区域单路画面更宽），
+    /// 3 路起改为两列网格，避免每格过扁看不清画面。
+    /// </summary>
+    internal static (int Cols, int Rows) VideoGridSize(int count) =>
+        count <= 2 ? (1, Math.Max(1, count)) : (2, (count + 1) / 2);
 
     /// <summary>解绑全部帧事件（摄像头重建或窗体关闭时调用，避免向旧控件推帧）。</summary>
     private void UnbindVideo()
