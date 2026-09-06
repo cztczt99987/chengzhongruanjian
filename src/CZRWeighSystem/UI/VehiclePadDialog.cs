@@ -64,6 +64,9 @@ public class VehiclePadDialog : Form
         btnBack.Click += (_, _) => { if (_lblPreview.Text.Length > 0) _lblPreview.Text = _lblPreview.Text[..^1]; };
         btnClear.Click += (_, _) => _lblPreview.Text = "";
         top.Controls.AddRange([btnBack, btnClear]);
+        // 预览标签 Dock=Fill 且先加入（z-order 最前），会把按钮盖住；把按钮置顶保证可见可点
+        btnBack.BringToFront();
+        btnClear.BringToFront();
         Controls.Add(top);
 
         // ---- 键区：分类标签页（省份 / 字母·数字），每页按键都完整可见 ----
