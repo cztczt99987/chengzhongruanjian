@@ -570,7 +570,7 @@ public class MainForm : Form
         if (f.ShowDialog(this) == DialogResult.OK && f.ResultVehicle != null)
         {
             _txtVehicle.Text = f.ResultVehicle;
-            OnVehicleLeft();     // 匹配车辆档案默认皮重 / 未完成配对提示
+            OnVehicleLeft();     // 未完成配对提示
         }
     }
 
@@ -591,7 +591,7 @@ public class MainForm : Form
         return cbo;
     }
 
-    /// <summary>车号输入完成后：匹配车辆档案显示默认皮重；同车号已有未完成记录则提示配对。</summary>
+    /// <summary>车号输入完成后：同车号已有未完成记录则提示配对（车辆档案已移除，不再带出默认皮重）。</summary>
     private void OnVehicleLeft()
     {
         string no = _txtVehicle.Text.Trim();
@@ -600,22 +600,13 @@ public class MainForm : Form
         // 未完成列表配对提示（自动模式下保存按钮已自动选中该记录）
         var hit = _manager.GetUnfinishedList()
             .FirstOrDefault(r => r.VehicleNo == no);
-        if (hit != null)
-        {
-            _lblTareHint.Text = $"[{no}] 有未完成的二次磅，保存时将自动配对结算";
-            return;
-        }
-
-        // 车辆档案带出默认皮重（对应 PRD F9-01，为快捷结算做数据准备）
-        var v = _baseRepo.GetVehicles().FirstOrDefault(x => x.VehicleNo == no);
-        _lblTareHint.Text = v?.DefaultTareKg.HasValue == true
-            ? $"档案默认皮重：{_cfg.FormatWeight(v.DefaultTareKg.Value)}"
+        _lblTareHint.Text = hit != null
+            ? $"[{no}] 有未完成的二次磅，保存时将自动配对结算"
             : "";
     }
 
-    // ---------- 基础档案数据源（车号档案默认皮重提示用）----------
+    // ---------- 基础档案数据源 ----------
 
-    private readonly Database.BaseInfoRepository _baseRepo = new();
     private readonly Database.CustomFieldRepository _fieldRepo = new();
 
     // ===== 自定义字段（自定义表单）=====

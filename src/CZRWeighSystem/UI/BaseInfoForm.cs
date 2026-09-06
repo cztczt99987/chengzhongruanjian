@@ -5,18 +5,15 @@ namespace CZRWeighSystem.UI;
 
 /// <summary>
 /// 基础资料管理窗体（对应 PRD 5.9 / F9-01~F9-05）。
-/// 两个页签：车辆档案 / 自定义字段（货物、收发货单位已随首页下拉框取消而移除）。
+/// 仅剩自定义字段一个页签（车辆/货物/收发货单位档案已随首页改为直接输入而移除）。
 /// 编辑方式：表格内直接编辑（单元格结束编辑即保存），
 /// 新增走对话框，删除需确认。导入 Excel 后续迭代（F9-05）。
 /// </summary>
 public class BaseInfoForm : Form
 {
-    private readonly BaseInfoRepository _repo = new();
     private readonly CustomFieldRepository _fieldRepo = new();
-    private readonly AppConfig _cfg = AppConfig.Current;
 
     private TabControl _tabs = null!;
-    private DataGridView _gridVehicle = null!;
     private DataGridView _gridField = null!;
 
     /// <summary>内部刷新标记：CellEndEdit 保存后重载时防递归</summary>
@@ -44,18 +41,13 @@ public class BaseInfoForm : Form
             Dock = DockStyle.Fill,
         };
 
-        var tabVehicle = new TabPage("车辆档案");
-        _gridVehicle = BuildGrid();
-        tabVehicle.Controls.Add(BuildGridPanel(_gridVehicle, "新增车辆", AddVehicle, DeleteVehicleRow));
-        _tabs.TabPages.Add(tabVehicle);
-
         var tabField = new TabPage("自定义字段");
         _gridField = BuildGrid();
         tabField.Controls.Add(BuildGridPanel(_gridField, "新增字段", AddField, DeleteFieldRow));
         _tabs.TabPages.Add(tabField);
 
         // 页签切换时刷新对应表格
-        _tabs.SelectedIndexChanged += (_, _) => ReloadCurrent();
+        _tabs.SelectedIndexChanged += (_, _) => ReloadAll();
 
         Controls.Add(_tabs);
     }
@@ -132,20 +124,7 @@ public class BaseInfoForm : Form
     private void ReloadAll()
     {
         _loading = true;
-        LoadVehicleGrid();
         LoadFieldGrid();
-        _loading = false;
-    }
-
-    private void ReloadCurrent()
-    {
-        if (_loading) return;
-        _loading = true;
-        switch (_tabs.SelectedIndex)
-        {
-            case 0: LoadVehicleGrid(); break;
-            case 1: LoadFieldGrid(); break;
-        }
         _loading = false;
     }
 
@@ -158,38 +137,6 @@ public class BaseInfoForm : Form
             ReadOnly = readOnly,
             FillWeight = 20,
         };
-    }
-
-    private void LoadVehicleGrid()
-    {
-        var g = _gridVehicle;
-        g.CellEndEdit -= VehicleCellSaved;
-        g.Columns.Clear();
-        g.Rows.Clear();
-        g.Columns.Add(Col("VehicleNo", "车号"));
-        g.Columns.Add(Col("Tare", $"默认皮重({_cfg.Unit})"));
-        g.Columns.Add(Col("Owner", "车主"));
-        g.Columns.Add(Col("Phone", "联系电话"));
-        g.Columns.Add(Col("Enabled", "启用"));
-        foreach (var v in _repo.GetVehicles())
-        {
-            int i = g.Rows.Add(v.VehicleNo, Num(v.DefaultTareKg), v.Owner ?? "", v.Phone ?? "", v.Enabled ? "是" : "否");
-            g.Rows[i].Tag = v;
-        }
-        g.CellEndEdit += VehicleCellSaved;
-    }
-
-    private void VehicleCellSaved(object? sender, DataGridViewCellEventArgs e)
-    {
-        if (_loading || e.RowIndex < 0) return;
-        if (_gridVehicle.Rows[e.RowIndex].Tag is not Vehicle v) return;
-        var row = _gridVehicle.Rows[e.RowIndex];
-        v.VehicleNo = row.Cells[0].Value?.ToString() ?? "";
-        v.DefaultTareKg = ParseKg(row.Cells[1].Value?.ToString());
-        v.Owner = NullIfEmpty(row.Cells[2].Value?.ToString());
-        v.Phone = NullIfEmpty(row.Cells[3].Value?.ToString());
-        v.Enabled = (row.Cells[4].Value?.ToString()) != "否";
-        ShowResult(_repo.SaveVehicle(v));
     }
 
     // ================== 自定义字段页签 ==================
@@ -243,24 +190,12 @@ public class BaseInfoForm : Form
         string? name = Prompt("请输入字段名（如：合同号）：", "新增自定义字段");
         if (string.IsNullOrWhiteSpace(name)) return;
         ShowResult(_fieldRepo.Save(new CustomField { Name = name }));
-        ReloadCurrent();
+        ReloadAll();
     }
 
     private void DeleteFieldRow() => DeleteRow(_gridField, id => _fieldRepo.Delete(id));
 
-    // ================== 新增（对话框录入）==================
-
-    private void AddVehicle()
-    {
-        string? no = Prompt("请输入车号：", "新增车辆");
-        if (string.IsNullOrWhiteSpace(no)) return;
-        ShowResult(_repo.SaveVehicle(new Vehicle { VehicleNo = no }));
-        ReloadCurrent();
-    }
-
     // ================== 删除 ==================
-
-    private void DeleteVehicleRow() => DeleteRow(_gridVehicle, id => _repo.DeleteVehicle(id));
 
     private void DeleteRow(DataGridView grid, Func<long, (bool, string)> delete)
     {
@@ -272,7 +207,7 @@ public class BaseInfoForm : Form
         var (ok, msg) = delete(id);
         MessageBox.Show(msg, ok ? "成功" : "提示",
             MessageBoxButtons.OK, ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
-        ReloadCurrent();
+        ReloadAll();
     }
 
     // ================== 通用小工具 ==================
@@ -300,17 +235,6 @@ public class BaseInfoForm : Form
     }
 
     private static string? NullIfEmpty(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
-
-    /// <summary>显示单位 → 千克。</summary>
-    private double? ParseKg(string? text)
-    {
-        if (!double.TryParse(text, out double v)) return null;
-        return _cfg.Unit == "t" ? v * 1000 : v;
-    }
-
-    /// <summary>千克 → 显示单位文本。</summary>
-    private string Num(double? kg) =>
-        kg.HasValue ? (_cfg.Unit == "t" ? kg.Value / 1000.0 : kg.Value).ToString("0.###") : "";
 
     private void ShowResult((bool Ok, string Message) r)
     {

@@ -174,15 +174,6 @@ public static class Db
         CREATE INDEX IF NOT EXISTS idx_record_vehicle ON t_weigh_record(vehicle_no, status);
         CREATE INDEX IF NOT EXISTS idx_record_first_time ON t_weigh_record(first_time);
 
-        CREATE TABLE IF NOT EXISTS t_vehicle (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            vehicle_no  TEXT NOT NULL UNIQUE,
-            default_tare_kg REAL,
-            owner       TEXT,
-            phone       TEXT,
-            enabled     INTEGER NOT NULL DEFAULT 1
-        );
-
         CREATE TABLE IF NOT EXISTS t_user (
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
             username      TEXT NOT NULL UNIQUE,
@@ -245,15 +236,6 @@ public static class Db
             status       NVARCHAR(10) NOT NULL DEFAULT N'未完成',
             is_manual    BIT NOT NULL DEFAULT 0,
             created_at   NVARCHAR(20)
-        );
-        IF OBJECT_ID(N't_vehicle', N'U') IS NULL
-        CREATE TABLE t_vehicle (
-            id          BIGINT IDENTITY(1,1) PRIMARY KEY,
-            vehicle_no  NVARCHAR(20) NOT NULL UNIQUE,
-            default_tare_kg FLOAT,
-            owner       NVARCHAR(50),
-            phone       NVARCHAR(20),
-            enabled     BIT NOT NULL DEFAULT 1
         );
         IF OBJECT_ID(N't_user', N'U') IS NULL
         CREATE TABLE t_user (
