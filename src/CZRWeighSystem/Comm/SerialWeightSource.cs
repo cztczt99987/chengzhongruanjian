@@ -5,9 +5,13 @@ namespace CZRWeighSystem.Comm;
 /// <summary>
 /// 串口称重数据源（对应 PRD 5.6 / F6-01、F6-02）。
 /// 数据帧解析采用"通用连续帧"方式：帧头 0x02，帧尾 0x0D(CR) 或 0x03(ETX)，
-/// 中间内容剔除小数点、正负号与状态字符后按数字解析。
-/// 已实测兼容仪表帧：02 2B 30...31 42 03（STX+'+'+8位数字+状态字符+ETX，12 字节定长）。
-/// 注意：各仪表具体位定义请以说明书为准；多协议支持（策略模式）按 F6-02 后续扩展。
+/// 中间内容剔除小数点、正负号与状态字符后按数字解析（重量数字位上限见 WeightFieldDigits）。
+/// 已实测仪表帧（12 字节定长，2026-09-06 抓帧）：
+///   60kg：02 2B 30 30 30 30 36 30 30 31 44 03（STX+'+'+8位重量数字+状态'D'+ETX）
+///   80kg：02 2B 30 30 30 30 38 30 30 31 33 03（STX+'+'+8位重量数字+状态'3'+ETX）
+/// 注意：状态/校验字节可能恰好落在 '0'-'9' 字符范围（如 80kg 帧的 0x33='3'），
+/// 解析时不得拼入重量数字，否则 80.01 会被误解析为 800.13→800。
+/// 各仪表具体位定义请以说明书为准；多协议支持（策略模式）按 F6-02 后续扩展。
 /// </summary>
 public class SerialWeightSource : IWeightSource
 {
@@ -23,6 +27,7 @@ public class SerialWeightSource : IWeightSource
 
     private SerialPort? _port;
     private readonly List<byte> _buffer = new();   // 接收缓冲（粘包/半包处理）
+    private double? _lastLoggedKg;                 // 上次记入日志的解析值（仅值变化时记帧日志）
 
     public SerialWeightSource(string portName, int baudRate, int dataBits,
                               Parity parity, StopBits stopBits, int decimalDigits = 0)
@@ -109,10 +114,18 @@ public class SerialWeightSource : IWeightSource
     {
         while (_buffer.Count > 0)
         {
-            // 1. 定位帧头
+            // 1. 定位帧头（丢弃帧头前的噪声字节并记录，用于排查线路干扰/错位）
             if (_buffer[0] != 0x02)
             {
-                _buffer.RemoveAt(0);
+                int junk = _buffer.IndexOf((byte)0x02);
+                if (junk < 0)
+                {
+                    Log.Info($"串口噪声：丢弃无帧头字节 {Hex(_buffer.ToArray())}");
+                    _buffer.Clear();
+                    return;
+                }
+                Log.Info($"串口噪声：丢弃帧头前 {junk} 字节 {Hex(_buffer.Take(junk).ToArray())}");
+                _buffer.RemoveRange(0, junk);
                 continue;
             }
 
@@ -123,15 +136,25 @@ public class SerialWeightSource : IWeightSource
             if (end < 0)
             {
                 // 半包：数据不足一帧，等待下次接收（超长保护）
-                if (_buffer.Count > 64) _buffer.Clear();
+                if (_buffer.Count > 64)
+                {
+                    Log.Info($"串口异常：半包超 {_buffer.Count} 字节无帧尾，丢弃 {Hex(_buffer.ToArray())}");
+                    _buffer.Clear();
+                }
                 return;
             }
 
-            // 3. 提取帧体并解析
+            // 3. 提取帧体并解析（记录原始帧 hex 与解析结果，用于区分设备数据问题/软件解析问题）
             byte[] frame = _buffer.GetRange(0, end).ToArray();
             _buffer.RemoveRange(0, end + 1);
 
-            double? kg = ParseFrame(frame);
+            double? kg = ParseFrame(frame, _decimalDigits);
+            if (kg != _lastLoggedKg)
+            {
+                // 仅在数值变化/无效时记日志：连续帧每秒 10+ 条，全量记录会刷爆日志文件
+                Log.Info($"串口原始帧：{Hex(frame, withStx: true)} 帧尾={(end == endEtx ? "ETX" : "CR")} → {(kg.HasValue ? kg.Value + " kg" : "无效帧")}");
+                _lastLoggedKg = kg;
+            }
             if (kg.HasValue)
                 WeightReceived?.Invoke(new WeightData(kg.Value, DateTime.Now));
         }
@@ -142,10 +165,14 @@ public class SerialWeightSource : IWeightSource
     /// 帧内显式小数点按其位置还原；无小数点时按隐含小数位还原
     /// （帧数字 = 实际重量 × 10^隐含小数位，当前仪表为 2 位）。
     /// 返回 null 表示本帧无效。
+    /// 重量数字最多截取 WeightFieldDigits 位：帧尾部的状态/校验字节可能是数字字符
+    /// （实测 80kg 帧为 0x33='3'），若拼入会把 80.01 误解析成 800.13→800。
     /// </summary>
-    private double? ParseFrame(byte[] frame)
+    internal const int WeightFieldDigits = 8;
+
+    internal static double? ParseFrame(byte[] frame, int decimalDigits)
     {
-        // frame[0]=0x02 帧头，frame[1] 通常为状态字节
+        // frame[0]=0x02 帧头，frame[1] 通常为符号/状态字节
         var sb = new System.Text.StringBuilder();
         int dotPos = -1;
 
@@ -154,7 +181,7 @@ public class SerialWeightSource : IWeightSource
             char c = (char)frame[i];
             if (c >= '0' && c <= '9')
             {
-                sb.Append(c);
+                if (sb.Length < WeightFieldDigits) sb.Append(c);
             }
             else if (c == '.' && dotPos < 0)
             {
@@ -168,8 +195,16 @@ public class SerialWeightSource : IWeightSource
 
         // 仪表显示值通常为千克；显式小数点优先，否则按隐含小数位还原。
         // 本秤最小分度值 1kg：还原后四舍五入取整，显示/稳定判定/保存/磅单打印全链路无小数
-        int digits = dotPos >= 0 ? sb.Length - dotPos : _decimalDigits;
+        int digits = dotPos >= 0 ? sb.Length - dotPos : decimalDigits;
         return Math.Round(raw / Math.Pow(10, digits), MidpointRounding.AwayFromZero);
+    }
+
+    /// <summary>字节序列转 hex 字符串（诊断日志用）。</summary>
+    private static string Hex(IEnumerable<byte> bytes, bool withStx = false)
+    {
+        // withStx 时在开头补上帧头 0x02（帧体提取时已移除，补全便于还原完整线路数据）
+        var list = withStx ? new byte[] { 0x02 }.Concat(bytes) : bytes;
+        return string.Join(" ", list.Select(b => b.ToString("X2")));
     }
 
     public void Dispose() => Stop();
