@@ -346,16 +346,13 @@ public class TemplateLibraryForm : Form
                 return;
             }
 
-            // 纸张等比适配面板
-            int idx = Math.Max(0, Array.FindIndex(
-                PoundTicketPrinter.Papers, p => p.Key == Template.PaperKey));
-            var paper = PoundTicketPrinter.Papers[idx];
+            // 纸张等比适配面板（纸张存储单位 0.01 英寸，统一换算毫米后按元素坐标渲染）
+            var (mmW, mmH) = PoundTicketPrinter.PaperSizeMm(Template.PaperKey);
             const int border = 12;
-            float scale = Math.Min((Width - border * 2) / (float)paper.W * 100,
-                                   (Height - border * 2) / (float)paper.H * 100);
-            if (scale <= 0) return;
-            float pxPerMm = scale / 100f;
-            var rect = new RectangleF(border, border, paper.W * pxPerMm, paper.H * pxPerMm);
+            float pxPerMm = Math.Min((Width - border * 2) / mmW,
+                                     (Height - border * 2) / mmH);
+            if (pxPerMm <= 0) return;
+            var rect = new RectangleF(border, border, mmW * pxPerMm, mmH * pxPerMm);
 
             using (var white = new SolidBrush(Color.White))
                 g.FillRectangle(white, rect);

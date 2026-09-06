@@ -18,6 +18,14 @@ public static class PoundTicketPrinter
         ("241x93", "针打 241×93mm", 949, 366),
     ];
 
+    /// <summary>纸张毫米尺寸（Papers 存储为 0.01 英寸，模板元素坐标为毫米；未知 key 回退第一项）。</summary>
+    public static (float W, float H) PaperSizeMm(string key)
+    {
+        int idx = Array.FindIndex(Papers, p => p.Key == key);
+        var paper = idx >= 0 ? Papers[idx] : Papers[0];
+        return (paper.W / 100f * 25.4f, paper.H / 100f * 25.4f);
+    }
+
     // ===== 磅单字段目录（key 用于打印设置显隐配置，对应 F5-02）=====
 
     /// <summary>基础信息行（值为 null 时显示"-"）</summary>

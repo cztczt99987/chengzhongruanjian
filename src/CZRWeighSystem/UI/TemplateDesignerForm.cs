@@ -615,33 +615,29 @@ public class TemplateDesignerForm : Form
         /// <summary>把画布像素坐标换算为纸面毫米坐标（供拖放落点使用）。</summary>
         public PointF PointToMm(Point p) => ToMm(p);
 
-        /// <summary>画布宽度变化时重算缩放比例（页面完整显示）。</summary>
+        /// <summary>画布宽度变化时重算缩放比例（页面完整显示；_scale = 每毫米像素数）。</summary>
         private void FitScale()
         {
-            int idx = Math.Max(0, Array.FindIndex(
-                PoundTicketPrinter.Papers, p => p.Key == _owner._tpl.PaperKey));
-            var paper = PoundTicketPrinter.Papers[idx];
-            _scale = Math.Min((Width - Border * 2) / (float)paper.W * 100,
-                              (Height - Border * 2) / (float)paper.H * 100);
+            var (mmW, mmH) = PoundTicketPrinter.PaperSizeMm(_owner._tpl.PaperKey);
+            _scale = Math.Min((Width - Border * 2) / mmW,
+                              (Height - Border * 2) / mmH);
             if (_scale <= 0) _scale = 1f;
             Invalidate();
         }
 
         private RectangleF PaperRectPx()
         {
-            int idx = Math.Max(0, Array.FindIndex(
-                PoundTicketPrinter.Papers, p => p.Key == _owner._tpl.PaperKey));
-            var paper = PoundTicketPrinter.Papers[idx];
-            return new RectangleF(Border, Border, paper.W / 100f * _scale, paper.H / 100f * _scale);
+            var (mmW, mmH) = PoundTicketPrinter.PaperSizeMm(_owner._tpl.PaperKey);
+            return new RectangleF(Border, Border, mmW * _scale, mmH * _scale);
         }
 
         private PointF ToMm(Point p) => new(
-            (p.X - PaperRectPx().X) / _scale * 100f / 100f * 1f,
+            (p.X - PaperRectPx().X) / _scale,
             (p.Y - PaperRectPx().Y) / _scale);
 
         private PointF ToPx(float xMm, float yMm) => new(
-            PaperRectPx().X + xMm / 100f * _scale,
-            PaperRectPx().Y + yMm / 100f * _scale);
+            PaperRectPx().X + xMm * _scale,
+            PaperRectPx().Y + yMm * _scale);
 
         protected override void OnPaint(PaintEventArgs e)
         {
@@ -781,8 +777,8 @@ public class TemplateDesignerForm : Form
             {
                 var el = _owner._tpl.Elements[i];
                 var rect = new RectangleF(
-                    PaperRectPx().X + el.X / 100f * _scale, PaperRectPx().Y + el.Y / 100f * _scale,
-                    Math.Max(6, el.W / 100f * _scale), Math.Max(6, el.H / 100f * _scale));
+                    PaperRectPx().X + el.X * _scale, PaperRectPx().Y + el.Y * _scale,
+                    Math.Max(6, el.W * _scale), Math.Max(6, el.H * _scale));
                 if (rect.Contains(p)) return el;
             }
             return null;
