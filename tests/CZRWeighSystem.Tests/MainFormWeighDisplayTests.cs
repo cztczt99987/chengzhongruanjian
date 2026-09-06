@@ -110,4 +110,43 @@ public class MainFormWeighDisplayTests
             Assert.Equal("保存", save.Text);
         });
     }
+
+    [Fact]
+    public void 换输另一车号后_旧选中记录失效_保存按钮复位为一次磅()
+    {
+        RunOnSta(form =>
+        {
+            // 选中未完成记录并录入匹配车号 → 二次磅模式
+            var grid = Fld<DataGridView>(form, "_grid");
+            int i = grid.Rows.Add("测C12345", "60000 kg", "09-06 10:00", "煤");
+            grid.Rows[i].Tag = new WeighRecord { VehicleNo = "测C12345", GrossKg = 60000, Status = "未完成" };
+            grid.CurrentCell = grid.Rows[i].Cells[0];
+            Fld<TextBox>(form, "_txtVehicle").Text = "测C12345";
+            var save = Fld<Button>(form, "_btnSave");
+            Assert.Equal("保存二次磅（结算）", save.Text);   // 前置
+
+            // 换输另一辆车（无未完成记录）→ 旧选中必须失效，按钮回到一次磅模式，
+            // 否则新车永远只能走二次磅分支（2026-09-06 用户反馈）
+            Fld<TextBox>(form, "_txtVehicle").Text = "测D67890";
+            Assert.Null(grid.CurrentRow);
+            Assert.Equal("保存", save.Text);
+        });
+    }
+
+    [Fact]
+    public void 换输回匹配车号时_自动重新选中未完成记录并回到二次磅模式()
+    {
+        RunOnSta(form =>
+        {
+            var grid = Fld<DataGridView>(form, "_grid");
+            int i = grid.Rows.Add("测E12345", "60000 kg", "09-06 10:00", "煤");
+            grid.Rows[i].Tag = new WeighRecord { VehicleNo = "测E12345", GrossKg = 60000, Status = "未完成" };
+            Fld<TextBox>(form, "_txtVehicle").Text = "测E12345";
+
+            // 自动配对：录入匹配车号应选中该记录并进入二次磅模式
+            var save = Fld<Button>(form, "_btnSave");
+            Assert.Equal("保存二次磅（结算）", save.Text);
+            Assert.True(ReferenceEquals(grid.CurrentRow?.Tag, grid.Rows[i].Tag));
+        });
+    }
 }

@@ -589,7 +589,7 @@ public class MainForm : Form
         panel.Controls.Add(L("车号：", lx, Row(0) + 3));
         _txtVehicle = NewTextBox(lInX, Row(0), 240);
         _txtVehicle.ReadOnly = true;
-        _txtVehicle.TextChanged += (_, _) => UpdateSaveButton();   // 车号变化（选牌/清空）实时刷新保存按钮模式
+        _txtVehicle.TextChanged += OnVehicleTextChanged;   // 车号变化（选牌/清空）：失效旧选中并刷新保存按钮模式
         var btnVehicle = _btnVehicle = new Button
         {
             Text = "选择车牌", Location = new Point(lInX + 248, Row(0) - 1), Size = new Size(92, 30),
@@ -871,6 +871,19 @@ public class MainForm : Form
     /// <summary>本次是否为二次磅：已选中未完成记录、或录入车号能匹配到未完成记录。</summary>
     private bool IsSecondWeigh =>
         _grid.CurrentRow?.Tag is WeighRecord || AutoSelectByVehicle();
+
+    /// <summary>车号输入变化：先失效与新车号不符的旧选中，再刷新保存按钮模式。
+    /// 否则换输另一辆车时，列表里残留的选中行（CurrentRow）会把按钮一直钉在"二次磅"，
+    /// 导致新车无法录一次磅。</summary>
+    private void OnVehicleTextChanged(object? sender, EventArgs e)
+    {
+        if (_grid.CurrentRow?.Tag is WeighRecord r &&
+            r.VehicleNo != _txtVehicle.Text.Trim())
+        {
+            _grid.CurrentCell = null;   // 同时清除当前行与选中（ClearSelection 不重置 CurrentRow）
+        }
+        UpdateSaveButton();   // 内部按新车号自动重新配对：匹配到未完成记录则重新进入二次磅模式
+    }
 
     /// <summary>按自动判断刷新保存按钮文字与颜色，操作员一眼可见本次将执行的操作。</summary>
     private void UpdateSaveButton()
