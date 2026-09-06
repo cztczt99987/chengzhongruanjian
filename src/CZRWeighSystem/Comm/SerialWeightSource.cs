@@ -113,17 +113,15 @@ public class SerialWeightSource : IWeightSource
     {
         while (_buffer.Count > 0)
         {
-            // 1. 定位帧头（丢弃帧头前的噪声字节并记录，用于排查线路干扰/错位）
+            // 1. 定位帧头：丢弃帧头前的噪声字节（线路干扰/半包错位）
             if (_buffer[0] != 0x02)
             {
                 int junk = _buffer.IndexOf((byte)0x02);
                 if (junk < 0)
                 {
-                    Log.Info($"串口噪声：丢弃无帧头字节 {Hex(_buffer.ToArray())}");
                     _buffer.Clear();
                     return;
                 }
-                Log.Info($"串口噪声：丢弃帧头前 {junk} 字节 {Hex(_buffer.Take(junk).ToArray())}");
                 _buffer.RemoveRange(0, junk);
                 continue;
             }
@@ -135,21 +133,15 @@ public class SerialWeightSource : IWeightSource
             if (end < 0)
             {
                 // 半包：数据不足一帧，等待下次接收（超长保护）
-                if (_buffer.Count > 64)
-                {
-                    Log.Info($"串口异常：半包超 {_buffer.Count} 字节无帧尾，丢弃 {Hex(_buffer.ToArray())}");
-                    _buffer.Clear();
-                }
+                if (_buffer.Count > 64) _buffer.Clear();
                 return;
             }
 
-            // 3. 提取帧体并解析（正常收数不记日志，仅无效帧/噪声/半包等故障记录）
+            // 3. 提取帧体并解析
             byte[] frame = _buffer.GetRange(0, end).ToArray();
             _buffer.RemoveRange(0, end + 1);
 
             double? kg = ParseFrame(frame, _decimalDigits);
-            if (!kg.HasValue)
-                Log.Info($"串口无效帧：{Hex(frame, withStx: true)} 帧尾={(end == endEtx ? "ETX" : "CR")}");
             if (kg.HasValue)
                 WeightReceived?.Invoke(new WeightData(kg.Value, DateTime.Now));
         }
@@ -192,14 +184,6 @@ public class SerialWeightSource : IWeightSource
         // 本秤最小分度值 1kg：还原后四舍五入取整，显示/稳定判定/保存/磅单打印全链路无小数
         int digits = dotPos >= 0 ? sb.Length - dotPos : decimalDigits;
         return Math.Round(raw / Math.Pow(10, digits), MidpointRounding.AwayFromZero);
-    }
-
-    /// <summary>字节序列转 hex 字符串（诊断日志用）。</summary>
-    private static string Hex(IEnumerable<byte> bytes, bool withStx = false)
-    {
-        // withStx 时在开头补上帧头 0x02（帧体提取时已移除，补全便于还原完整线路数据）
-        var list = withStx ? new byte[] { 0x02 }.Concat(bytes) : bytes;
-        return string.Join(" ", list.Select(b => b.ToString("X2")));
     }
 
     public void Dispose() => Stop();
