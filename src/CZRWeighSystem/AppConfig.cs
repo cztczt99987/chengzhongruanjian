@@ -63,6 +63,12 @@ public class AppConfig
     /// <summary>一次磅超过多少小时未完成二次磅则列表标红提醒（4.1 规则 3）</summary>
     public double UnfinishedWarnHours { get; set; } = 24;
 
+    /// <summary>
+    /// 首次称重有效天数：一次磅保存后超过该天数仍未配对二次磅，系统自动删除该记录；
+    /// 删除后同车号再次称重按首次称重处理（不再提示配对）。0 = 不启用自动删除。
+    /// </summary>
+    public int FirstWeighExpireDays { get; set; } = 0;
+
     // ===== 数据备份（对应 PRD F11-02 定时自动备份）=====
     /// <summary>是否启用每日自动备份（备份到 exe 目录 backups/）</summary>
     public bool AutoBackupEnabled { get; set; } = true;

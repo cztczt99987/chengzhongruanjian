@@ -114,6 +114,22 @@ public class WeighRecordRepository
     }
 
     /// <summary>
+    /// 删除超过天数仍未配对（未完成）的一次磅记录（首次称重超期自动清理）。
+    /// first_time 为 yyyy-MM-dd HH:mm:ss 文本，字符串比较与时间比较等价（双方言通用）。
+    /// 返回删除条数；days <= 0 时不清理。
+    /// </summary>
+    public int DeleteExpiredUnfinished(int days)
+    {
+        if (days <= 0) return 0;
+
+        using var conn = Db.CreateConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "DELETE FROM t_weigh_record WHERE status='未完成' AND first_time <= @cutoff";
+        cmd.Add("@cutoff", DateTime.Now.AddDays(-days).ToString("yyyy-MM-dd HH:mm:ss"));
+        return cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>
     /// 多条件组合查询称重记录（对应 PRD F3-06）。
     /// </summary>
     public List<WeighRecord> Query(DateTime? from, DateTime? to, string vehicleNo,

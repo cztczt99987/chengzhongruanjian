@@ -139,6 +139,22 @@ public class WeighManager : IDisposable
     public List<WeighRecord> GetUnfinishedList() => _repo.GetUnfinishedList();
 
     /// <summary>
+    /// 清理超期未配对的一次磅（管理员在「称重设置」中配置 FirstWeighExpireDays > 0 时启用）。
+    /// 超期记录删除后，同车号再次称重按首次称重处理（不再提示配对）。
+    /// 返回删除条数。
+    /// </summary>
+    public int CleanupExpiredUnfinished()
+    {
+        int days = AppConfig.Current.FirstWeighExpireDays;
+        if (days <= 0) return 0;
+
+        int n = _repo.DeleteExpiredUnfinished(days);
+        if (n > 0)
+            Log.Info($"已自动删除 {n} 条超过 {days} 天未配对的一次磅记录");
+        return n;
+    }
+
+    /// <summary>
     /// 解析保存用重量：取当前稳定重量（扣重在录入区单独填写，不影响称量值）。
     /// </summary>
     private (double? Weight, string? Error) ResolveWeight()

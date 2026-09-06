@@ -425,7 +425,7 @@ public class MainForm : Form
         var panel = new GroupBox
         {
             Text = "信息录入（回车跳转下一项）",
-            Location = new Point(20, 275),
+            Location = new Point(20, 225),
             // 只固定宽度、不向右拉伸：右侧 x=915 起是未完成列表，
             // 若用 Right 锚定，窗口拉宽时录入区会向右生长盖住列表
             Size = new Size(880, 190),
@@ -548,8 +548,8 @@ public class MainForm : Form
         // （采集列表区底边保持 790 不变，行数越多越矮，最少保 140）
         int rowsUsed = fields.Count > 0 ? row : 5;
         _inputPanelH = Row(rowsUsed - 1) + 44;
-        _buttonsY = 275 + _inputPanelH + 30;
-        _gridH = _buttonsY + 60 - 275;
+        _buttonsY = 225 + _inputPanelH + 30;
+        _gridH = _buttonsY + 60 - 225;
         _videoY = _buttonsY + 75;
         _videoH = Math.Max(140, 790 - _videoY);
 
@@ -617,10 +617,10 @@ public class MainForm : Form
 
     // 录入区高度随自定义字段行数变化，按钮/列表/采集列表区随之顺移
     private int _inputPanelH = 190;     // 录入面板高度
-    private int _buttonsY = 495;        // 操作按钮行 y
+    private int _buttonsY = 445;        // 操作按钮行 y
     private int _gridH = 280;           // 未完成列表高度（底边与按钮行对齐）
-    private int _videoY = 570;          // 采集信息列表区 y
-    private int _videoH = 220;          // 采集信息列表区高度（底边保持 790）
+    private int _videoY = 520;          // 采集信息列表区 y
+    private int _videoH = 270;          // 采集信息列表区高度（底边保持 790）
 
     // ---------- 未完成列表 ----------
     private void BuildGrid()
