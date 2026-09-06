@@ -114,7 +114,8 @@ public class TemplateLibraryForm : Form
             b.Click += (_, _) => onClick();
             buttons.Controls.Add(b);
         }
-        AddBtn("应用启用", ApplyEnable, primary: true);
+        AddBtn("新建", NewTemplate, primary: true);
+        AddBtn("应用启用", ApplyEnable);
         AddBtn("打印预览", PreviewTemplate);
         AddBtn("在设计器打开", OpenInDesigner);
         AddBtn("复制", CopyTemplate);
