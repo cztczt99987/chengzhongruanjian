@@ -657,7 +657,7 @@ public class MainForm : Form
     private void BuildButtons()
     {
         int y = _buttonsY;
-        _btnSave = NewButton("保存一次磅", 20, y, 260, 60, Color.FromArgb(0, 122, 204));
+        _btnSave = NewButton("保存", 20, y, 260, 60, Color.FromArgb(0, 122, 204));
 
         // 模式切换（默认自动判断：车号匹配到未完成记录 → 二次磅，否则一次磅）
         var lblMode = new Label { Text = "模式：", AutoSize = true, Location = new Point(300, y + 20) };
@@ -780,7 +780,7 @@ public class MainForm : Form
         }
         else
         {
-            _btnSave.Text = "保存一次磅";
+            _btnSave.Text = "保存";
             _btnSave.BackColor = Color.FromArgb(0, 122, 204);
         }
     }
