@@ -11,6 +11,21 @@ internal static class Program
         // WinForms 应用初始化（.NET 8 推荐方式：含 DPI/默认字体设置）
         ApplicationConfiguration.Initialize();
 
+        // 全局异常处理：未处理异常写入日志并提示，避免闪退无迹可查
+        Application.ThreadException += (_, e) =>
+        {
+            Log.Error("界面线程未处理异常", e.Exception);
+            MessageBox.Show("操作出现异常：" + e.Exception.Message + "\r\n详情见 logs 目录当日日志。",
+                "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        };
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+        {
+            var ex = e.ExceptionObject as Exception
+                ?? new Exception(e.ExceptionObject?.ToString() ?? "未知异常");
+            Log.Error("未处理异常" + (e.IsTerminating ? "（程序终止）" : ""), ex);
+        };
+
         // 加载配置文件（exe 目录下 config.json，不存在则生成默认配置）
         AppConfig.Load();
         Log.Info("程序启动");

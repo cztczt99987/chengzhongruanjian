@@ -63,7 +63,6 @@ public class CameraSettingsDialog : Form
             Location = new Point(25, 82),
             Size = new Size(650, 250),
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom,
-            DataSource = _table,
             AllowUserToAddRows = false,
             AllowUserToDeleteRows = false,
             RowHeadersVisible = false,
@@ -72,8 +71,18 @@ public class CameraSettingsDialog : Form
             BorderStyle = BorderStyle.FixedSingle,
             EditMode = DataGridViewEditMode.EditOnEnter,
         };
-        _grid.Columns["名称"].FillWeight = 22;
-        _grid.Columns["取流地址"].FillWeight = 78;
+        // 手动建列（不依赖自动生成：控件未入窗体前绑定 DataSource 不会立即生成列，
+        // 直接按列名取 Columns 会拿到 null —— 真实崩溃案例）
+        _grid.AutoGenerateColumns = false;
+        _grid.Columns.Add(new DataGridViewTextBoxColumn
+        {
+            Name = "名称", HeaderText = "名称", DataPropertyName = "名称", FillWeight = 22,
+        });
+        _grid.Columns.Add(new DataGridViewTextBoxColumn
+        {
+            Name = "取流地址", HeaderText = "取流地址", DataPropertyName = "取流地址", FillWeight = 78,
+        });
+        _grid.DataSource = _table;
         Controls.Add(_grid);
 
         // ---- 列表操作按钮 ----
