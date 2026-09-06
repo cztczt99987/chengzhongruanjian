@@ -27,7 +27,6 @@ public class SerialWeightSource : IWeightSource
 
     private SerialPort? _port;
     private readonly List<byte> _buffer = new();   // 接收缓冲（粘包/半包处理）
-    private double? _lastLoggedKg;                 // 上次记入日志的解析值（仅值变化时记帧日志）
 
     public SerialWeightSource(string portName, int baudRate, int dataBits,
                               Parity parity, StopBits stopBits, int decimalDigits = 0)
@@ -144,17 +143,13 @@ public class SerialWeightSource : IWeightSource
                 return;
             }
 
-            // 3. 提取帧体并解析（记录原始帧 hex 与解析结果，用于区分设备数据问题/软件解析问题）
+            // 3. 提取帧体并解析（正常收数不记日志，仅无效帧/噪声/半包等故障记录）
             byte[] frame = _buffer.GetRange(0, end).ToArray();
             _buffer.RemoveRange(0, end + 1);
 
             double? kg = ParseFrame(frame, _decimalDigits);
-            if (kg != _lastLoggedKg)
-            {
-                // 仅在数值变化/无效时记日志：连续帧每秒 10+ 条，全量记录会刷爆日志文件
-                Log.Info($"串口原始帧：{Hex(frame, withStx: true)} 帧尾={(end == endEtx ? "ETX" : "CR")} → {(kg.HasValue ? kg.Value + " kg" : "无效帧")}");
-                _lastLoggedKg = kg;
-            }
+            if (!kg.HasValue)
+                Log.Info($"串口无效帧：{Hex(frame, withStx: true)} 帧尾={(end == endEtx ? "ETX" : "CR")}");
             if (kg.HasValue)
                 WeightReceived?.Invoke(new WeightData(kg.Value, DateTime.Now));
         }
