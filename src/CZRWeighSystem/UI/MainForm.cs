@@ -625,9 +625,9 @@ public class MainForm : Form
         var panel = new GroupBox
         {
             Text = "一次磅未完成列表（双击行配对）",
-            Location = new Point(915, 275),
-            // 高度与操作按钮行底边对齐（随自定义字段行数顺移）；下方是视频区，
-            // 不能用 Bottom 锚定——窗口变高时列表会向下生长压住视频画面
+            Location = new Point(915, 225),   // 与左侧信息录入区顶边对齐
+            // 高度与操作按钮行底边对齐（随自定义字段行数顺移）；下方是采集信息区，
+            // 不能用 Bottom 锚定——窗口变高时列表会向下生长压住列表画面
             Size = new Size(435, _gridH),
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
         };
