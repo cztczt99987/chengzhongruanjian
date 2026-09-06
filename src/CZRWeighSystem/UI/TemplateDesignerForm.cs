@@ -671,10 +671,10 @@ public class TemplateDesignerForm : Form
                 }
             }
 
-            // 模板元素（示例数据渲染，占位符显示实际值效果）
+            // 模板元素（示例数据渲染，占位符显示实际值效果）；_scale 即每毫米像素数
             var r = TemplateDesignerForm.Sample;
             var cfg = AppConfig.Current;
-            float pxPerMm = _scale / 100f;
+            float pxPerMm = _scale;
             g.TranslateTransform(paper.X, paper.Y);
             TemplateTicketRenderer.Render(_owner._tpl, g, r, cfg, pxPerMm);
             g.ResetTransform();
@@ -684,8 +684,8 @@ public class TemplateDesignerForm : Form
             {
                 var el = Selected;
                 var rect = new RectangleF(
-                    paper.X + el.X / 100f * _scale, paper.Y + el.Y / 100f * _scale,
-                    Math.Max(6, el.W / 100f * _scale), Math.Max(6, el.H / 100f * _scale));
+                    paper.X + el.X * _scale, paper.Y + el.Y * _scale,
+                    Math.Max(6, el.W * _scale), Math.Max(6, el.H * _scale));
                 using var dash = new Pen(Color.OrangeRed, 1) { DashStyle = DashStyle.Dash };
                 g.DrawRectangle(dash, rect.X, rect.Y, rect.Width, rect.Height);
                 var handle = HandleRect(rect);
@@ -768,8 +768,8 @@ public class TemplateDesignerForm : Form
             {
                 var paper = PaperRectPx();
                 var rect = new RectangleF(
-                    paper.X + Selected.X / 100f * _scale, paper.Y + Selected.Y / 100f * _scale,
-                    Math.Max(6, Selected.W / 100f * _scale), Math.Max(6, Selected.H / 100f * _scale));
+                    paper.X + Selected.X * _scale, paper.Y + Selected.Y * _scale,
+                    Math.Max(6, Selected.W * _scale), Math.Max(6, Selected.H * _scale));
                 if (HandleRect(rect).Contains(p))
                 {
                     onHandle = true;
