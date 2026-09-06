@@ -5,7 +5,7 @@ namespace CZRWeighSystem.UI;
 /// <summary>
 /// 称重主界面（对应 PRD 5.2 称重主界面 / 7.1 主界面布局）。
 /// 布局采用纯代码方式构建，包含：重量显示区、信息录入区、
-/// 一次磅未完成列表、操作按钮区、状态栏。
+/// 一次磅未完成列表、操作按钮区、底部采集信息列表 + 视频监控内嵌画面、状态栏。
 /// </summary>
 public class MainForm : Form
 {
@@ -34,11 +34,13 @@ public class MainForm : Form
     private ToolStripStatusLabel _tsslState = null!;
     private ToolStripStatusLabel _tsslTime = null!;
 
-    // ===== 视频监控（预览见菜单「视频监控」弹窗；抓拍由保存称重触发）=====
+    // ===== 视频监控（首页内嵌预览；大屏弹窗见菜单「视频监控」；抓拍由保存称重触发）=====
     // 摄像头设置保存后整体重建，故不可 readonly
     private Video.CameraManager _cameras = new();
+    private GroupBox _videoPanel = null!;                                // 首页右下角内嵌预览区
+    private readonly List<(Video.ICameraSource Src, Action Handler)> _videoBindings = [];
 
-    // ===== 采集信息列表（原视频区位置，展示最近称重记录）=====
+    // ===== 采集信息列表（首页左下角，展示最近称重记录）=====
     private GroupBox _capturePanel = null!;
     private DataGridView _captureGrid = null!;
     private readonly Database.WeighRecordRepository _recordRepo = new();
@@ -60,6 +62,7 @@ public class MainForm : Form
         BuildGrid();
         BuildButtons();
         BuildCapturePanel();
+        BuildVideoPanel();
         BuildStatusBar();
 
         // 订阅业务事件（串口数据来自非 UI 线程，统一转发到 UI 线程）
@@ -78,11 +81,12 @@ public class MainForm : Form
             RefreshCaptureList();
             SetState("就绪", true);
 
-            // 启动摄像头取流（保存称重时自动抓拍用，预览见菜单「视频监控」）
+            // 启动摄像头取流（首页内嵌预览 + 保存称重时自动抓拍用）
             if (_cfg.CameraEnabled)
             {
                 _cameras.Start();
             }
+            FillVideoPanel();   // 摄像头源就绪后绑定首页预览画面（未启用时显示提示）
 
             // 启动时及每 6 小时检查一次自动备份（对应 PRD F11-02）
             Utils.BackupService.AutoBackupIfNeeded();
@@ -100,20 +104,22 @@ public class MainForm : Form
         };
         FormClosing += (_, _) =>
         {
+            UnbindVideo();
             _manager.Dispose();
             _cameras.Dispose();
         };
     }
 
-    // ---------- 采集信息列表面板（原视频监控区位置）----------
+    // ---------- 采集信息列表面板（底部左半栏，与信息录入区对齐）----------
     private void BuildCapturePanel()
     {
         _capturePanel = new GroupBox
         {
             Text = "采集信息（最近称重记录）",
             Location = new Point(20, _videoY),
-            Size = new Size(1330, _videoH),
-            Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+            // 底部右半栏是视频监控区，故只固定 880 宽不向右拉伸
+            Size = new Size(880, _videoH),
+            Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left,
             MinimumSize = new Size(400, 140),
         };
 
@@ -177,12 +183,115 @@ public class MainForm : Form
         return files.Count;
     }
 
+    // ---------- 视频监控面板（底部右半栏，内嵌实时预览；大屏弹窗见菜单「视频监控」）----------
+    private void BuildVideoPanel()
+    {
+        _videoPanel = new GroupBox
+        {
+            Text = "视频监控",
+            Location = new Point(915, _videoY),   // 与未完成列表同列对齐
+            Size = new Size(435, _videoH),
+            Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+            MinimumSize = new Size(280, 140),
+        };
+        FillVideoPanel();   // 构造时摄像头尚未启动，先显示提示；Load 后再填充真实画面
+        Controls.Add(_videoPanel);
+    }
+
+    /// <summary>
+    /// 按当前摄像头源重建首页内嵌预览（启动及摄像头设置保存后调用）。
+    /// 多路画面纵向平铺；与保存抓拍、大屏弹窗共享同一批取流源。
+    /// </summary>
+    private void FillVideoPanel()
+    {
+        UnbindVideo();
+        while (_videoPanel.Controls.Count > 0)
+            _videoPanel.Controls[0].Dispose();
+
+        if (!_cfg.CameraEnabled || _cameras.Sources.Count == 0)
+        {
+            _videoPanel.Controls.Add(new Label
+            {
+                Text = "视频监控未启用或未配置摄像头。\r\n请用管理员账号在菜单「视频 → 摄像头设置」中添加。",
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleCenter,
+                ForeColor = Color.Gray,
+            });
+            return;
+        }
+
+        var sources = _cameras.Sources;
+        int rows = sources.Count;
+        var table = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = rows,
+        };
+        table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        for (int i = 0; i < rows; i++)
+            table.RowStyles.Add(new RowStyle(SizeType.Percent, 100f / rows));
+
+        for (int i = 0; i < sources.Count; i++)
+        {
+            var src = sources[i];
+            var pic = new PictureBox
+            {
+                Dock = DockStyle.Fill,
+                SizeMode = PictureBoxSizeMode.Zoom,
+                BackColor = Color.Black,
+                Margin = new Padding(2),
+            };
+
+            // 摄像头名称角标（覆盖在画面左上角）
+            pic.Controls.Add(new Label
+            {
+                Text = $" {src.Name} ",
+                AutoSize = true,
+                Location = new Point(4, 4),
+                BackColor = Color.FromArgb(120, 0, 0, 0),
+                ForeColor = Color.White,
+            });
+
+            // 帧刷新：可能来自非 UI 线程，转发到 UI 线程（窗体关闭后不再处理）
+            void OnFrame()
+            {
+                try
+                {
+                    if (!IsHandleCreated || IsDisposed) return;
+                    _ = BeginInvoke(() =>
+                    {
+                        if (IsDisposed) return;
+                        pic.Image = src.CurrentFrame;
+                        pic.Refresh();
+                    });
+                }
+                catch (ObjectDisposedException) { /* 窗体关闭瞬间的竞争，忽略 */ }
+            }
+
+            src.PreviewFrameUpdated += OnFrame;
+            _videoBindings.Add((src, (Action)OnFrame));
+            table.Controls.Add(pic);
+        }
+        _videoPanel.Controls.Add(table);
+    }
+
+    /// <summary>解绑全部帧事件（摄像头重建或窗体关闭时调用，避免向旧控件推帧）。</summary>
+    private void UnbindVideo()
+    {
+        foreach (var (src, handler) in _videoBindings)
+            src.PreviewFrameUpdated -= handler;
+        _videoBindings.Clear();
+    }
+
     /// <summary>按最新配置重建摄像头源（摄像头设置保存后调用，立即生效）。</summary>
     private void RestartCameras()
     {
+        UnbindVideo();
         _cameras.Dispose();
         _cameras = new Video.CameraManager();
         if (_cfg.CameraEnabled) _cameras.Start();
+        FillVideoPanel();   // 首页内嵌预览按新源重建
         SetState($"视频监控：{_cfg.Cameras.Count} 路", true);
     }
 
@@ -318,7 +427,7 @@ public class MainForm : Form
             f.ShowDialog(this);
         }));
 
-        // 视频菜单（对应 PRD F7-01：预览改为弹窗）
+        // 视频菜单（对应 PRD F7-01：首页已内嵌预览，此处为大屏弹窗，共享取流源）
         var mVideo = new ToolStripMenuItem("视频(&V)");
         mVideo.DropDownItems.Add(new ToolStripMenuItem("视频监控", null, (_, _) =>
         {
@@ -551,8 +660,8 @@ public class MainForm : Form
         }
         if (fields.Count % 2 == 1) row++;  // 末行单字段独占一行
 
-        // 布局参数随录入面板高度顺移：按钮行、列表高度、采集列表区
-        // （采集列表区底边保持 790 不变，行数越多越矮，最少保 140）
+        // 布局参数随录入面板高度顺移：按钮行、列表高度、底部区域（采集信息 + 视频监控）
+        // （底部区域底边保持 790 不变，行数越多越矮，最少保 140）
         int rowsUsed = fields.Count > 0 ? row : 3;
         _inputPanelH = Row(rowsUsed - 1) + 44;
         _buttonsY = 225 + _inputPanelH + 30;
@@ -613,12 +722,12 @@ public class MainForm : Form
     // ===== 自定义字段（自定义表单）=====
     private readonly List<(CustomField Def, Control Input)> _customInputs = [];
 
-    // 录入区高度随自定义字段行数变化，按钮/列表/采集列表区随之顺移
+    // 录入区高度随自定义字段行数变化，按钮/列表/底部区域随之顺移
     private int _inputPanelH = 190;     // 录入面板高度
     private int _buttonsY = 445;        // 操作按钮行 y
     private int _gridH = 280;           // 未完成列表高度（底边与按钮行对齐）
-    private int _videoY = 520;          // 采集信息列表区 y
-    private int _videoH = 270;          // 采集信息列表区高度（底边保持 790）
+    private int _videoY = 520;          // 底部区域（采集信息 + 视频监控）y
+    private int _videoH = 270;          // 底部区域高度（底边保持 790）
 
     // ---------- 未完成列表 ----------
     private void BuildGrid()
