@@ -29,7 +29,6 @@ public class MainForm : Form
     private Button _btnVehicle = null!;      // 选择车牌按钮
     private DataGridView _grid = null!;      // 未完成一次磅列表
     private Button _btnSave = null!;         // 保存（智能判断一次/二次磅）
-    private ComboBox _cboMode = null!;       // 保存模式：自动判断/一次磅/二次磅
     private StatusStrip _status = null!;
     private ToolStripStatusLabel _tsslSource = null!;
     private ToolStripStatusLabel _tsslState = null!;
@@ -647,26 +646,14 @@ public class MainForm : Form
         int y = _buttonsY;
         _btnSave = NewButton("保存", 20, y, 260, 60, Color.FromArgb(0, 122, 204));
 
-        // 模式切换（默认自动判断：车号匹配到未完成记录 → 二次磅，否则一次磅）
-        var lblMode = new Label { Text = "模式：", AutoSize = true, Location = new Point(300, y + 20) };
-        _cboMode = new ComboBox
-        {
-            DropDownStyle = ComboBoxStyle.DropDownList,
-            Location = new Point(355, y + 16),
-            Size = new Size(130, 28),
-        };
-        _cboMode.Items.AddRange(["自动判断", "一次磅", "二次磅"]);
-        _cboMode.SelectedIndex = 0;
-
-        var btnClear = NewButton("清空录入", 510, y, 120, 60, Color.Gray);
+        // 保存类型全自动判断：车号匹配到未完成记录 → 二次磅结算，否则一次磅
+        // （配对兜底：双击右侧未完成列表行直接结算）
+        var btnClear = NewButton("清空录入", 300, y, 120, 60, Color.Gray);
 
         _btnSave.Click += (_, _) => Save();
-        _cboMode.SelectedIndexChanged += (_, _) => UpdateSaveButton();
         btnClear.Click += (_, _) => ClearInput();
 
         Controls.Add(_btnSave);
-        Controls.Add(lblMode);
-        Controls.Add(_cboMode);
         Controls.Add(btnClear);
     }
 
@@ -717,28 +704,7 @@ public class MainForm : Form
             MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
     }
 
-    // ===== 保存模式（单按钮智能判断 + 手动切换）=====
-
-    private enum SaveMode { First, Second }
-
-    /// <summary>
-    /// 解析本次保存模式：
-    /// 自动判断 → 已选中未完成记录、或录入车号能匹配到未完成记录 → 二次磅，否则一次磅；
-    /// 手动一次/二次 → 强制指定（二次磅时按车号自动选中匹配记录，免去手工点选）。
-    /// </summary>
-    private SaveMode ResolveSaveMode()
-    {
-        switch (_cboMode.SelectedIndex)
-        {
-            case 1: return SaveMode.First;
-            case 2:
-                AutoSelectByVehicle();
-                return SaveMode.Second;
-            default:     // 自动判断
-                if (_grid.CurrentRow?.Tag is WeighRecord) return SaveMode.Second;
-                return AutoSelectByVehicle() ? SaveMode.Second : SaveMode.First;
-        }
-    }
+    // ===== 保存模式（单按钮自动判断：车号匹配到未完成记录 → 二次磅，否则一次磅）=====
 
     /// <summary>按录入车号在未完成列表中查找并选中匹配记录；返回是否命中。</summary>
     private bool AutoSelectByVehicle()
@@ -758,10 +724,14 @@ public class MainForm : Form
         return false;
     }
 
-    /// <summary>按当前模式刷新保存按钮文字与颜色，操作员一眼可见本次将执行的操作。</summary>
+    /// <summary>本次是否为二次磅：已选中未完成记录、或录入车号能匹配到未完成记录。</summary>
+    private bool IsSecondWeigh =>
+        _grid.CurrentRow?.Tag is WeighRecord || AutoSelectByVehicle();
+
+    /// <summary>按自动判断刷新保存按钮文字与颜色，操作员一眼可见本次将执行的操作。</summary>
     private void UpdateSaveButton()
     {
-        if (ResolveSaveMode() == SaveMode.Second)
+        if (IsSecondWeigh)
         {
             _btnSave.Text = "保存二次磅（结算）";
             _btnSave.BackColor = Color.FromArgb(0, 153, 0);
@@ -773,10 +743,10 @@ public class MainForm : Form
         }
     }
 
-    /// <summary>统一保存入口：按模式自动走一次磅或二次磅。</summary>
+    /// <summary>统一保存入口：自动判断走一次磅或二次磅。</summary>
     private void Save()
     {
-        if (ResolveSaveMode() == SaveMode.Second) SaveSecond();
+        if (IsSecondWeigh) SaveSecond();
         else SaveFirst();
     }
 
