@@ -29,12 +29,14 @@ public class TemplateLibraryForm : Form
         Size = new Size(1100, 660);
         MinimumSize = new Size(920, 560);
 
+        // Fill 面板必须最先加入：WinForms 停靠按加入逆序布局，后加入的 Top/Left/Bottom 优先占位，
+        // 预览面板才能拿到真正的剩余区域（否则铺满整个窗体，画纸被列表遮挡）
+        _preview.Dock = DockStyle.Fill;
+        Controls.Add(_preview);
+
         BuildTop();
         BuildList();
         BuildBottom();
-
-        _preview.Dock = DockStyle.Fill;
-        Controls.Add(_preview);
     }
 
     protected override void OnLoad(EventArgs e)
