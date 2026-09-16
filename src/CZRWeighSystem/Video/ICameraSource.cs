@@ -14,6 +14,9 @@ public interface ICameraSource : IDisposable
     /// <summary>当前预览帧（直接绘制用，勿释放；随 PreviewFrameUpdated 更新）</summary>
     Image? CurrentFrame { get; }
 
+    /// <summary>最近一次收到画面的时间（UTC；null 表示从未收到画面，UI 据此判断取流是否异常）</summary>
+    DateTime? LastFrameUtc { get; }
+
     /// <summary>新帧到达（注意：可能来自非 UI 线程）</summary>
     event Action? PreviewFrameUpdated;
 

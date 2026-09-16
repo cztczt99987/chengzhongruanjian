@@ -39,6 +39,10 @@ public class MainForm : Form
     private Video.CameraManager _cameras = new();
     private GroupBox _videoPanel = null!;                                // 首页右下角内嵌预览区
     private readonly List<(Video.ICameraSource Src, Action Handler)> _videoBindings = [];
+    private readonly List<(Video.ICameraSource Src, PictureBox Pic, Label Hint)> _videoTiles = [];
+    private readonly System.Windows.Forms.Timer _videoStallTimer = new() { Interval = 2000 };
+    private DateTime _videoBoundUtc = DateTime.UtcNow;   // 本批画面的绑定时间（判断"从未出过画面"）
+    private static readonly TimeSpan VideoStallTimeout = TimeSpan.FromSeconds(30);
 
     // ===== 采集信息列表（首页左下角，展示最近称重记录）=====
     private GroupBox _capturePanel = null!;
@@ -105,6 +109,7 @@ public class MainForm : Form
         FormClosing += (_, _) =>
         {
             UnbindVideo();
+            _videoStallTimer.Dispose();
             _manager.Dispose();
             _cameras.Dispose();
         };
@@ -195,6 +200,7 @@ public class MainForm : Form
             MinimumSize = new Size(280, 140),
         };
         FillVideoPanel();   // 构造时摄像头尚未启动，先显示提示；Load 后再填充真实画面
+        _videoStallTimer.Tick += (_, _) => CheckVideoStall();   // 定时检查各路是否长时间无画面
         Controls.Add(_videoPanel);
     }
 
@@ -254,6 +260,18 @@ public class MainForm : Form
                 ForeColor = Color.White,
             });
 
+            // 取流异常提示（长时间无画面时由 CheckVideoStall 显示，避免只看到黑屏不知原因）
+            var hint = new Label
+            {
+                Text = "无画面：取流失败或超时\r\n请检查地址是否有效/已过期；萤石摄像头建议改用 RTMP 地址",
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleCenter,
+                BackColor = Color.Black,
+                ForeColor = Color.FromArgb(255, 210, 120),
+                Visible = false,
+            };
+            pic.Controls.Add(hint);
+
             // 双击画面打开大屏监控弹窗（多路小画面时查看细节）
             pic.DoubleClick += (_, _) =>
             {
@@ -271,6 +289,7 @@ public class MainForm : Form
                     {
                         if (IsDisposed) return;
                         pic.Image = src.CurrentFrame;
+                        if (hint.Visible) hint.Visible = false;   // 画面恢复，撤掉异常提示
                         pic.Refresh();
                     });
                 }
@@ -279,10 +298,30 @@ public class MainForm : Form
 
             src.PreviewFrameUpdated += OnFrame;
             _videoBindings.Add((src, (Action)OnFrame));
+            _videoTiles.Add((src, pic, hint));
             table.Controls.Add(pic);
         }
         _videoPanel.Controls.Add(table);
+
+        _videoBoundUtc = DateTime.UtcNow;
+        _videoStallTimer.Start();
     }
+
+    /// <summary>各路画面是否长时间无帧（地址无效/过期/协议不支持时黑屏），显示提示并记录日志。</summary>
+    private void CheckVideoStall()
+    {
+        var now = DateTime.UtcNow;
+        foreach (var (src, _, hint) in _videoTiles)
+        {
+            bool stalled = IsVideoStalled(src.LastFrameUtc, _videoBoundUtc, now, VideoStallTimeout);
+            if (stalled == hint.Visible) continue;
+            hint.Visible = stalled;   // 无画面时显示提示，画面恢复后自动撤掉（原因与重试见 RtspCameraSource 日志）
+        }
+    }
+
+    /// <summary>画面是否已超时无帧（从未收到画面时以绑定时间起算）。</summary>
+    internal static bool IsVideoStalled(DateTime? lastFrameUtc, DateTime boundUtc, DateTime now, TimeSpan timeout)
+        => now - (lastFrameUtc ?? boundUtc) > timeout;
 
     /// <summary>
     /// 首页视频区网格分布：1~2 路纵向铺满（窄长区域单路画面更宽），
@@ -297,6 +336,8 @@ public class MainForm : Form
         foreach (var (src, handler) in _videoBindings)
             src.PreviewFrameUpdated -= handler;
         _videoBindings.Clear();
+        _videoTiles.Clear();
+        _videoStallTimer.Stop();
     }
 
     /// <summary>按最新配置重建摄像头源（摄像头设置保存后调用，立即生效）。</summary>

@@ -11,6 +11,8 @@ public class SimulatedCameraSource : ICameraSource
 
     public Image? CurrentFrame => _frame;
 
+    public DateTime? LastFrameUtc { get; private set; }
+
     public event Action? PreviewFrameUpdated;
 
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 100 };   // 10fps
@@ -55,6 +57,7 @@ public class SimulatedCameraSource : ICameraSource
         _graphics.DrawString(Name, font, text, 12, 10);
         _graphics.DrawString(now.ToString("yyyy-MM-dd HH:mm:ss"), font, text, 12, 42);
 
+        LastFrameUtc = DateTime.UtcNow;
         PreviewFrameUpdated?.Invoke();
     }
 

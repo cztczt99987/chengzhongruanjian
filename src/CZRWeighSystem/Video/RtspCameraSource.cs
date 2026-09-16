@@ -24,7 +24,11 @@ public class RtspCameraSource : ICameraSource
     private MediaPlayer? _player;
     private Media? _media;
     private readonly System.Threading.Timer _retryTimer;
+    private readonly System.Threading.Timer _watchdogTimer;   // 无帧看门狗（事件不触发的失败场景兜底）
     private int _retrying;                       // 防止重试重入
+    private int _stallNotified;                  // 无帧告警是否已记录（每 20 秒阶段只记一次）
+    private DateTime _startedUtc;
+    private volatile bool _running;
     private bool _disposed;
 
     // 前后台双缓冲：仅 VLC 线程写"后台"，前台交替复用（UI 与抓拍读前台）
@@ -35,8 +39,11 @@ public class RtspCameraSource : ICameraSource
     private bool _pixelsPinned;
     private int _width, _height;
     private readonly Stopwatch _displayClock = Stopwatch.StartNew();
+    private DateTime? _lastFrameUtc;             // 最近一次收到画面的时间（UI 判断取流异常用）
 
     public Image? CurrentFrame => _front;
+
+    public DateTime? LastFrameUtc => _lastFrameUtc;
 
     public event Action? PreviewFrameUpdated;
 
@@ -45,6 +52,8 @@ public class RtspCameraSource : ICameraSource
         Name = name;
         _url = url;
         _retryTimer = new System.Threading.Timer(_ => RetryPlay(), null,
+            Timeout.Infinite, Timeout.Infinite);
+        _watchdogTimer = new System.Threading.Timer(_ => CheckAlive(), null,
             Timeout.Infinite, Timeout.Infinite);
     }
 
@@ -64,12 +73,17 @@ public class RtspCameraSource : ICameraSource
             // 必须在 Play 之前设置视频回调（离屏取帧，不依赖窗口）
             _player.SetVideoFormatCallbacks(FormatVideo, CleanupVideo);
             _player.SetVideoCallbacks(LockVideo, UnlockVideo, DisplayVideo);
+            _running = true;
+            _startedUtc = DateTime.UtcNow;
+            Interlocked.Exchange(ref _stallNotified, 0);
             _player.Play();
+            _watchdogTimer.Change(5000, 5000);   // 启动无帧看门狗
 
             Log.Info($"[{Name}] 开始取流：{_url}");
         }
         catch (Exception ex)
         {
+            _running = false;
             Log.Error($"[{Name}] 取流启动失败（请检查地址/网络，及输出目录 libvlc\\win-x64 是否完整）：{_url}", ex);
         }
     }
@@ -78,6 +92,9 @@ public class RtspCameraSource : ICameraSource
     {
         try
         {
+            _running = false;
+            try { _watchdogTimer.Change(Timeout.Infinite, Timeout.Infinite); }
+            catch (ObjectDisposedException) { /* 停止瞬间的竞争，忽略 */ }
             if (_player != null)
             {
                 _player.EncounteredError -= OnPlayerError;
@@ -127,10 +144,23 @@ public class RtspCameraSource : ICameraSource
             {
                 LibVLCSharp.Shared.Core.Initialize();   // 定位输出目录下 libvlc\win-x64 原生库
                 _libVlc = new LibVLC(enableDebugLogs: false, "--no-osd");
+                _libVlc.Log += OnVlcLog;                // 记录 VLC 内部报错原因（如"Failed to open ..."）
                 Log.Info("LibVLC 初始化完成");
             }
             return _libVlc;
         }
+    }
+
+    private static string? _lastVlcError;
+
+    /// <summary>记录 VLC 内核报错（取流失败的真正原因，如 "Failed to open ..."），便于排查地址/协议问题。</summary>
+    private static void OnVlcLog(object? sender, LogEventArgs e)
+    {
+        if (e.Level != LogLevel.Error) return;
+        var line = $"[VLC/{e.Module}] {e.Message}";
+        if (line == _lastVlcError) return;   // 重试时同一错误会反复出现，只记一次
+        _lastVlcError = line;
+        Log.Error(line);
     }
 
     // ===== VLC 取流出错后的自动重试（5 秒后重播，网络抖动兜底） =====
@@ -162,8 +192,12 @@ public class RtspCameraSource : ICameraSource
         if (Interlocked.Exchange(ref _retrying, 1) != 0) return;
         try
         {
-            if (_disposed || _player == null) return;
-            if (!_player.IsPlaying) _player.Play();
+            if (_disposed || !_running || _player == null || _media == null) return;
+            // 出错/结束后播放器停在 Ended 状态，直接 Play() 不会真正重连：
+            // 必须先 Stop 复位，再重新绑定媒体，否则会一直黑屏
+            _player.Stop();
+            _player.Media = _media;
+            _player.Play();
         }
         catch (Exception ex)
         {
@@ -173,6 +207,23 @@ public class RtspCameraSource : ICameraSource
         {
             Interlocked.Exchange(ref _retrying, 0);
         }
+    }
+
+    private static readonly TimeSpan StallTimeout = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// 无帧看门狗：持续 30 秒收不到画面就重新拉流（萤石摄像头休眠唤醒首次出画约需 15~20 秒，故阈值取 30 秒）。
+    /// 地址被拒/协议不支持时 VLC 可能既不触发 EncounteredError 也不触发 EndReached，
+    /// 只能靠这里兜底，否则会一直黑屏且永不恢复。
+    /// </summary>
+    private void CheckAlive()
+    {
+        if (_disposed || !_running) return;
+        if (DateTime.UtcNow - (_lastFrameUtc ?? _startedUtc) <= StallTimeout) return;
+
+        if (Interlocked.Exchange(ref _stallNotified, 1) == 0)
+            Log.Error($"[{Name}] 启动后 {StallTimeout.TotalSeconds:F0} 秒内未收到画面（地址无效/已过期/协议不支持），将持续重试：{_url}");
+        RetryPlay();
     }
 
     // ===== VLC 视频回调（在 VLC 解码线程上执行，内部不得向外抛异常） =====
@@ -264,6 +315,9 @@ public class RtspCameraSource : ICameraSource
                 _front = target;
             }
 
+            _lastFrameUtc = DateTime.UtcNow;
+            if (Interlocked.Exchange(ref _stallNotified, 0) == 1)
+                Log.Info($"[{Name}] 画面已恢复");
             PreviewFrameUpdated?.Invoke();
         }
         catch (Exception ex)
@@ -298,6 +352,7 @@ public class RtspCameraSource : ICameraSource
         _disposed = true;
 
         _retryTimer.Dispose();
+        _watchdogTimer.Dispose();
         Stop();
         _player?.Dispose();
         _player = null;

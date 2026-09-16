@@ -1,3 +1,4 @@
+using CZRWeighSystem.UI;
 using CZRWeighSystem.Video;
 
 namespace CZRWeighSystem.Tests;
@@ -34,5 +35,31 @@ public class RtspCameraSourceTests
         src.Stop();
         src.Dispose();
         Assert.Null(src.CurrentFrame);
+    }
+
+    [Fact]
+    public void LastFrameUtc_WithoutStart_IsNull()
+    {
+        using var src = new RtspCameraSource("CAM1", "http://example.invalid/live.flv");
+        Assert.Null(src.LastFrameUtc);
+    }
+
+    /// <summary>
+    /// 无画面超时判定（首页黑屏提示的依据）：
+    /// 从未收到画面时以绑定时间起算，收到过画面则以最后一帧时间起算。
+    /// </summary>
+    [Fact]
+    public void IsVideoStalled_JudgesByBoundTimeOrLastFrame()
+    {
+        var bound = new DateTime(2026, 9, 16, 12, 0, 0, DateTimeKind.Utc);
+        var timeout = TimeSpan.FromSeconds(20);
+
+        // 从未收到画面：恰好到阈值不算，超过才算
+        Assert.False(MainForm.IsVideoStalled(null, bound, bound.AddSeconds(20), timeout));
+        Assert.True(MainForm.IsVideoStalled(null, bound, bound.AddSeconds(21), timeout));
+
+        // 收到过画面：以最后一帧时间起算
+        Assert.False(MainForm.IsVideoStalled(bound.AddSeconds(15), bound, bound.AddSeconds(30), timeout));
+        Assert.True(MainForm.IsVideoStalled(bound.AddSeconds(5), bound, bound.AddSeconds(30), timeout));
     }
 }
