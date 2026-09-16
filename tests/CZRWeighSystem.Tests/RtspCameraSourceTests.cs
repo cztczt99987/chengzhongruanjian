@@ -45,6 +45,25 @@ public class RtspCameraSourceTests
     }
 
     /// <summary>
+    /// 启动取流前必须绑定媒体：未绑定时 MediaPlayer.Play() 是空操作（不报错、不出画），
+    /// 界面会一直黑屏且无任何日志——曾因此排查困难。
+    /// </summary>
+    [Fact]
+    public void Start_BindsMediaBeforePlay()
+    {
+        using var src = new RtspCameraSource("CAM1", "http://example.invalid/live.flv");
+        src.Start();
+        try
+        {
+            Assert.True(src.IsMediaBound);
+        }
+        finally
+        {
+            src.Stop();
+        }
+    }
+
+    /// <summary>
     /// 无画面超时判定（首页黑屏提示的依据）：
     /// 从未收到画面时以绑定时间起算，收到过画面则以最后一帧时间起算。
     /// </summary>

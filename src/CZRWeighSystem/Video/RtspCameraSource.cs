@@ -45,6 +45,9 @@ public class RtspCameraSource : ICameraSource
 
     public DateTime? LastFrameUtc => _lastFrameUtc;
 
+    /// <summary>是否已绑定取流媒体（回归测试用，防止漏绑 Media 导致 Play() 空操作、界面全黑）</summary>
+    internal bool IsMediaBound => _player?.Media != null;
+
     public event Action? PreviewFrameUpdated;
 
     public RtspCameraSource(string name, string url)
@@ -73,6 +76,7 @@ public class RtspCameraSource : ICameraSource
             // 必须在 Play 之前设置视频回调（离屏取帧，不依赖窗口）
             _player.SetVideoFormatCallbacks(FormatVideo, CleanupVideo);
             _player.SetVideoCallbacks(LockVideo, UnlockVideo, DisplayVideo);
+            _player.Media = _media;   // 必须先绑定媒体：未绑定时 Play() 是空操作，界面会一直黑屏
             _running = true;
             _startedUtc = DateTime.UtcNow;
             Interlocked.Exchange(ref _stallNotified, 0);
@@ -143,7 +147,10 @@ public class RtspCameraSource : ICameraSource
             if (_libVlc == null)
             {
                 LibVLCSharp.Shared.Core.Initialize();   // 定位输出目录下 libvlc\win-x64 原生库
-                _libVlc = new LibVLC(enableDebugLogs: false, "--no-osd");
+                // enableDebugLogs 必须为 true：LibVLCSharp 只有在开启调试日志时才会把 VLC 内核日志
+                // 转发给托管侧，否则下面的 Log 事件永不触发（取流失败会黑屏且日志无痕）；
+                // 实际只输出 Error 级（见 OnVlcLog），不会有刷屏问题
+                _libVlc = new LibVLC(enableDebugLogs: true, "--no-osd");
                 _libVlc.Log += OnVlcLog;                // 记录 VLC 内部报错原因（如"Failed to open ..."）
                 Log.Info("LibVLC 初始化完成");
             }
