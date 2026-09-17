@@ -299,7 +299,7 @@ public class SerialSettingsDialog : Form
         cfg.StopBits = SelectedStopBits.ToString();
         cfg.Save();
         Log.Info($"串口参数已保存：{cfg.PortName} {cfg.BaudRate} {cfg.DataBits}{cfg.Parity}{cfg.StopBits}");
-        MessageBox.Show("串口参数已保存。\r\n若当前为「串口仪表模式」，请重新点击菜单「数据源 → 串口仪表模式」以应用新参数。",
+        MessageBox.Show("串口参数已保存，已按新参数重新连接串口。\r\n若通讯指示灯仍为红色，请检查仪表电源、串口线及端口号是否正确。",
             "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
         DialogResult = DialogResult.OK;
         Close();

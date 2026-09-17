@@ -50,6 +50,23 @@ public class WeighManager : IDisposable
     /// </summary>
     public void Start() => _source.Start();
 
+    /// <summary>
+    /// 按 config.json 中的串口参数重建数据源并立即开始接收数据。
+    /// 「串口参数设置」保存后调用，现场换 COM 口/波特率无需重启软件（2026-09-17 用户反馈）。
+    /// 必须先停止并释放旧源，否则旧串口句柄未释放会导致新连接打开失败。
+    /// </summary>
+    public void RestartSerialSource()
+    {
+        _source.Stop();
+        _source.Dispose();
+        _source = CreateSerialSource();
+        AttachSource(_source);
+
+        _lastDataTime = null;
+        _errorSinceLastData = true;   // 重连后尚未收到数据，通讯指示灯保持红色直至来数
+        _source.Start();
+    }
+
     /// <summary>当前数据源描述（状态栏显示用）。</summary>
     public string SourceDescription => _source.Describe();
 

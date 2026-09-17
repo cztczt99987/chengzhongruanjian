@@ -480,7 +480,9 @@ public class MainForm : Form
         mSource.DropDownItems.Add(new ToolStripMenuItem("串口参数设置", null, (_, _) =>
         {
             using var f = new SerialSettingsDialog();
-            f.ShowDialog(this);
+            if (f.ShowDialog(this) != DialogResult.OK) return;
+            _manager.RestartSerialSource();   // 保存后立即用新参数重连串口，无需重启软件
+            OnWeightUpdated();                // 刷新状态栏数据源描述与通讯指示灯
         }));
 
         // 视频菜单（对应 PRD F7-01：首页已内嵌预览，此处为大屏弹窗，共享取流源）
