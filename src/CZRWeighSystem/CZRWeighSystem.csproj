@@ -10,6 +10,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>CZRWeighSystem</RootNamespace>
     <AssemblyName>CZRWeighSystem</AssemblyName>
+    <!-- 显示名称（窗口标题、exe 文件属性、安装包均取此处）与版本号 -->
+    <AssemblyTitle>精锐计量称重软件</AssemblyTitle>
+    <Product>精锐计量称重软件</Product>
+    <Version>1.0.0</Version>
+    <!-- ProductVersion 只取纯版本号，不追加 git 提交哈希（窗口标题显示用） -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <!-- 生成中文资源，保证界面中文正常 -->
     <SatelliteResourceLanguages>zh-Hans</SatelliteResourceLanguages>
     <!-- x64 进程：VLC 原生解码库（libvlc/win-x64）要求位次匹配 -->

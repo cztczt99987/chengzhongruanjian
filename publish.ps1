@@ -1,15 +1,21 @@
 ﻿<#
 .SYNOPSIS
-    一键发布 CZR 智能称重系统：Release + 自包含（win-x64）发布，并打包为 zip。
+    一键发布「精锐计量称重软件」：Release + 自包含（win-x64）发布，打包 zip，可选生成安装包。
 .DESCRIPTION
     产物：
       发布目录  src\CZRWeighSystem\bin\Release\net10.0-windows\win-x64\publish
       zip 包    dist\CZRWeighSystem_yyyyMMdd_HHmm.zip
-    现场部署：解压后把整个文件夹拷到目标机（64 位 Windows），运行 CZRWeighSystem.exe，
+      安装包    dist\精锐计量称重软件_安装包_V<版本>.exe   （加 -Installer 参数时）
+    现场部署：用安装包安装（向导可选目录、建桌面快捷方式），或解压 zip 后整目录拷到目标机。
     自包含发布无需目标机安装 .NET；libvlc\win-x64 必须与 exe 同目录，不可只拷 exe。
+.PARAMETER Installer
+    同时用 Inno Setup 生成 setup.exe 安装包（需本机已装 Inno Setup 6，编译器默认在
+    C:\Program Files (x86)\Inno Setup 6\ISCC.exe）。
 .EXAMPLE
-    powershell -ExecutionPolicy Bypass -File publish.ps1
+    powershell -ExecutionPolicy Bypass -File publish.ps1 -Installer
 #>
+param([switch]$Installer)
+
 $ErrorActionPreference = 'Stop'
 
 $root       = $PSScriptRoot
@@ -44,3 +50,25 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
     $publishDir, $zipPath, [System.IO.Compression.CompressionLevel]::Optimal, $false)
 
 Write-Host ('完成：{0}（{1:N1} MB）' -f $zipPath, ((Get-Item $zipPath).Length / 1MB))
+
+if (-not $Installer) { return }
+
+Write-Host '==> 生成安装包（Inno Setup）'
+$iscc = @(
+    'C:\Program Files (x86)\Inno Setup 6\ISCC.exe',
+    'C:\Program Files\Inno Setup 6\ISCC.exe'
+) | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $iscc) { throw '未找到 Inno Setup 编译器 ISCC.exe，请先安装 Inno Setup 6（winget install JRSoftware.InnoSetup）' }
+
+# 版本号以 csproj 为准，避免安装包与程序标题版本不一致
+$version = ([xml](Get-Content $project)).Project.PropertyGroup.Version |
+    Where-Object { $_ } | Select-Object -First 1
+
+# 编译前先清掉同名旧安装包，便于确认本次产物
+Get-ChildItem $distDir -Filter '*_安装包_V*.exe' -ErrorAction SilentlyContinue | Remove-Item -Force
+
+& $iscc "/DAppVersion=$version" (Join-Path $root 'installer\CZRWeighSystem.iss')
+if ($LASTEXITCODE -ne 0) { throw "Inno Setup 编译失败，退出码 $LASTEXITCODE" }
+
+$setup = Get-ChildItem $distDir -Filter '*_安装包_V*.exe' | Select-Object -First 1
+Write-Host ('完成：{0}（{1:N1} MB）' -f $setup.FullName, ($setup.Length / 1MB))

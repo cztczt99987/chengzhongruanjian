@@ -52,7 +52,7 @@ public class MainForm : Form
     // ===== 界面构建 =====
     public MainForm()
     {
-        Text = $"CZR 智能称重管理系统 V0.1 - 磅号 {_cfg.ScaleNo} - {AppSession.DisplayName}";
+        Text = $"精锐计量称重软件 V{Application.ProductVersion} - 磅号 {_cfg.ScaleNo} - {AppSession.DisplayName}";
         StartPosition = FormStartPosition.CenterScreen;
         Size = new Size(1380, 860);
         MinimumSize = new Size(1200, 760);

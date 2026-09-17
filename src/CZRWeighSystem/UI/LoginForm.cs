@@ -19,7 +19,7 @@ public class LoginForm : Form
 
     public LoginForm()
     {
-        Text = "登录 - CZR 智能称重管理系统";
+        Text = "登录 - 精锐计量称重软件";
         StartPosition = FormStartPosition.CenterScreen;
         AutoScaleMode = AutoScaleMode.Dpi;   // 高 DPI 下避免文字截断
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -36,7 +36,7 @@ public class LoginForm : Form
         // 标题
         var lblTitle = new Label
         {
-            Text = "CZR 智能称重管理系统",
+            Text = "精锐计量称重软件",
             Font = new Font("Microsoft YaHei UI", 16F, FontStyle.Bold),
             ForeColor = Color.FromArgb(0, 102, 204),
             TextAlign = ContentAlignment.MiddleCenter,
