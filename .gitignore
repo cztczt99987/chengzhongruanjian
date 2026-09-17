@@ -2,6 +2,9 @@
 bin/
 obj/
 
+# 发布打包产物（publish.ps1 输出）
+dist/
+
 # 运行时数据与日志
 *.log
 src/*/bin/**/logs/
