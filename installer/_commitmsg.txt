@@ -1,1 +1,0 @@
-程序名改为「精锐计量称重软件」并新增 setup.exe 安装包：主窗体/登录页标题与程序集产品名统一（版本号取自 csproj，标题显示 V1.0.0）；新增 installer 目录（Inno Setup 脚本 + 简体中文语言文件），安装向导默认装到 C:\精锐计量称重软件、给安装目录 users-modify 权限（config.json/data/logs 需可写，故不装 Program Files）、建桌面与开始菜单快捷方式、卸载保留现场数据；publish.ps1 增加 -Installer 参数一键出安装包；补 AppNameTests 回归测试
