@@ -30,7 +30,18 @@ public class SimulatedCameraSource : ICameraSource
         _seedColor = _random.Next(0, 360);
     }
 
-    public void Start() => _timer.Tick += (_, _) => RenderFrame();
+    /// <summary>
+    /// 启动画面刷新（10fps 定时重绘）。
+    /// 先退订再订阅，重复调用不会叠加 Tick 回调；CameraManager 重建后重新 Start 也安全。
+    /// </summary>
+    public void Start()
+    {
+        _timer.Tick -= OnTick;
+        _timer.Tick += OnTick;
+        _timer.Start();
+    }
+
+    private void OnTick(object? sender, EventArgs e) => RenderFrame();
 
     public void Stop() => _timer.Stop();
 
