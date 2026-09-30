@@ -16,10 +16,16 @@ public class FirstWeighExpireTests
 
     static FirstWeighExpireTests()
     {
-        // 每次测试运行前重建空库：避免上次运行残留的记录影响断言。
-        // 先清空 SQLite 连接池（归池连接会一直占用文件句柄，否则 Delete 抛 IOException）
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        if (File.Exists(Db.DbPath)) File.Delete(Db.DbPath);
+        // 每次测试运行前清空记录表：避免上次运行残留的记录影响断言。
+        // 注意：不能删除 DB 文件——测试宿主与主程序等其他进程可能并发持有连接，
+        // 删文件会造成跨进程"表不存在/文件被占用"竞争（2026-09-30），改为清空记录表。
+        Db.Initialize();   // 幂等建表
+        using (var conn = Db.CreateConnection())
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = "DELETE FROM t_weigh_record; DELETE FROM t_record_audit;";
+            cmd.ExecuteNonQuery();
+        }
     }
 
     public FirstWeighExpireTests() => Db.Initialize();

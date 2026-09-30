@@ -35,14 +35,13 @@ public class MainForm : Form
     /// <summary>首页画面槽位数量（最多同时显示 3 路摄像头画面）。</summary>
     internal const int MaxVideoTiles = 3;
 
-    // ===== 今日称重统计（悬浮于视频区右上角，点击可收起/展开）=====
+    // ===== 今日称重统计（悬浮于窗口右上角，点击可竖直收起/展开）=====
     private const int StatsW = 252;          // 展开宽度
     private const int StatsH = 250;          // 展开高度（悬浮卡片，参考目标版式）
-    private const int StatsCollapsedW = 30;  // 收起后窄条宽度
+    private const int StatsCollapsedH = 32;  // 收起后仅剩标题条（竖直伸缩）
     private bool _statsExpanded = true;
     private GroupBox _statsPanel = null!;
     private Label _lblStatsArrow = null!;      // 收起/展开状态箭头
-    private Label _lblStatsCollapsed = null!;  // 收起状态竖排文字
     private Label _lblStatTotal = null!;     // 全部记录
     private Label _lblStatCount = null!;     // 今日磅单
     private Label _lblStatGross = null!;     // 今日毛重
@@ -53,6 +52,7 @@ public class MainForm : Form
     // ===== 底部称重记录列表 =====
     private GroupBox _capturePanel = null!;
     private DataGridView _captureGrid = null!;
+    private ComboBox _cboPageSize = null!;   // 显示条数：20/50/70/100（默认 20）
     private readonly Database.WeighRecordRepository _recordRepo = new();
 
     // ===== 状态栏 =====
@@ -180,19 +180,22 @@ public class MainForm : Form
         };
 
         Controls.AddRange(new Control[] { _btnTare, _lblWeight, _btnGross, _lblStable, _lblComm });
-        LayoutTopBar();   // 初始整组居中
+        // 注意：居中布局在构造函数末尾统一执行（LayoutTopBar 需引用统计面板位置做避让）
     }
 
     /// <summary>
     /// 顶部称重条（空车去皮｜大屏重量｜重车过磅｜稳定/通讯指示）整组
-    /// 横向居中铺满顶部区域，窗口缩放时保持居中。
+    /// 横向居中铺满顶部区域；窗口较窄时向左让出右上角的统计面板，避免遮挡。
     /// </summary>
     private void LayoutTopBar()
     {
         int gap = 15;
         int groupW = _btnTare.Width + gap + _lblWeight.Width + gap + _btnGross.Width
                    + gap + _lblStable.Width;
-        int x = Math.Max(8, (ClientSize.Width - groupW) / 2);
+        // 优先整组居中；空间不足时左移避让统计面板（保持 16px 间距）
+        int centeredX = Math.Max(8, (ClientSize.Width - groupW) / 2);
+        int avoidX = Math.Max(8, _statsPanel.Left - 16 - groupW);
+        int x = Math.Min(centeredX, avoidX);
         _btnTare.Left = x;
         _lblWeight.Left = _btnTare.Right + gap;
         _btnGross.Left = _lblWeight.Right + gap;
@@ -386,7 +389,7 @@ public class MainForm : Form
         SetState($"视频监控：{_cfg.Cameras.Count} 路", true);
     }
 
-    // ---------- 今日称重统计面板（悬浮于视频区右上角，点击可收起/展开） ----------
+    // ---------- 今日称重统计面板（悬浮于窗口右上角，点击可竖直收起/展开） ----------
     private void BuildStatsPanel()
     {
         _statsPanel = new GroupBox
@@ -395,14 +398,14 @@ public class MainForm : Form
             ForeColor = Color.Black,
             BackColor = Color.FromArgb(189, 215, 238),   // 浅蓝样式（对应目标版式）
             Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Bold),
-            Location = new Point(ClientSize.Width - StatsW - 20, CameraY),   // 悬浮在视频区右上角
+            Location = new Point(ClientSize.Width - StatsW - 20, 32),   // 悬浮于窗口右上角
             Size = new Size(StatsW, StatsH),
             Anchor = AnchorStyles.Top | AnchorStyles.Right,
             Cursor = Cursors.Hand,
         };
         _statsPanel.Click += (_, _) => ToggleStatsPanel();
 
-        // 收起/展开状态箭头（标题行右侧）
+        // 收起/展开状态箭头（标题行右侧，展开▲ 收起▼）
         _lblStatsArrow = new Label
         {
             Text = "▲",
@@ -446,39 +449,24 @@ public class MainForm : Form
         _lblStatTare = Val("今日皮重：", 166);
         _lblStatNet = Val("今日净重：", 208);
 
-        // 收起状态的竖排提示（展开时隐藏）
-        _lblStatsCollapsed = new Label
-        {
-            Text = "今\r\n日\r\n统\r\n计",
-            Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.MiddleCenter,
-            ForeColor = Color.Black,
-            BackColor = Color.Transparent,
-            Visible = false,
-        };
-        _lblStatsCollapsed.Click += (_, _) => ToggleStatsPanel();
-        _statsPanel.Controls.Add(_lblStatsCollapsed);
-
         Controls.Add(_statsPanel);
         _statsPanel.BringToFront();   // 悬浮在视频画面之上
     }
 
-    /// <summary>展开/收起今日称重统计面板（点击面板切换）。</summary>
+    /// <summary>展开/收起今日称重统计面板（点击面板切换，竖直伸缩）。</summary>
     internal void ToggleStatsPanel()
     {
         _statsExpanded = !_statsExpanded;
         LayoutStatsPanel();
     }
 
-    /// <summary>按展开/收起状态布局统计面板（收起为窄竖条并贴齐右缘）。</summary>
+    /// <summary>按展开/收起状态竖直伸缩统计面板：收起后仅剩标题条，箭头切换 ▲/▼。</summary>
     private void LayoutStatsPanel()
     {
-        _statsPanel.Text = _statsExpanded ? "今日称重统计" : "";
-        _statsPanel.Width = _statsExpanded ? StatsW : StatsCollapsedW;
-        // 右锚定只在父容器缩放时生效，程序化改宽后需手动贴回右缘（保持 20px 边距）
-        _statsPanel.Left = ClientSize.Width - _statsPanel.Width - 20;
+        _statsPanel.Height = _statsExpanded ? StatsH : StatsCollapsedH;
+        _lblStatsArrow.Text = _statsExpanded ? "▲" : "▼";
         foreach (Control c in _statsPanel.Controls)
-            c.Visible = _statsExpanded != ReferenceEquals(c, _lblStatsCollapsed);
+            c.Visible = _statsExpanded || ReferenceEquals(c, _lblStatsArrow);
     }
 
     /// <summary>刷新右侧统计面板与今日汇总行（全部记录数、今日磅单数与毛/皮/净汇总）。</summary>
@@ -554,15 +542,37 @@ public class MainForm : Form
             }
         };
 
+        // 显示条数选择（20/50/70/100，默认 20）
+        var lblPage = new Label
+        {
+            Text = "显示条数：",
+            AutoSize = true,
+            Location = new Point(_capturePanel.Width - 200, 21),
+            Anchor = AnchorStyles.Top | AnchorStyles.Right,
+        };
+        _cboPageSize = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Location = new Point(_capturePanel.Width - 110, 17),
+            Size = new Size(80, 28),
+            Anchor = AnchorStyles.Top | AnchorStyles.Right,
+        };
+        _cboPageSize.Items.AddRange(["20", "50", "70", "100"]);
+        _cboPageSize.SelectedIndexChanged += (_, _) => RefreshGrid();
+        _cboPageSize.SelectedIndex = 0;   // 默认 20 条（赋值触发刷新，列表按 20 条加载）
+
         _capturePanel.Controls.Add(_captureGrid);
+        _capturePanel.Controls.Add(lblPage);
+        _capturePanel.Controls.Add(_cboPageSize);
         Controls.Add(_capturePanel);
     }
 
-    /// <summary>刷新称重记录列表（最近 100 条，新记录在前；未完成行标红提醒）。</summary>
+    /// <summary>刷新称重记录列表（按选择的显示条数，新记录在前；未完成行标红提醒）。</summary>
     private void RefreshGrid()
     {
+        int pageSize = int.TryParse(_cboPageSize.Text, out int n) && n > 0 ? n : 20;
         _captureGrid.Rows.Clear();
-        foreach (var r in _recordRepo.Query(null, null, "", "", "", "").Take(100))
+        foreach (var r in _recordRepo.Query(null, null, "", "", "", "").Take(pageSize))
         {
             int i = _captureGrid.Rows.Add(
                 r.SerialNo,
