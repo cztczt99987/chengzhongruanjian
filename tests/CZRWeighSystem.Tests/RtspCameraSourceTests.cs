@@ -64,6 +64,16 @@ public class RtspCameraSourceTests
     }
 
     /// <summary>
+    /// VLC 全局参数必须包含 --no-audio：视频监控只要画面、不外放摄像头环境声
+    /// （用户反馈取流时摄像头声音扰人）。防止后续调整参数时被误删。
+    /// </summary>
+    [Fact]
+    public void LibVlcArgs_DisableAudio()
+    {
+        Assert.Contains("--no-audio", RtspCameraSource.LibVlcArgs);
+    }
+
+    /// <summary>
     /// 无画面超时判定（首页黑屏提示的依据）：
     /// 从未收到画面时以绑定时间起算，收到过画面则以最后一帧时间起算。
     /// </summary>

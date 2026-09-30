@@ -86,4 +86,22 @@ public class CameraSettingsDialogTests
         Assert.Equal("", cards[2].TxtIp.Text);        // 第 3 张无配置 → 空白（视为未启用）
         Assert.True(cards[2].IsBlank);
     }
+
+    /// <summary>
+    /// 帮助文字必须完整可见：曾因第 3 张卡片（底部 486）盖住文字（顶部 472）、
+    /// 且末行文案过长横向溢出窗口，用户反馈"底部文字被遮挡"。回归保护三方向边界。
+    /// </summary>
+    [Fact]
+    public void Layout_HelpLabelBelowCardsAndInsideWindow()
+    {
+        using var f = new CameraSettingsDialog();
+        var help = f.HelpLabel;
+
+        Assert.True(help.Top >= f.Cards[2].Bottom,          // 不被第 3 张卡片遮挡
+            $"帮助文字顶 {help.Top} 应 >= 卡片底 {f.Cards[2].Bottom}");
+        Assert.True(help.Bottom <= f.ClientSize.Height,     // 不被窗口下缘裁切
+            $"帮助文字底 {help.Bottom} 应 <= 窗口高 {f.ClientSize.Height}");
+        Assert.True(help.Right <= f.ClientSize.Width,       // 不被窗口右缘裁切
+            $"帮助文字右 {help.Right} 应 <= 窗口宽 {f.ClientSize.Width}");
+    }
 }

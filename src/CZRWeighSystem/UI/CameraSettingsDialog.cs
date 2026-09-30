@@ -17,6 +17,9 @@ public class CameraSettingsDialog : Form
     private CheckBox _chkEnabled = null!;
     private readonly List<CameraCard> _cards = [];
 
+    /// <summary>底部帮助文字（测试用：验证不被卡片遮挡、完整显示在窗口内）</summary>
+    internal Label HelpLabel = null!;
+
     public CameraSettingsDialog()
     {
         Text = "摄像头设置";
@@ -25,7 +28,7 @@ public class CameraSettingsDialog : Form
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
-        ClientSize = new Size(740, 590);
+        ClientSize = new Size(740, 622);
         Font = new Font("Microsoft YaHei UI", 10F);
 
         BuildUi();
@@ -62,23 +65,23 @@ public class CameraSettingsDialog : Form
             Controls.Add(card);
         }
 
-        // ---- 说明 ----
-        var lblHelp = new Label
+        // ---- 说明（位于第 3 张卡片下方：卡片 3 底部 = 50 + 2*148 + 140 = 486，留 8px 间距） ----
+        HelpLabel = new Label
         {
             Text = "最多 3 路，填了 IP 的框才启用该路；端口一般填 RTSP 端口 554（8000 是 SDK 端口，不能取流）。\r\n" +
                    "密码：萤石消费系列（CS-* 等）填机身标签 6 位验证码；海康专业机填设备管理密码。\r\n" +
-                   "每路可先点「测试连接」验证（区分 连不上/端口错/密码错）；名称可自定义（如 磅前/磅后）；密码明文保存在本机 config.json。",
+                   "每路可先点「测试连接」验证（区分 连不上/端口错/密码错）；密码明文保存在本机 config.json。",
             AutoSize = true,
-            Location = new Point(25, 472),
+            Location = new Point(25, 494),
             ForeColor = Color.Gray,
         };
-        Controls.Add(lblHelp);
+        Controls.Add(HelpLabel);
 
-        // ---- 保存 / 取消 ----
+        // ---- 保存 / 取消（位于帮助文字下方） ----
         var btnSave = new Button
         {
             Text = "保存设置",
-            Location = new Point(480, 540),
+            Location = new Point(480, 574),
             Size = new Size(110, 34),
             FlatStyle = FlatStyle.Flat,
             BackColor = Color.FromArgb(0, 122, 204),
@@ -87,7 +90,7 @@ public class CameraSettingsDialog : Form
         var btnCancel = new Button
         {
             Text = "取 消",
-            Location = new Point(605, 540),
+            Location = new Point(605, 574),
             Size = new Size(110, 34),
             FlatStyle = FlatStyle.Flat,
         };

@@ -139,6 +139,12 @@ public class RtspCameraSource : ICameraSource
         }
     }
 
+    /// <summary>
+    /// VLC 全局启动参数：--no-osd 关闭屏显信息；
+    /// --no-audio 禁用音频输出与解码（监控只要画面，不外放摄像头环境声）。
+    /// </summary>
+    internal static readonly string[] LibVlcArgs = ["--no-osd", "--no-audio"];
+
     /// <summary>取共享的 VLC 实例（惰性初始化，进程内仅创建一次）。</summary>
     private static LibVLC GetLibVlc()
     {
@@ -150,7 +156,7 @@ public class RtspCameraSource : ICameraSource
                 // enableDebugLogs 必须为 true：LibVLCSharp 只有在开启调试日志时才会把 VLC 内核日志
                 // 转发给托管侧，否则下面的 Log 事件永不触发（取流失败会黑屏且日志无痕）；
                 // 实际只输出 Error 级（见 OnVlcLog），不会有刷屏问题
-                _libVlc = new LibVLC(enableDebugLogs: true, "--no-osd");
+                _libVlc = new LibVLC(enableDebugLogs: true, LibVlcArgs);
                 _libVlc.Log += OnVlcLog;                // 记录 VLC 内部报错原因（如"Failed to open ..."）
                 Log.Info("LibVLC 初始化完成");
             }
