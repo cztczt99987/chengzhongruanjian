@@ -189,6 +189,9 @@ public class MainForm : Form
     /// </summary>
     private void LayoutTopBar()
     {
+        // 统计面板尚未构建时（构造初期 Resize 触发）跳过避让计算，防止 NRE
+        if (_statsPanel == null) return;
+
         int gap = 15;
         int groupW = _btnTare.Width + gap + _lblWeight.Width + gap + _btnGross.Width
                    + gap + _lblStable.Width;
