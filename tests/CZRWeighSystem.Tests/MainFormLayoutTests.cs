@@ -55,7 +55,7 @@ public class MainFormLayoutTests
         var video = (GroupBox)Fld(form, "_videoPanel");
         var stats = (GroupBox)Fld(form, "_statsPanel");
         var capture = (GroupBox)Fld(form, "_capturePanel");
-        var grid = (DataGridView)capture.Controls[0]!;
+        var grid = (DataGridView)Fld(form, "_captureGrid");   // 不按 Controls 序号取：条数下拉框会被置前
         var pageSize = (ComboBox)Fld(form, "_cboPageSize");
         // 视频区第一个子控件为 TableLayoutPanel（3 槽位）；未启用视频时为提示 Label
         int tileCount = video.Controls[0] is TableLayoutPanel table ? table.Controls.Count : 1;
@@ -203,6 +203,31 @@ public class MainFormLayoutTests
         Assert.Equal(10, s.CaptureColumnCount);
         Assert.Equal("流水号", s.FirstColumnHeader);
         Assert.Equal("状态", s.LastColumnHeader);
+    }
+
+    [Fact]
+    public void 条数选择框_完整显示在表格上方_不被表格遮挡()
+    {
+        Db.Initialize();
+        RunOnSta(() =>
+        {
+            using var form = new MainForm();
+            var panel = (GroupBox)Fld(form, "_capturePanel");
+            var grid = (DataGridView)Fld(form, "_captureGrid");
+            var combo = (ComboBox)Fld(form, "_cboPageSize");
+            var label = panel.Controls.OfType<Label>().Single(l => l.Text == "显示条数：");
+
+            // 历史问题：表格先加入处于 z 序前层，与下拉框纵向重叠 → 界面上看不到下拉框
+            Assert.True(combo.Bottom <= grid.Top,
+                $"条数下拉框(底边={combo.Bottom})与表格(顶边={grid.Top})重叠，会被表格压住");
+            Assert.True(label.Bottom <= grid.Top,
+                $"条数标签(底边={label.Bottom})与表格(顶边={grid.Top})重叠，会被表格压住");
+            // 完整落在面板可视区内，且在下拉框右缘之内不超界
+            Assert.True(combo.Right <= panel.ClientSize.Width,
+                $"条数下拉框右缘({combo.Right})超出面板可视宽度({panel.ClientSize.Width})");
+            Assert.True(combo.Left >= label.Right, "条数标签应位于下拉框左侧且不重叠");
+            Assert.True(combo.DropDownWidth >= combo.Width, "下拉列表宽度不应小于下拉框本体宽度");
+        });
     }
 
     [Fact]

@@ -517,8 +517,9 @@ public class MainForm : Form
 
         _captureGrid = new DataGridView
         {
-            Location = new Point(8, 24),
-            Size = new Size(_capturePanel.ClientSize.Width - 16, _capturePanel.ClientSize.Height - 32),
+            // 顶部留出条带：条数选择框必须完整露在表格上方，不能被表格遮挡
+            Location = new Point(8, 50),
+            Size = new Size(_capturePanel.ClientSize.Width - 16, _capturePanel.ClientSize.Height - 58),
             Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
             ReadOnly = true,
             AllowUserToAddRows = false,
@@ -553,19 +554,20 @@ public class MainForm : Form
             }
         };
 
-        // 显示条数选择（20/50/70/100，默认 20）；加宽下拉框保证选项完整显示
+        // 显示条数选择（20/50/70/100，默认 20）：置于表格上方预留条带内，紧贴面板右缘
         var lblPage = new Label
         {
             Text = "显示条数：",
-            AutoSize = true,
-            Location = new Point(_capturePanel.Width - 280, 21),
+            Size = new Size(84, 22),
+            TextAlign = ContentAlignment.MiddleRight,
+            Location = new Point(_capturePanel.Width - 240, 19),
             Anchor = AnchorStyles.Top | AnchorStyles.Right,
         };
         _cboPageSize = new ComboBox
         {
             DropDownStyle = ComboBoxStyle.DropDownList,
             DropDownWidth = 130,
-            Location = new Point(_capturePanel.Width - 150, 17),
+            Location = new Point(_capturePanel.Width - 150, 16),
             Size = new Size(120, 28),
             Anchor = AnchorStyles.Top | AnchorStyles.Right,
         };
@@ -576,6 +578,9 @@ public class MainForm : Form
         _capturePanel.Controls.Add(_captureGrid);
         _capturePanel.Controls.Add(lblPage);
         _capturePanel.Controls.Add(_cboPageSize);
+        // 表格先加入 → 处于 z 序前层，会把后加入的控件压住；显式置前保证条数选择框始终可见
+        lblPage.BringToFront();
+        _cboPageSize.BringToFront();
         Controls.Add(_capturePanel);
     }
 
