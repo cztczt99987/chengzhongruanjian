@@ -147,6 +147,9 @@ public class AppConfig
 /// </summary>
 public class CameraConfig
 {
+    /// <summary>主码流取流路径（海康/萤石通用；播放与"测试连接"共用此常量）</summary>
+    public const string DefaultRtspPath = "/Streaming/Channels/101";
+
     /// <summary>摄像头名称（画面角标显示；留空按 CAM1/CAM2… 默认命名）</summary>
     public string Name { get; set; } = "";
 
@@ -172,5 +175,5 @@ public class CameraConfig
     /// </summary>
     public string BuildRtspUrl() =>
         $"rtsp://{Uri.EscapeDataString(User)}:{Uri.EscapeDataString(Password)}" +
-        $"@{Ip.Trim()}:{Port}/Streaming/Channels/101";
+        $"@{Ip.Trim()}:{Port}{DefaultRtspPath}";
 }

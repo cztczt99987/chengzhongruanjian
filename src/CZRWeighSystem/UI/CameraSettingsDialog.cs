@@ -25,7 +25,7 @@ public class CameraSettingsDialog : Form
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
-        ClientSize = new Size(740, 520);
+        ClientSize = new Size(740, 590);
         Font = new Font("Microsoft YaHei UI", 10F);
 
         BuildUi();
@@ -54,9 +54,10 @@ public class CameraSettingsDialog : Form
             var cam = i < cfg.Cameras.Count ? cfg.Cameras[i] : null;
             var card = new CameraCard(i + 1, cam)
             {
-                Location = new Point(25, 50 + i * 116),
+                Location = new Point(25, 50 + i * 148),
             };
             card.SearchClicked += () => _ = SearchIntoAsync(card);
+            card.TestClicked += () => _ = TestConnectionAsync(card);
             _cards.Add(card);
             Controls.Add(card);
         }
@@ -64,11 +65,11 @@ public class CameraSettingsDialog : Form
         // ---- 说明 ----
         var lblHelp = new Label
         {
-            Text = "最多 3 路；填了 IP 的框才启用该路，未填 IP 的框不取流（画面角标按启用顺序显示 CAM1/CAM2…）。\r\n" +
-                   "名称可自定义（如 磅前/磅后）；端口/用户名留空按 554/admin 处理。\r\n" +
-                   "搜索不到或非海康设备时直接手动填 IP/端口/用户名/密码；密码明文保存在本机 config.json。",
+            Text = "最多 3 路，填了 IP 的框才启用该路；端口一般填 RTSP 端口 554（8000 是 SDK 端口，不能取流）。\r\n" +
+                   "密码：萤石消费系列（CS-* 等）填机身标签 6 位验证码；海康专业机填设备管理密码。\r\n" +
+                   "每路可先点「测试连接」验证（区分 连不上/端口错/密码错）；名称可自定义（如 磅前/磅后）；密码明文保存在本机 config.json。",
             AutoSize = true,
-            Location = new Point(25, 402),
+            Location = new Point(25, 472),
             ForeColor = Color.Gray,
         };
         Controls.Add(lblHelp);
@@ -77,7 +78,7 @@ public class CameraSettingsDialog : Form
         var btnSave = new Button
         {
             Text = "保存设置",
-            Location = new Point(480, 470),
+            Location = new Point(480, 540),
             Size = new Size(110, 34),
             FlatStyle = FlatStyle.Flat,
             BackColor = Color.FromArgb(0, 122, 204),
@@ -86,7 +87,7 @@ public class CameraSettingsDialog : Form
         var btnCancel = new Button
         {
             Text = "取 消",
-            Location = new Point(605, 470),
+            Location = new Point(605, 540),
             Size = new Size(110, 34),
             FlatStyle = FlatStyle.Flat,
         };
@@ -124,6 +125,43 @@ public class CameraSettingsDialog : Form
         }
     }
 
+    /// <summary>
+    /// 点某路"测试连接"：后台做 RTSP 握手探测，给出明确结论
+    /// （连接成功 / 连不上 / 端口非 RTSP / 密码错 / 路径不存在），避免保存后才发现黑屏。
+    /// </summary>
+    private async Task TestConnectionAsync(CameraCard card)
+    {
+        if (card.IsBlank)
+        {
+            MessageBox.Show("请先填写 IP 地址再测试连接。", "提示",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        var cfg = card.ToConfig();
+        card.BtnTest.Enabled = false;
+        card.BtnTest.Text = "测试中…";
+        try
+        {
+            var result = await Task.Run(() => RtspProbe.Check(cfg.Ip, cfg.Port, cfg.User, cfg.Password));
+            MessageBox.Show(this, result.Message,
+                result.Status == RtspProbeStatus.Success ? "连接成功" : "连接失败",
+                MessageBoxButtons.OK,
+                result.Status == RtspProbeStatus.Success ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("测试连接失败", ex);
+            MessageBox.Show("测试过程出错：" + ex.Message, "提示",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+        finally
+        {
+            card.BtnTest.Text = "测试连接";
+            card.BtnTest.Enabled = true;
+        }
+    }
+
     /// <summary>把搜索到的设备填入该卡片（用户名留空补 admin；端口无效补 554）。</summary>
     private static void FillDevice(CameraCard card, HikDeviceInfo device)
     {
@@ -150,7 +188,7 @@ public class CameraSettingsDialog : Form
     internal List<CameraConfig> CollectCameras() =>
         _cards.Where(c => !c.IsBlank).Select(c => c.ToConfig()).ToList();
 
-    /// <summary>单路摄像头卡片：名称/IP/端口/用户名/密码 + "搜索设备"按钮（固定 3 张，不再增删行）。</summary>
+    /// <summary>单路摄像头卡片：名称/IP/端口/用户名/密码 + "搜索设备"/"测试连接"按钮（固定 3 张，不再增删行）。</summary>
     internal sealed class CameraCard : GroupBox
     {
         internal TextBox TxtName = null!;
@@ -159,28 +197,33 @@ public class CameraSettingsDialog : Form
         internal TextBox TxtUser = null!;
         internal TextBox TxtPwd = null!;
         internal Button BtnSearch = null!;
+        internal Button BtnTest = null!;
 
         /// <summary>点"搜索设备"（窗体负责搜索并把结果回填本卡片）</summary>
         internal event Action? SearchClicked;
 
+        /// <summary>点"测试连接"（窗体负责做 RTSP 握手探测）</summary>
+        internal event Action? TestClicked;
+
         internal CameraCard(int index, CameraConfig? cam)
         {
             Text = $"摄像头 {index}";
-            Size = new Size(690, 108);
+            Size = new Size(690, 140);
 
             // 第 1 行：名称 | IP 地址 | 端口
             TxtName = AddField("名称", 18, 30, 110);
             TxtIp = AddField("IP 地址", 212, 30, 220);
             TxtPort = AddField("端口", 516, 30, 70);
 
-            // 第 2 行：用户名 | 密码 | 搜索设备
+            // 第 2 行：用户名 | 密码
             TxtUser = AddField("用户名", 18, 68, 110);
             TxtPwd = AddField("密码", 212, 68, 220);
 
+            // 第 3 行：搜索设备 | 测试连接
             BtnSearch = new Button
             {
                 Text = "搜索设备",
-                Location = new Point(516, 66),
+                Location = new Point(18, 102),
                 Size = new Size(130, 30),
                 FlatStyle = FlatStyle.Flat,
                 BackColor = Color.FromArgb(0, 122, 204),
@@ -189,6 +232,19 @@ public class CameraSettingsDialog : Form
             new ToolTip().SetToolTip(BtnSearch, "自动搜索局域网内的海康摄像头，填入本路");
             BtnSearch.Click += (_, _) => SearchClicked?.Invoke();
             Controls.Add(BtnSearch);
+
+            BtnTest = new Button
+            {
+                Text = "测试连接",
+                Location = new Point(156, 102),
+                Size = new Size(130, 30),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(0, 122, 204),
+                ForeColor = Color.White,
+            };
+            new ToolTip().SetToolTip(BtnTest, "按当前填写的 IP/端口/用户名/密码实际连接一次，验证能否取流");
+            BtnTest.Click += (_, _) => TestClicked?.Invoke();
+            Controls.Add(BtnTest);
 
             if (cam != null)
             {
