@@ -5,8 +5,8 @@ namespace CZRWeighSystem.Tests;
 
 /// <summary>
 /// 摄像头配置与建源逻辑测试：
-/// Cameras 列表 JSON 往返一致；BuildSources 按列表逐行建源
-/// （IP 已填 → RtspCameraSource，IP 留空 → SimulatedCameraSource，名称留空默认 CAMn）；
+/// Cameras 列表 JSON 往返一致；BuildSources 按列表逐条建源
+/// （IP 已填 → RtspCameraSource，IP 留空 = 未启用直接跳过，名称留空默认 CAMn）；
 /// RTSP 取流地址按 IP/端口/用户名/密码自动生成（特殊字符做 URL 转义）。
 /// BuildSources 只构建不启动，不会触发 VLC 原生库加载。
 /// </summary>
@@ -34,7 +34,7 @@ public class CameraManagerTests
     }
 
     [Fact]
-    public void BuildSources_IpBlank_UsesSimulatedSourceWithDefaultName()
+    public void BuildSources_IpBlank_SkippedKeepsFilledCameras()
     {
         var cfg = new AppConfig
         {
@@ -43,11 +43,22 @@ public class CameraManagerTests
 
         var sources = CameraManager.BuildSources(cfg);
 
-        Assert.Equal(2, sources.Count);
-        Assert.IsType<SimulatedCameraSource>(sources[0]);
-        Assert.Equal("CAM1", sources[0].Name);          // 名称留空 → 默认命名
-        Assert.IsType<RtspCameraSource>(sources[1]);
-        Assert.Equal("磅前", sources[1].Name);
+        // IP 留空 = 未启用：不建源，已填的一路不受影响
+        var src = Assert.IsType<RtspCameraSource>(Assert.Single(sources));
+        Assert.Equal("磅前", src.Name);
+    }
+
+    [Fact]
+    public void BuildSources_NameBlank_UsesOrderBasedDefaultName()
+    {
+        var cfg = new AppConfig
+        {
+            Cameras = [new CameraConfig { Ip = "10.0.0.8" }, new CameraConfig { Name = "磅后", Ip = "" }],
+        };
+
+        var sources = CameraManager.BuildSources(cfg);
+
+        Assert.Equal("CAM1", Assert.Single(sources).Name);   // 名称留空 → 按启用顺序默认命名
     }
 
     [Fact]

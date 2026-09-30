@@ -157,6 +157,7 @@ internal static class Program
         new ReportForm(),
         new BaseInfoForm(),
         new DatabaseSettingsDialog(),
+        new CameraSettingsDialog(),
         new PrintSettingsDialog(),
         new TemplateDesignerForm(),
         new VoidReasonDialog("TEST-01-0001"),

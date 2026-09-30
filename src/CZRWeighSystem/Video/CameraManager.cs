@@ -26,19 +26,18 @@ public class CameraManager : IDisposable
     }
 
     /// <summary>
-    /// 按配置构建摄像头源（不启动）：列表每行一路画面，
-    /// IP 已填用真实流（RtspCameraSource，海康 RTSP 地址自动生成），IP 留空用模拟画面（调试用）。
+    /// 按配置构建摄像头源（不启动）：列表每条一路画面，IP 已填用真实流
+    /// （RtspCameraSource，海康 RTSP 地址自动生成）；IP 留空 = 该路未启用，直接跳过。
+    /// 名称留空按启用顺序默认命名 CAM1/CAM2…
     /// </summary>
     internal static List<ICameraSource> BuildSources(AppConfig cfg)
     {
         var list = new List<ICameraSource>();
-        for (int i = 0; i < cfg.Cameras.Count; i++)
+        foreach (var cam in cfg.Cameras)
         {
-            var cam = cfg.Cameras[i];
-            string name = string.IsNullOrWhiteSpace(cam.Name) ? $"CAM{i + 1}" : cam.Name.Trim();
-            list.Add(cam.IsBlank
-                ? new SimulatedCameraSource(name)
-                : new RtspCameraSource(name, cam.BuildRtspUrl()));
+            if (cam.IsBlank) continue;
+            string name = string.IsNullOrWhiteSpace(cam.Name) ? $"CAM{list.Count + 1}" : cam.Name.Trim();
+            list.Add(new RtspCameraSource(name, cam.BuildRtspUrl()));
         }
         return list;
     }

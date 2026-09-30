@@ -83,7 +83,7 @@ public class AppConfig
     /// <summary>是否启用视频监控与抓拍</summary>
     public bool CameraEnabled { get; set; } = true;
 
-    /// <summary>摄像头列表（每设置一个即有一路画面；IP 留空 = 该路显示模拟画面）</summary>
+    /// <summary>摄像头列表（最多 3 路，每设置一个即有一路画面；IP 留空的条目不启用、不取流）</summary>
     public List<CameraConfig> Cameras { get; set; } = [];
 
     /// <summary>配置文件完整路径</summary>
@@ -150,7 +150,7 @@ public class CameraConfig
     /// <summary>摄像头名称（画面角标显示；留空按 CAM1/CAM2… 默认命名）</summary>
     public string Name { get; set; } = "";
 
-    /// <summary>摄像头局域网 IP（留空 = 该路显示模拟画面，调试用）</summary>
+    /// <summary>摄像头局域网 IP（留空 = 该路未启用，不取流）</summary>
     public string Ip { get; set; } = "";
 
     /// <summary>RTSP 端口（海康默认 554）</summary>
@@ -162,7 +162,7 @@ public class CameraConfig
     /// <summary>登录密码（摄像头激活时设置的管理密码，保存在本机 config.json）</summary>
     public string Password { get; set; } = "";
 
-    /// <summary>是否未配置 IP（未配置的行显示模拟画面）</summary>
+    /// <summary>是否未配置 IP（未配置 = 该路未启用、不取流）</summary>
     public bool IsBlank => string.IsNullOrWhiteSpace(Ip);
 
     /// <summary>

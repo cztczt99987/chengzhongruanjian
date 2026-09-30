@@ -1,20 +1,21 @@
-using System.Data;
 using CZRWeighSystem.Video;
 
 namespace CZRWeighSystem.UI;
 
 /// <summary>
 /// 摄像头设置窗体（对应 PRD F7-01，限管理员）。
-/// 本地网络直连方式配置摄像头：列表每行一路画面，填 IP/端口/用户名/密码
-/// （可点"搜索设备"自动发现局域网内海康摄像头），RTSP 取流地址自动生成。
+/// 固定最多 3 路画面：每路一张卡片，填 IP/端口/用户名/密码
+/// （可点卡片内"搜索设备"自动发现局域网内海康摄像头并填入该卡片），RTSP 取流地址自动生成。
+/// IP 留空的卡片 = 该路未启用（不保存、不取流）。
 /// 保存到 config.json 后由主界面重启取流，立即生效。
 /// </summary>
 public class CameraSettingsDialog : Form
 {
-    private CheckBox _chkEnabled = null!;
-    private DataGridView _grid = null!;
+    /// <summary>固定支持的最大路数（页面按 3 张卡片布局，不再动态增删行）</summary>
+    private const int MaxCameras = 3;
 
-    private readonly DataTable _table = new();
+    private CheckBox _chkEnabled = null!;
+    private readonly List<CameraCard> _cards = [];
 
     public CameraSettingsDialog()
     {
@@ -24,11 +25,14 @@ public class CameraSettingsDialog : Form
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
-        ClientSize = new Size(700, 500);
+        ClientSize = new Size(740, 520);
         Font = new Font("Microsoft YaHei UI", 10F);
 
         BuildUi();
     }
+
+    /// <summary>三路摄像头卡片（测试用）</summary>
+    internal IReadOnlyList<CameraCard> Cards => _cards;
 
     private void BuildUi()
     {
@@ -39,146 +43,33 @@ public class CameraSettingsDialog : Form
         {
             Text = "启用视频监控与抓拍（关闭后不取流、保存称重时不抓拍）",
             AutoSize = true,
-            Location = new Point(25, 20),
+            Location = new Point(25, 18),
             Checked = cfg.CameraEnabled,
         };
         Controls.Add(_chkEnabled);
 
-        // ---- 摄像头列表 ----
-        var lblList = new Label
+        // ---- 固定三张摄像头卡片：每张一路画面，第 N 张对应 CAM N ----
+        for (int i = 0; i < MaxCameras; i++)
         {
-            Text = "摄像头列表（每行一路画面；名称留空按 CAM1/CAM2… 默认命名）：",
-            AutoSize = true,
-            Location = new Point(25, 55),
-        };
-        Controls.Add(lblList);
-
-        _table.Columns.Add("名称", typeof(string));
-        _table.Columns.Add("IP地址", typeof(string));
-        _table.Columns.Add("端口", typeof(int));
-        _table.Columns.Add("用户名", typeof(string));
-        _table.Columns.Add("密码", typeof(string));
-        foreach (var cam in cfg.Cameras)
-            _table.Rows.Add(cam.Name, cam.Ip, cam.Port, cam.User, cam.Password);
-
-        _grid = new DataGridView
-        {
-            Location = new Point(25, 82),
-            Size = new Size(650, 250),
-            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom,
-            AllowUserToAddRows = false,
-            AllowUserToDeleteRows = false,
-            RowHeadersVisible = false,
-            AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
-            // 高 DPI 缩放下默认列头高度(23px)放不下中文，列头/行高按字体自适应
-            ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize,
-            AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCells,
-            BackgroundColor = Color.White,
-            BorderStyle = BorderStyle.FixedSingle,
-            EditMode = DataGridViewEditMode.EditOnEnter,
-        };
-        // 手动建列（不依赖自动生成：控件未入窗体前绑定 DataSource 不会立即生成列，
-        // 直接按列名取 Columns 会拿到 null —— 真实崩溃案例）
-        _grid.AutoGenerateColumns = false;
-        _grid.Columns.Add(new DataGridViewTextBoxColumn
-        {
-            Name = "名称", HeaderText = "名称", DataPropertyName = "名称", FillWeight = 20,
-        });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn
-        {
-            Name = "IP地址", HeaderText = "IP 地址", DataPropertyName = "IP地址", FillWeight = 26,
-        });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn
-        {
-            Name = "端口", HeaderText = "端口", DataPropertyName = "端口", FillWeight = 10,
-            ToolTipText = "RTSP 端口，海康默认 554",
-        });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn
-        {
-            Name = "用户名", HeaderText = "用户名", DataPropertyName = "用户名", FillWeight = 16,
-        });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn
-        {
-            Name = "密码", HeaderText = "密码", DataPropertyName = "密码", FillWeight = 28,
-        });
-        _grid.DataSource = _table;
-        Controls.Add(_grid);
-
-        // ---- 列表操作按钮 ----
-        var btnAdd = new Button
-        {
-            Text = "添加摄像头",
-            Location = new Point(25, 342),
-            Size = new Size(110, 30),
-            Anchor = AnchorStyles.Left | AnchorStyles.Bottom,
-            FlatStyle = FlatStyle.Flat,
-        };
-        btnAdd.Click += (_, _) => AddDefaultRow();
-        Controls.Add(btnAdd);
-
-        var btnDelete = new Button
-        {
-            Text = "删除选中行",
-            Location = new Point(145, 342),
-            Size = new Size(110, 30),
-            Anchor = AnchorStyles.Left | AnchorStyles.Bottom,
-            FlatStyle = FlatStyle.Flat,
-        };
-        btnDelete.Click += (_, _) =>
-        {
-            if (_grid.SelectedRows.Count == 0)
+            var cam = i < cfg.Cameras.Count ? cfg.Cameras[i] : null;
+            var card = new CameraCard(i + 1, cam)
             {
-                MessageBox.Show("请先在列表中选中要删除的摄像头行", "提示",
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-            foreach (DataGridViewRow row in _grid.SelectedRows)
-                if (!row.IsNewRow) _grid.Rows.Remove(row);
-        };
-        Controls.Add(btnDelete);
-
-        // ---- 局域网搜索（海康 SADP 协议）----
-        var btnSearch = new Button
-        {
-            Text = "搜索设备",
-            Location = new Point(265, 342),
-            Size = new Size(110, 30),
-            Anchor = AnchorStyles.Left | AnchorStyles.Bottom,
-            FlatStyle = FlatStyle.Flat,
-            BackColor = Color.FromArgb(0, 122, 204),
-            ForeColor = Color.White,
-        };
-        new ToolTip().SetToolTip(btnSearch, "自动搜索局域网内的海康摄像头，填入选中行");
-        btnSearch.Click += async (_, _) =>
-        {
-            btnSearch.Enabled = false;
-            btnSearch.Text = "搜索中…";
-            try
-            {
-                // SADP 广播 + 端口扫描需等待数秒，放后台线程避免界面卡死
-                var (devices, rtspDisabled) = await Task.Run(() => HikDeviceDiscovery.Search());
-                using var dlg = new DeviceListDialog(devices, rtspDisabled);
-                if (dlg.ShowDialog(this) == DialogResult.OK && dlg.SelectedDevice != null)
-                    FillDevice(dlg.SelectedDevice);
-            }
-            finally
-            {
-                btnSearch.Text = "搜索设备";
-                btnSearch.Enabled = true;
-            }
-        };
-        Controls.Add(btnSearch);
+                Location = new Point(25, 50 + i * 116),
+            };
+            card.SearchClicked += () => _ = SearchIntoAsync(card);
+            _cards.Add(card);
+            Controls.Add(card);
+        }
 
         // ---- 说明 ----
         var lblHelp = new Label
         {
-            Text = "搜索不到或非海康设备时直接手动填 IP/端口/用户名/密码（端口/用户名一般保持 554/admin）；\r\n" +
-                   "密码为摄像头激活时设置的管理密码（萤石云 App → 设备设置中可查），明文保存在本机 config.json；\r\n" +
-                   "IP 留空 = 该路显示模拟画面（调试用）。",
+            Text = "最多 3 路；填了 IP 的框才启用该路，未填 IP 的框不取流（画面角标按启用顺序显示 CAM1/CAM2…）。\r\n" +
+                   "名称可自定义（如 磅前/磅后）；端口/用户名留空按 554/admin 处理。\r\n" +
+                   "搜索不到或非海康设备时直接手动填 IP/端口/用户名/密码；密码明文保存在本机 config.json。",
             AutoSize = true,
-            Location = new Point(25, 380),
+            Location = new Point(25, 402),
             ForeColor = Color.Gray,
-            Anchor = AnchorStyles.Left | AnchorStyles.Bottom,
         };
         Controls.Add(lblHelp);
 
@@ -186,19 +77,17 @@ public class CameraSettingsDialog : Form
         var btnSave = new Button
         {
             Text = "保存设置",
-            Location = new Point(440, 440),
+            Location = new Point(480, 470),
             Size = new Size(110, 34),
-            Anchor = AnchorStyles.Right | AnchorStyles.Bottom,
+            FlatStyle = FlatStyle.Flat,
             BackColor = Color.FromArgb(0, 122, 204),
             ForeColor = Color.White,
-            FlatStyle = FlatStyle.Flat,
         };
         var btnCancel = new Button
         {
             Text = "取 消",
-            Location = new Point(565, 440),
+            Location = new Point(605, 470),
             Size = new Size(110, 34),
-            Anchor = AnchorStyles.Right | AnchorStyles.Bottom,
             FlatStyle = FlatStyle.Flat,
         };
         btnSave.Click += (_, _) => Save();
@@ -209,51 +98,155 @@ public class CameraSettingsDialog : Form
         CancelButton = btnCancel;
     }
 
-    /// <summary>新增一行并填海康默认值（端口 554 / 用户名 admin）。</summary>
-    private void AddDefaultRow() => _table.Rows.Add("", "", 554, "admin", "");
-
-    /// <summary>把搜索到的设备填入当前选中行（用户名留空补 admin；无选中行则新增一行）。</summary>
-    private void FillDevice(HikDeviceInfo device)
+    /// <summary>点某路"搜索设备"：后台搜索局域网设备，选中的设备填入该卡片。</summary>
+    private async Task SearchIntoAsync(CameraCard card)
     {
-        int idx = _grid.CurrentCell?.RowIndex ?? -1;
-        DataRow row = idx >= 0 && idx < _table.Rows.Count
-            ? _table.Rows[idx]
-            : _table.Rows.Add();
-        row["IP地址"] = device.Ip;
-        if (string.IsNullOrWhiteSpace(row["用户名"]?.ToString())) row["用户名"] = "admin";
-        if (row["端口"] is DBNull || (int)row["端口"] <= 0) row["端口"] = 554;
+        card.BtnSearch.Enabled = false;
+        card.BtnSearch.Text = "搜索中…";
+        try
+        {
+            // SADP 广播 + 端口扫描需等待数秒，放后台线程避免界面卡死
+            var (devices, rtspDisabled) = await Task.Run(() => HikDeviceDiscovery.Search());
+            using var dlg = new DeviceListDialog(devices, rtspDisabled);
+            if (dlg.ShowDialog(this) == DialogResult.OK && dlg.SelectedDevice != null)
+                FillDevice(card, dlg.SelectedDevice);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("搜索摄像头设备失败", ex);
+            MessageBox.Show("搜索摄像头设备失败：" + ex.Message, "提示",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+        finally
+        {
+            card.BtnSearch.Text = "搜索设备";
+            card.BtnSearch.Enabled = true;
+        }
     }
 
-    /// <summary>把列表内容写回配置并持久化（主界面收到 OK 后重启取流）。</summary>
+    /// <summary>把搜索到的设备填入该卡片（用户名留空补 admin；端口无效补 554）。</summary>
+    private static void FillDevice(CameraCard card, HikDeviceInfo device)
+    {
+        card.TxtIp.Text = device.Ip;
+        if (string.IsNullOrWhiteSpace(card.TxtUser.Text)) card.TxtUser.Text = "admin";
+        if (!int.TryParse(card.TxtPort.Text, out int port) || port <= 0) card.TxtPort.Text = "554";
+    }
+
+    /// <summary>把三张卡片内容写回配置并持久化（主界面收到 OK 后重启取流）。</summary>
     private void Save()
     {
         var cfg = AppConfig.Current;
         cfg.CameraEnabled = _chkEnabled.Checked;
-
-        var cameras = new List<CameraConfig>();
-        foreach (DataRow row in _table.Rows)
-        {
-            cameras.Add(new CameraConfig
-            {
-                Name = row["名称"]?.ToString() ?? "",
-                Ip = row["IP地址"]?.ToString()?.Trim() ?? "",
-                Port = int.TryParse(row["端口"]?.ToString(), out int port) && port > 0 ? port : 554,
-                User = row["用户名"]?.ToString()?.Trim() ?? "",
-                Password = row["密码"]?.ToString() ?? "",
-            });
-        }
-        cfg.Cameras = cameras;
+        cfg.Cameras = CollectCameras();
         cfg.Save();
-        Log.Info($"摄像头设置已保存：{cameras.Count} 路，启用={cfg.CameraEnabled}");
+        Log.Info($"摄像头设置已保存：{cfg.Cameras.Count} 路，启用={cfg.CameraEnabled}");
         MessageBox.Show("摄像头设置已保存，画面将按新配置刷新。", "成功",
             MessageBoxButtons.OK, MessageBoxIcon.Information);
         DialogResult = DialogResult.OK;
         Close();
     }
 
+    /// <summary>把三张卡片收集为摄像头列表（IP 留空的卡片视为未启用，不保存）。</summary>
+    internal List<CameraConfig> CollectCameras() =>
+        _cards.Where(c => !c.IsBlank).Select(c => c.ToConfig()).ToList();
+
+    /// <summary>单路摄像头卡片：名称/IP/端口/用户名/密码 + "搜索设备"按钮（固定 3 张，不再增删行）。</summary>
+    internal sealed class CameraCard : GroupBox
+    {
+        internal TextBox TxtName = null!;
+        internal TextBox TxtIp = null!;
+        internal TextBox TxtPort = null!;
+        internal TextBox TxtUser = null!;
+        internal TextBox TxtPwd = null!;
+        internal Button BtnSearch = null!;
+
+        /// <summary>点"搜索设备"（窗体负责搜索并把结果回填本卡片）</summary>
+        internal event Action? SearchClicked;
+
+        internal CameraCard(int index, CameraConfig? cam)
+        {
+            Text = $"摄像头 {index}";
+            Size = new Size(690, 108);
+
+            // 第 1 行：名称 | IP 地址 | 端口
+            TxtName = AddField("名称", 18, 30, 110);
+            TxtIp = AddField("IP 地址", 212, 30, 220);
+            TxtPort = AddField("端口", 516, 30, 70);
+
+            // 第 2 行：用户名 | 密码 | 搜索设备
+            TxtUser = AddField("用户名", 18, 68, 110);
+            TxtPwd = AddField("密码", 212, 68, 220);
+
+            BtnSearch = new Button
+            {
+                Text = "搜索设备",
+                Location = new Point(516, 66),
+                Size = new Size(130, 30),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(0, 122, 204),
+                ForeColor = Color.White,
+            };
+            new ToolTip().SetToolTip(BtnSearch, "自动搜索局域网内的海康摄像头，填入本路");
+            BtnSearch.Click += (_, _) => SearchClicked?.Invoke();
+            Controls.Add(BtnSearch);
+
+            if (cam != null)
+            {
+                LoadFrom(cam);
+            }
+            else
+            {
+                // 未配置的卡片预填海康默认值，通常只需再填 IP 和密码
+                TxtPort.Text = "554";
+                TxtUser.Text = "admin";
+            }
+        }
+
+        /// <summary>IP 留空 = 该路未启用</summary>
+        internal bool IsBlank => string.IsNullOrWhiteSpace(TxtIp.Text);
+
+        /// <summary>卡片内容转摄像头配置（端口/用户名留空按海康默认 554/admin 处理）。</summary>
+        internal CameraConfig ToConfig() => new()
+        {
+            Name = TxtName.Text.Trim(),
+            Ip = TxtIp.Text.Trim(),
+            Port = int.TryParse(TxtPort.Text.Trim(), out int port) && port > 0 ? port : 554,
+            User = string.IsNullOrWhiteSpace(TxtUser.Text) ? "admin" : TxtUser.Text.Trim(),
+            Password = TxtPwd.Text,
+        };
+
+        /// <summary>用已有配置填充卡片。</summary>
+        private void LoadFrom(CameraConfig cam)
+        {
+            TxtName.Text = cam.Name;
+            TxtIp.Text = cam.Ip;
+            TxtPort.Text = (cam.Port > 0 ? cam.Port : 554).ToString();
+            TxtUser.Text = cam.User;
+            TxtPwd.Text = cam.Password;
+        }
+
+        /// <summary>加一组"标签 + 输入框"（标签在输入框左侧，间距统一）。</summary>
+        private TextBox AddField(string labelText, int x, int y, int boxWidth)
+        {
+            Controls.Add(new Label
+            {
+                Text = labelText,
+                AutoSize = true,
+                Location = new Point(x, y + 4),
+            });
+            var box = new TextBox
+            {
+                Location = new Point(x + 60, y),
+                Size = new Size(boxWidth, 27),
+            };
+            Controls.Add(box);
+            return box;
+        }
+    }
+
     /// <summary>
     /// 搜索结果选择对话框：列出搜索到的设备（SADP 应答或 RTSP 端口开放），
-    /// 选中后"填入"（或双击）回填到设置列表的选中行；
+    /// 选中后"填入"（或双击）回填到设置卡片；
     /// 仅 8000 端口开放（RTSP/本地服务未开启）的疑似海康/萤石设备以提示行展示。
     /// </summary>
     private class DeviceListDialog : Form
