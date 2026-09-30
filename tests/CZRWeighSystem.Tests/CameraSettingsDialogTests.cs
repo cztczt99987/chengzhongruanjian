@@ -4,7 +4,7 @@ namespace CZRWeighSystem.Tests;
 
 /// <summary>
 /// 摄像头设置窗体构造冒烟测试：用户反馈打开该窗体时程序崩溃，
-/// 用构造（不显示）复现，验证修复。
+/// 用构造（不显示）复现，验证修复。本地网络直连改造后回归验证。
 /// </summary>
 public class CameraSettingsDialogTests
 {
@@ -13,8 +13,8 @@ public class CameraSettingsDialogTests
     {
         AppConfig.Current.Cameras =
         [
-            new CameraConfig { Name = "磅前", Url = "http://x/live.flv" },
-            new CameraConfig { Name = "", Url = "" },
+            new CameraConfig { Name = "磅前", Ip = "192.168.1.64", Port = 554, User = "admin", Password = "x" },
+            new CameraConfig { Name = "", Ip = "" },
         ];
 
         var ex = Record.Exception(() =>

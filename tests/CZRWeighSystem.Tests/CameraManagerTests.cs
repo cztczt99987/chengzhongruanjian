@@ -6,7 +6,8 @@ namespace CZRWeighSystem.Tests;
 /// <summary>
 /// 摄像头配置与建源逻辑测试：
 /// Cameras 列表 JSON 往返一致；BuildSources 按列表逐行建源
-/// （有地址 → RtspCameraSource，地址留空 → SimulatedCameraSource，名称留空默认 CAMn）。
+/// （IP 已填 → RtspCameraSource，IP 留空 → SimulatedCameraSource，名称留空默认 CAMn）；
+/// RTSP 取流地址按 IP/端口/用户名/密码自动生成（特殊字符做 URL 转义）。
 /// BuildSources 只构建不启动，不会触发 VLC 原生库加载。
 /// </summary>
 public class CameraManagerTests
@@ -19,9 +20,12 @@ public class CameraManagerTests
     }
 
     [Fact]
-    public void BuildSources_UrlFilled_UsesRealSourceWithCustomName()
+    public void BuildSources_IpFilled_UsesRealSourceWithCustomName()
     {
-        var cfg = new AppConfig { Cameras = [new CameraConfig { Name = "大门", Url = " http://x/live.flv " }] };
+        var cfg = new AppConfig
+        {
+            Cameras = [new CameraConfig { Name = "大门", Ip = " 192.168.1.64 " }],
+        };
 
         var sources = CameraManager.BuildSources(cfg);
 
@@ -30,11 +34,11 @@ public class CameraManagerTests
     }
 
     [Fact]
-    public void BuildSources_UrlBlank_UsesSimulatedSourceWithDefaultName()
+    public void BuildSources_IpBlank_UsesSimulatedSourceWithDefaultName()
     {
         var cfg = new AppConfig
         {
-            Cameras = [new CameraConfig { Name = "", Url = "" }, new CameraConfig { Name = "磅前", Url = "rtsp://10.0.0.8/live" }],
+            Cameras = [new CameraConfig { Name = "", Ip = "" }, new CameraConfig { Name = "磅前", Ip = "10.0.0.8" }],
         };
 
         var sources = CameraManager.BuildSources(cfg);
@@ -47,6 +51,21 @@ public class CameraManagerTests
     }
 
     [Fact]
+    public void BuildRtspUrl_Defaults_UsesHikStandardPath()
+    {
+        var cam = new CameraConfig { Ip = "192.168.1.64" };
+        Assert.Equal("rtsp://admin:@192.168.1.64:554/Streaming/Channels/101", cam.BuildRtspUrl());
+    }
+
+    [Fact]
+    public void BuildRtspUrl_SpecialCharsInPassword_UrlEscaped()
+    {
+        // 密码含 @ : / 等特殊字符时必须转义，否则 RTSP 地址解析错乱
+        var cam = new CameraConfig { Ip = "192.168.1.64", Port = 555, User = "ad@min", Password = "p@ss:1/w" };
+        Assert.Equal("rtsp://ad%40min:p%40ss%3A1%2Fw@192.168.1.64:555/Streaming/Channels/101", cam.BuildRtspUrl());
+    }
+
+    [Fact]
     public void Cameras_JsonRoundTrip_Preserved()
     {
         var cfg = new AppConfig
@@ -54,8 +73,8 @@ public class CameraManagerTests
             CameraEnabled = false,
             Cameras =
             [
-                new CameraConfig { Name = "磅前", Url = "https://rtmp05open.ys7.com:9188/v3/openlive/a.flv?t=x" },
-                new CameraConfig { Name = "", Url = "" },
+                new CameraConfig { Name = "磅前", Ip = "192.168.1.64", Port = 554, User = "admin", Password = "abc123" },
+                new CameraConfig { Name = "", Ip = "" },
             ],
         };
 
@@ -66,7 +85,24 @@ public class CameraManagerTests
         Assert.False(back.CameraEnabled);
         Assert.Equal(2, back.Cameras.Count);
         Assert.Equal("磅前", back.Cameras[0].Name);
-        Assert.Equal("https://rtmp05open.ys7.com:9188/v3/openlive/a.flv?t=x", back.Cameras[0].Url);
+        Assert.Equal("192.168.1.64", back.Cameras[0].Ip);
+        Assert.Equal(554, back.Cameras[0].Port);
+        Assert.Equal("admin", back.Cameras[0].User);
+        Assert.Equal("abc123", back.Cameras[0].Password);
         Assert.Equal("", back.Cameras[1].Name);
+        Assert.True(back.Cameras[1].IsBlank);
+    }
+
+    [Fact]
+    public void Cameras_JsonMissingFields_FallBackToHikDefaults()
+    {
+        // 旧配置文件缺端口/用户名字段时，反序列化应回落海康默认值（554/admin）
+        const string json = """{"Cameras":[{"Name":"磅前","Ip":"192.168.1.64"}]}""";
+        var back = System.Text.Json.JsonSerializer.Deserialize<AppConfig>(json);
+
+        Assert.NotNull(back);
+        var cam = Assert.Single(back.Cameras);
+        Assert.Equal(554, cam.Port);
+        Assert.Equal("admin", cam.User);
     }
 }
