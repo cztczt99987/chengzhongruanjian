@@ -45,4 +45,9 @@
     <InternalsVisibleTo Include="CZRWeighSystem.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- 界面图标（空/重车自卸车图，用户提供，已处理为透明背景 PNG）随程序集内嵌，免外部文件 -->
+    <EmbeddedResource Include="UI\Resources\*.png" />
+  </ItemGroup>
+
 </Project>

@@ -5,7 +5,7 @@ namespace CZRWeighSystem.UI;
 
 /// <summary>
 /// 称重主界面（2026-09-30 按目标版式二次改版）：
-/// 顶部为「空车去皮 / 重车过磅」手动选择按钮 + 大屏实时重量显示 + 稳定/通讯指示，
+/// 顶部为「空车去皮 / 重车过磅」手动选择按钮 + 大屏实时重量显示，稳定/通讯指示横排于大屏重量下方，
 /// 点击按钮弹出称重录入窗（首页不再放置信息录入区）；
 /// 中部为 3 个摄像头画面槽位（最多显示 3 路），摄像头 3 画面上悬浮自绘的今日称重统计卡片（与画面顶边齐平，点击可收起/展开）；
 /// 底部为称重记录列表（可选显示条数 20/50/70/100，双击未完成行带车号打开录入窗结算）。
@@ -78,7 +78,7 @@ public class MainForm : Form
     private ToolStripStatusLabel _tsslTime = null!;
 
     // 布局参数：中部视频区、底部记录列表（顶部称重条下方直接是视频区）
-    private const int CameraY = 192;     // 视频监控区 y（顶部称重条底边 172 + 20）
+    private const int CameraY = 172;     // 视频监控区 y（顶部称重条含稳定/通讯行底边 166 + 6）
     private const int CameraH = 320;     // 视频监控区高度（固定）
     private int _gridY = CameraY + CameraH + 34;   // 底部记录列表 y（中间留今日汇总行）
 
@@ -152,12 +152,12 @@ public class MainForm : Form
         };
     }
 
-    // ---------- 顶部称重条：空车去皮 | 大屏重量 | 重车过磅 | 稳定/通讯指示 ----------
+    // ---------- 顶部称重条：空车去皮 | 大屏重量 | 重车过磅（稳定/通讯指示横排于大屏下方） ----------
     private void BuildTopBar()
     {
         // 手动选择本次称重类型：点击弹出录入窗（2026-09-30 二次改版，录入区移入弹窗）
         // 浅色扁平按钮 + 自卸车图标（空厢举升=空车去皮，满载=重车过磅），图上文下
-        _btnTare = NewButton("空车去皮", 20, 42, 175, 120, Color.White);
+        _btnTare = NewButton("空车去皮", 20, 36, 175, 92, Color.White);
         _btnTare.Font = new Font("Microsoft YaHei UI", 12F, FontStyle.Bold);
         _btnTare.ForeColor = Color.FromArgb(55, 58, 62);
         _btnTare.FlatAppearance.BorderColor = Color.FromArgb(206, 212, 220);
@@ -173,13 +173,13 @@ public class MainForm : Form
             Font = new Font("Consolas", 56F, FontStyle.Bold),
             ForeColor = Color.OrangeRed,
             TextAlign = ContentAlignment.MiddleCenter,
-            Location = new Point(210, 32),
-            Size = new Size(490, 140),
+            Location = new Point(210, 30),
+            Size = new Size(490, 104),
             BorderStyle = BorderStyle.FixedSingle,
             BackColor = Color.Black,
         };
 
-        _btnGross = NewButton("重车过磅", 715, 42, 175, 120, Color.White);
+        _btnGross = NewButton("重车过磅", 715, 36, 175, 92, Color.White);
         _btnGross.Font = new Font("Microsoft YaHei UI", 12F, FontStyle.Bold);
         _btnGross.ForeColor = Color.FromArgb(55, 58, 62);
         _btnGross.FlatAppearance.BorderColor = Color.FromArgb(206, 212, 220);
@@ -189,15 +189,14 @@ public class MainForm : Form
         _btnGross.TextImageRelation = TextImageRelation.ImageAboveText;
         _btnGross.Click += (_, _) => OpenWeighEntry(isTare: false);
 
-        // 稳定/通讯指示（重车过磅右侧竖排）
+        // 稳定/通讯指示（大屏重量下方横排，由 LayoutTopBar 成组居中；AutoSize：文本固定三字宽度稳定）
         _lblStable = new Label
         {
             Text = "● 动态",
             Font = new Font("Microsoft YaHei UI", 14F, FontStyle.Bold),
             ForeColor = Color.Red,
-            Location = new Point(905, 44),
-            Size = new Size(180, 56),
-            TextAlign = ContentAlignment.MiddleLeft,
+            AutoSize = true,
+            Location = new Point(905, 140),
         };
         // 通讯状态指示：启动时未通讯显示红色，收到仪表数据后变绿
         _lblComm = new Label
@@ -205,9 +204,8 @@ public class MainForm : Form
             Text = "● 通讯",
             Font = new Font("Microsoft YaHei UI", 14F, FontStyle.Bold),
             ForeColor = Color.Red,
-            Location = new Point(905, 106),
-            Size = new Size(180, 56),
-            TextAlign = ContentAlignment.MiddleLeft,
+            AutoSize = true,
+            Location = new Point(1010, 140),
         };
 
         Controls.AddRange(new Control[] { _btnTare, _lblWeight, _btnGross, _lblStable, _lblComm });
@@ -215,21 +213,24 @@ public class MainForm : Form
     }
 
     /// <summary>
-    /// 顶部称重条（空车去皮｜大屏重量｜重车过磅｜稳定/通讯指示）整组
-    /// 横向居中铺满顶部区域，窗口缩放时保持居中。
+    /// 顶部称重条（空车去皮｜大屏重量｜重车过磅）整组横向居中，
+    /// 稳定/通讯指示横排于大屏重量下方并成组居中于大屏，窗口缩放时保持居中。
     /// （统计面板位于画面区同一水平带下方，与顶部称重条无重叠）
     /// </summary>
     private void LayoutTopBar()
     {
         int gap = 15;
-        int groupW = _btnTare.Width + gap + _lblWeight.Width + gap + _btnGross.Width
-                   + gap + _lblStable.Width;
+        int groupW = _btnTare.Width + gap + _lblWeight.Width + gap + _btnGross.Width;
         int x = Math.Max(8, (ClientSize.Width - groupW) / 2);
         _btnTare.Left = x;
         _lblWeight.Left = _btnTare.Right + gap;
         _btnGross.Left = _lblWeight.Right + gap;
-        _lblStable.Left = _btnGross.Right + gap;
-        _lblComm.Left = _lblStable.Left;
+
+        // 稳定/通讯指示：大屏重量下方横排（与两车按钮等高，不占用右侧空间）
+        const int indicatorGap = 24;
+        int rowW = _lblStable.Width + indicatorGap + _lblComm.Width;
+        _lblStable.Left = _lblWeight.Left + (_lblWeight.Width - rowW) / 2;
+        _lblComm.Left = _lblStable.Right + indicatorGap;
     }
 
     /// <summary>打开称重录入弹窗（皮/毛由操作员手动选择）；保存成功后抓拍留证并刷新列表与统计。</summary>
@@ -897,7 +898,7 @@ public class MainForm : Form
     }
 
     /// <summary>
-    /// 刷新通讯状态指示（稳定指示下方）：
+    /// 刷新通讯状态指示（稳定指示右侧）：
     /// 尚未通讯过或通讯中断（超时/报错）→ 红色；正常收到仪表数据 → 绿色。
     /// </summary>
     private void UpdateCommIndicator()
