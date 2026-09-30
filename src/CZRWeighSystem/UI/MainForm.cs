@@ -1,4 +1,5 @@
 using CZRWeighSystem.Core;
+using System.Drawing.Drawing2D;
 
 namespace CZRWeighSystem.UI;
 
@@ -6,7 +7,7 @@ namespace CZRWeighSystem.UI;
 /// 称重主界面（2026-09-30 按目标版式二次改版）：
 /// 顶部为「空车去皮 / 重车过磅」手动选择按钮 + 大屏实时重量显示 + 稳定/通讯指示，
 /// 点击按钮弹出称重录入窗（首页不再放置信息录入区）；
-/// 中部为 3 个摄像头画面槽位（最多显示 3 路），最右侧右上角为今日称重统计面板（点击可收起/展开）；
+/// 中部为 3 个摄像头画面槽位（最多显示 3 路），摄像头 3 画面上悬浮自绘的今日称重统计卡片（与画面顶边齐平，点击可收起/展开）；
 /// 底部为称重记录列表（可选显示条数 20/50/70/100，双击未完成行带车号打开录入窗结算）。
 /// 布局采用纯代码方式构建。
 /// </summary>
@@ -35,19 +36,34 @@ public class MainForm : Form
     /// <summary>首页画面槽位数量（最多同时显示 3 路摄像头画面）。</summary>
     internal const int MaxVideoTiles = 3;
 
-    // ===== 今日称重统计（悬浮于窗口右上角，点击可竖直收起/展开）=====
-    private const int StatsW = 252;          // 展开宽度
-    private const int StatsH = 250;          // 展开高度（悬浮卡片，参考目标版式）
-    private const int StatsCollapsedH = 32;  // 收起后仅剩标题条（竖直伸缩）
+    // ===== 今日称重统计（悬浮于摄像头画面上，自绘卡片，点击可竖直收起/展开）=====
+    private const int StatsW = 252;           // 展开宽度
+    private const int StatsH = 250;           // 展开高度（悬浮卡片）
+    private const int StatsCollapsedH = 32;   // 收起后仅剩标题条（竖直伸缩）
+    private const int StatsHeaderH = 34;      // 标题条高度（标题居中）
+    private const int StatsFirstRowY = 42;    // 首行数值 y
+    private const int StatsRowGap = 40;       // 行间距
+    private const int StatsRowH = 30;         // 行高
+    private const int StatsGap = 10;          // 名目与数值间距
+    private static readonly Color StatsHeaderColor = Color.FromArgb(202, 224, 246);     // 标题条底色
+    private static readonly Color StatsBodyTopColor = Color.FromArgb(240, 247, 254);    // 内容区渐变（上）
+    private static readonly Color StatsBodyBottomColor = Color.FromArgb(212, 232, 250); // 内容区渐变（下）
+    private static readonly Color StatsBorderColor = Color.FromArgb(150, 186, 222);     // 卡片描边
+    private static readonly Color StatsTitleColor = Color.FromArgb(16, 58, 112);        // 标题文字
+    private static readonly Color StatsNameColor = Color.FromArgb(62, 84, 110);         // 名目文字
+    private static readonly Color StatsValueColor = Color.FromArgb(12, 74, 156);        // 数值文字
     private bool _statsExpanded = true;
-    private GroupBox _statsPanel = null!;
-    private Label _lblStatsArrow = null!;      // 收起/展开状态箭头
-    private Label _lblStatTotal = null!;     // 全部记录
-    private Label _lblStatCount = null!;     // 今日磅单
-    private Label _lblStatGross = null!;     // 今日毛重
-    private Label _lblStatTare = null!;      // 今日皮重
-    private Label _lblStatNet = null!;       // 今日净重
-    private Label _lblTodaySummary = null!;  // 视频区下方今日汇总行
+    private Panel _statsPanel = null!;
+    private Label _lblStatsArrow = null!;      // 收起/展开状态箭头（标题条右侧）
+    private readonly Font _statsTitleFont = new("Microsoft YaHei UI", 11F, FontStyle.Bold);
+    private readonly Font _statsNameFont = new("Microsoft YaHei UI", 10F);
+    private readonly Font _statsValueFont = new("Microsoft YaHei UI", 10F, FontStyle.Bold);
+    private string _statTotal = "-";          // 全部记录
+    private string _statToday = "-";          // 今日磅单
+    private string _statGross = "-";          // 今日毛重
+    private string _statTare = "-";           // 今日皮重
+    private string _statNet = "-";            // 今日净重
+    private Label _lblTodaySummary = null!;   // 视频区下方今日汇总行
 
     // ===== 底部称重记录列表 =====
     private GroupBox _capturePanel = null!;
@@ -86,6 +102,7 @@ public class MainForm : Form
         BuildStatusBar();
         LayoutTopBar();          // 初始化顶部称重条居中
         LayoutStatsPanel();      // 初始化统计面板展开态并贴齐右缘
+        AlignStatsToVideo();     // 统计面板与摄像头画面顶边齐平
         Resize += (_, _) => LayoutTopBar();   // 窗口缩放时顶部称重条保持居中
 
         // 订阅业务事件（串口数据来自非 UI 线程，统一转发到 UI 线程）
@@ -110,6 +127,7 @@ public class MainForm : Form
                 _cameras.Start();
             }
             FillVideoPanel();   // 摄像头源就绪后绑定首页画面（未启用时显示提示）
+            AlignStatsToVideo();   // 画面布局完成后与画面顶边齐平
 
             // 启动时及每 6 小时检查一次自动备份（对应 PRD F11-02）
             Utils.BackupService.AutoBackupIfNeeded();
@@ -400,69 +418,94 @@ public class MainForm : Form
         SetState($"视频监控：{_cfg.Cameras.Count} 路", true);
     }
 
-    // ---------- 今日称重统计面板（悬浮于窗口右上角，点击可竖直收起/展开） ----------
+    // ---------- 今日称重统计（悬浮于摄像头画面上，自绘卡片，点击可竖直收起/展开） ----------
     private void BuildStatsPanel()
     {
-        _statsPanel = new GroupBox
+        _statsPanel = new Panel
         {
-            Text = "今日称重统计",
-            ForeColor = Color.Black,
-            BackColor = Color.FromArgb(189, 215, 238),   // 浅蓝样式（对应目标版式）
-            Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Bold),
-            Location = new Point(ClientSize.Width - StatsW - 20, CameraY),   // 悬浮于摄像头 3 顶部（贴画面区右上角）
+            // 顶部位置由 AlignStatsToVideo 与摄像头画面顶边对齐
+            Location = new Point(ClientSize.Width - StatsW - 20, CameraY),
             Size = new Size(StatsW, StatsH),
             Anchor = AnchorStyles.Top | AnchorStyles.Right,
             Cursor = Cursors.Hand,
+            BackColor = StatsHeaderColor,   // 标题条底色（自绘卡片；透明子控件亦取此底色）
         };
+        _statsPanel.Paint += (_, e) => PaintStatsCard(e.Graphics);
         _statsPanel.Click += (_, _) => ToggleStatsPanel();
 
-        // 收起/展开状态箭头（标题行右侧，展开▲ 收起▼）
+        // 收起/展开状态箭头（标题条右侧，展开▲ 收起▼）
         _lblStatsArrow = new Label
         {
             Text = "▲",
             AutoSize = true,
-            Location = new Point(StatsW - 38, 0),
+            Location = new Point(StatsW - 28, 7),
             Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold),
+            ForeColor = StatsTitleColor,
             BackColor = Color.Transparent,
         };
         _lblStatsArrow.Click += (_, _) => ToggleStatsPanel();
         _statsPanel.Controls.Add(_lblStatsArrow);
 
-        // 名目在左、数值在右对齐（深蓝数值高亮）
-        Label Val(string name, int y)
-        {
-            var nameLbl = new Label
-            {
-                Text = name, AutoSize = true, Location = new Point(12, y),
-                BackColor = Color.Transparent,
-                Font = new Font("Microsoft YaHei UI", 10F),
-            };
-            nameLbl.Click += (_, _) => ToggleStatsPanel();
-            var v = new Label
-            {
-                Text = "-",
-                Location = new Point(90, y - 2),
-                Size = new Size(148, 28),
-                TextAlign = ContentAlignment.MiddleRight,
-                ForeColor = Color.FromArgb(23, 54, 110),
-                BackColor = Color.Transparent,
-                Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Bold),
-            };
-            v.Click += (_, _) => ToggleStatsPanel();
-            _statsPanel.Controls.Add(nameLbl);
-            _statsPanel.Controls.Add(v);
-            return v;
-        }
-
-        _lblStatTotal = Val("全部记录：", 40);
-        _lblStatCount = Val("今日磅单：", 82);
-        _lblStatGross = Val("今日毛重：", 124);
-        _lblStatTare = Val("今日皮重：", 166);
-        _lblStatNet = Val("今日净重：", 208);
-
         Controls.Add(_statsPanel);
         _statsPanel.BringToFront();   // 悬浮在视频画面之上
     }
+
+    /// <summary>统计面板与摄像头画面顶边齐平（悬浮于画面之上，不压在画面区标题栏上）。</summary>
+    private void AlignStatsToVideo()
+    {
+        // 画面槽位位于画面区标题栏之下：取画面宿主控件的实际位置，构造阶段布局未完成时按标题栏估算
+        var host = _videoPanel.Controls.Count > 0 ? _videoPanel.Controls[0] : null;
+        int pictureTop = host is { Top: > 0 } ? host.Top : _videoPanel.DisplayRectangle.Top;
+        _statsPanel.Top = _videoPanel.Top + pictureTop + 2;   // 2 = 画面槽位外边距
+    }
+
+    /// <summary>
+    /// 自绘统计卡片：浅蓝标题条（标题居中）+ 浅色渐变内容区 + 细描边；
+    /// 数值按「名目 + 数值」成组水平居中且各行对齐，收起时只画标题条。
+    /// </summary>
+    private void PaintStatsCard(Graphics g)
+    {
+        int w = _statsPanel.Width, h = _statsPanel.Height;
+        int headerH = Math.Min(StatsHeaderH, h);
+        using (var header = new SolidBrush(StatsHeaderColor))
+            g.FillRectangle(header, 0, 0, w, headerH);
+        if (h > headerH)
+        {
+            var body = new Rectangle(0, headerH, w, h - headerH);
+            using var brush = new LinearGradientBrush(body, StatsBodyTopColor, StatsBodyBottomColor, 90F);
+            g.FillRectangle(brush, body);
+        }
+        using (var pen = new Pen(StatsBorderColor))
+            g.DrawRectangle(pen, 0, 0, w - 1, h - 1);
+
+        TextRenderer.DrawText(g, "今日称重统计", _statsTitleFont,
+            new Rectangle(0, 0, w, headerH), StatsTitleColor,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+
+        if (!_statsExpanded) return;
+
+        // 先量出名目/数值的最大宽度，再整体水平居中（各行左右对齐、成组居中）
+        string[] names = ["全部记录：", "今日磅单：", "今日毛重：", "今日皮重：", "今日净重："];
+        string[] values = [_statTotal, _statToday, _statGross, _statTare, _statNet];
+        int nameW = 0, valueW = 0;
+        foreach (var n in names) nameW = Math.Max(nameW, MeasureText(n, _statsNameFont));
+        foreach (var v in values) valueW = Math.Max(valueW, MeasureText(v, _statsValueFont));
+        int left = Math.Max(6, (w - (nameW + StatsGap + valueW)) / 2);
+        for (int i = 0; i < names.Length; i++)
+        {
+            int y = StatsFirstRowY + i * StatsRowGap;
+            TextRenderer.DrawText(g, names[i], _statsNameFont,
+                new Rectangle(left, y, nameW, StatsRowH), StatsNameColor,
+                TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+            TextRenderer.DrawText(g, values[i], _statsValueFont,
+                new Rectangle(left + nameW + StatsGap, y, valueW, StatsRowH), StatsValueColor,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+        }
+    }
+
+    /// <summary>文本渲染宽度（与 NoPadding 绘制口径一致，用于成组居中）。</summary>
+    private static int MeasureText(string text, Font font) =>
+        TextRenderer.MeasureText(text, font, new Size(int.MaxValue, int.MaxValue), TextFormatFlags.NoPadding).Width;
 
     /// <summary>展开/收起今日称重统计面板（点击面板切换，竖直伸缩）。</summary>
     internal void ToggleStatsPanel()
@@ -476,19 +519,19 @@ public class MainForm : Form
     {
         _statsPanel.Height = _statsExpanded ? StatsH : StatsCollapsedH;
         _lblStatsArrow.Text = _statsExpanded ? "▲" : "▼";
-        foreach (Control c in _statsPanel.Controls)
-            c.Visible = _statsExpanded || ReferenceEquals(c, _lblStatsArrow);
+        _statsPanel.Invalidate();   // 卡片自绘：内容区随展开状态重绘
     }
 
     /// <summary>刷新右侧统计面板与今日汇总行（全部记录数、今日磅单数与毛/皮/净汇总）。</summary>
     private void RefreshStats()
     {
         var (total, todayCount, gross, tare, net) = _recordRepo.GetHomeStats();
-        _lblStatTotal.Text = $"{total} 条";
-        _lblStatCount.Text = $"{todayCount} 张";
-        _lblStatGross.Text = _cfg.FormatWeight(gross);
-        _lblStatTare.Text = _cfg.FormatWeight(tare);
-        _lblStatNet.Text = _cfg.FormatWeight(net);
+        _statTotal = $"{total} 条";
+        _statToday = $"{todayCount} 张";
+        _statGross = _cfg.FormatWeight(gross);
+        _statTare = _cfg.FormatWeight(tare);
+        _statNet = _cfg.FormatWeight(net);
+        _statsPanel.Invalidate();   // 卡片自绘：数值变化后重绘
         _lblTodaySummary.Text = $"今日称重：磅单 {todayCount} 张    净重 {_cfg.FormatWeight(net)}";
     }
 

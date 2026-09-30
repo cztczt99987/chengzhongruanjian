@@ -23,7 +23,7 @@ public class MainFormLayoutTests
     private sealed record LayoutSnapshot(
         string TareButtonText, string GrossButtonText,
         bool HasVehicleInput, FormWindowState WindowState,
-        Rectangle VideoBounds, int VideoTileCount,
+        Rectangle VideoBounds, int VideoTileCount, int VideoPictureTop,
         Rectangle StatsBounds,
         Rectangle CaptureBounds, int CaptureColumnCount,
         string FirstColumnHeader, string LastColumnHeader,
@@ -53,7 +53,7 @@ public class MainFormLayoutTests
     private static LayoutSnapshot Snapshot(MainForm form)
     {
         var video = (GroupBox)Fld(form, "_videoPanel");
-        var stats = (GroupBox)Fld(form, "_statsPanel");
+        var stats = (Panel)Fld(form, "_statsPanel");
         var capture = (GroupBox)Fld(form, "_capturePanel");
         var grid = (DataGridView)Fld(form, "_captureGrid");   // 不按 Controls 序号取：条数下拉框会被置前
         var pageSize = (ComboBox)Fld(form, "_cboPageSize");
@@ -67,7 +67,7 @@ public class MainFormLayoutTests
             ((Button)Fld(form, "_btnGross")).Text,
             FldOrNull(form, "_txtVehicle") != null,
             form.WindowState,
-            video.Bounds, tileCount, stats.Bounds, capture.Bounds,
+            video.Bounds, tileCount, video.Top + video.DisplayRectangle.Top + 2, stats.Bounds, capture.Bounds,
             grid.Columns.Count,
             grid.Columns[0].HeaderText, grid.Columns[grid.Columns.Count - 1].HeaderText,
             pageSize.Text, grid.Rows.Count,
@@ -155,8 +155,10 @@ public class MainFormLayoutTests
     public void 统计面板_悬浮于摄像头3顶部()
     {
         var s = BuildAndMeasure();
-        // 顶边与画面区对齐（摄像头 3 顶部）、贴画面区右缘，整体落在第 3 个槽位范围内
-        Assert.Equal(s.VideoBounds.Top, s.StatsBounds.Top);
+        // 顶边与摄像头画面齐平（画面槽位顶边，而非压在画面区标题栏上）、贴画面区右缘，整体落在第 3 个槽位范围内
+        Assert.Equal(s.VideoPictureTop, s.StatsBounds.Top);
+        Assert.True(s.StatsBounds.Bottom <= s.VideoBounds.Bottom,
+            $"统计面板(底边={s.StatsBounds.Bottom})应完整落在画面区内(底边={s.VideoBounds.Bottom})");
         Assert.True(s.StatsBounds.Right <= s.VideoBounds.Right + 2,
             $"统计面板右缘({s.StatsBounds.Right})超出画面区右缘({s.VideoBounds.Right})");
         int tile3Left = s.VideoBounds.Left + s.VideoBounds.Width * 2 / 3;
@@ -171,7 +173,7 @@ public class MainFormLayoutTests
         RunOnSta(() =>
         {
             using var form = new MainForm();
-            var stats = (GroupBox)Fld(form, "_statsPanel");
+            var stats = (Panel)Fld(form, "_statsPanel");
             var arrow = (Label)Fld(form, "_lblStatsArrow");
             int expandedHeight = stats.Height;
             int expandedWidth = stats.Width;
