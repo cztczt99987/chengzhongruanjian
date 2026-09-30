@@ -1,0 +1,161 @@
+using System.Drawing.Drawing2D;
+
+namespace CZRWeighSystem.UI;
+
+/// <summary>
+/// 顶部工具栏快捷方式图标（纯代码绘制的彩色扁平风、透明背景）：
+/// 记录查询=文档放大镜、报表统计=柱状图、视频监控=显示器、基础资料=数据库、
+/// 计算器=计算器、退出=电源键。统一 64×64 画布与圆角语言，按目标尺寸等比缩放。
+/// </summary>
+internal static class ShortcutIcon
+{
+    // 统一配色（与白色工具栏搭配的商务彩色）
+    private static readonly Color Blue = Color.FromArgb(45, 125, 210);
+    private static readonly Color BlueDark = Color.FromArgb(30, 96, 168);
+    private static readonly Color Green = Color.FromArgb(63, 173, 102);
+    private static readonly Color Orange = Color.FromArgb(240, 150, 30);
+    private static readonly Color Paper = Color.FromArgb(255, 255, 255);
+    private static readonly Color Ink = Color.FromArgb(74, 84, 98);
+    private static readonly Color Red = Color.FromArgb(214, 69, 65);
+
+    public static Bitmap Draw(string name, int size = 40)
+    {
+        var bmp = new Bitmap(size, size);
+        using var g = Graphics.FromImage(bmp);
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.ScaleTransform(size / 64f, size / 64f);
+
+        switch (name)
+        {
+            case "query": DrawQuery(g); break;
+            case "report": DrawReport(g); break;
+            case "video": DrawVideo(g); break;
+            case "base": DrawBase(g); break;
+            case "calc": DrawCalc(g); break;
+            case "exit": DrawExit(g); break;
+            default: throw new ArgumentException($"未知快捷图标：{name}", nameof(name));
+        }
+        return bmp;
+    }
+
+    /// <summary>记录查询：橙色文档 + 蓝色放大镜。</summary>
+    private static void DrawQuery(Graphics g)
+    {
+        using var doc = RoundedRect(10, 6, 34, 44, 5);
+        using var b = new LinearGradientBrush(new Rectangle(10, 6, 34, 44),
+            Color.FromArgb(255, 196, 82), Color.FromArgb(238, 144, 20), 90f);
+        g.FillPath(b, doc);
+        // 文档上的文字线
+        using var line = new SolidBrush(Color.FromArgb(150, 110, 30));
+        g.FillRectangle(line, 17, 16, 20, 3);
+        g.FillRectangle(line, 17, 23, 20, 3);
+        g.FillRectangle(line, 17, 30, 13, 3);
+        // 放大镜（右下）
+        using var ring = new Pen(BlueDark, 5) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        g.DrawEllipse(ring, 24, 28, 24, 24);
+        g.DrawLine(ring, 42, 46, 52, 56);
+        using var glass = new SolidBrush(Color.FromArgb(60, 45, 125, 210));
+        g.FillEllipse(glass, 27, 31, 18, 18);
+    }
+
+    /// <summary>报表统计：文档 + 三根彩色柱状图。</summary>
+    private static void DrawReport(Graphics g)
+    {
+        using var doc = RoundedRect(10, 6, 44, 52, 5);
+        using var b = new SolidBrush(Paper);
+        g.FillPath(b, doc);
+        using var border = new Pen(Color.FromArgb(206, 214, 226), 2);
+        g.DrawPath(border, doc);
+        // 标题线
+        using var title = new SolidBrush(Color.FromArgb(150, 160, 172));
+        g.FillRectangle(title, 17, 13, 18, 3);
+        // 柱状图（蓝/绿/橙）
+        using (var bar = new SolidBrush(Blue)) g.FillRectangle(bar, 17, 38, 8, 13);
+        using (var bar = new SolidBrush(Green)) g.FillRectangle(bar, 29, 30, 8, 21);
+        using (var bar = new SolidBrush(Orange)) g.FillRectangle(bar, 41, 24, 8, 27);
+    }
+
+    /// <summary>视频监控：蓝色显示器 + 播放三角。</summary>
+    private static void DrawVideo(Graphics g)
+    {
+        // 底座
+        using var dark = new SolidBrush(BlueDark);
+        g.FillRectangle(dark, 26, 50, 12, 5);
+        g.FillRectangle(dark, 18, 54, 28, 4);
+        // 屏幕
+        using var screen = RoundedRect(6, 8, 52, 42, 6);
+        using var frame = new LinearGradientBrush(new Rectangle(6, 8, 52, 42),
+            Color.FromArgb(74, 148, 224), BlueDark, 90f);
+        g.FillPath(frame, screen);
+        using var inner = RoundedRect(10, 12, 44, 34, 3);
+        using var ib = new SolidBrush(Color.FromArgb(20, 44, 78));
+        g.FillPath(ib, inner);
+        // 播放三角
+        using var play = new SolidBrush(Color.White);
+        g.FillPolygon(play, new[] { new Point(27, 20), new Point(27, 38), new Point(42, 29) });
+    }
+
+    /// <summary>基础资料：三层数据库圆柱。</summary>
+    private static void DrawBase(Graphics g)
+    {
+        Rectangle body = new(12, 14, 40, 38);
+        using var bodyBrush = new SolidBrush(Blue);
+        g.FillRectangle(bodyBrush, body);
+        using var side = new SolidBrush(BlueDark);
+        // 两层分隔环
+        g.FillEllipse(side, 12, 26, 40, 12);
+        g.FillEllipse(side, 12, 38, 40, 12);
+        // 顶/中/底三个椭圆面
+        using var topFace = new SolidBrush(Color.FromArgb(123, 186, 240));
+        g.FillEllipse(topFace, 12, 8, 40, 12);
+        g.FillEllipse(topFace, 12, 20, 40, 12);
+        g.FillEllipse(topFace, 12, 32, 40, 12);
+        using var rim = new Pen(BlueDark, 2);
+        g.DrawEllipse(rim, 12, 8, 40, 12);
+        g.DrawEllipse(rim, 12, 20, 40, 12);
+        g.DrawEllipse(rim, 12, 32, 40, 12);
+        g.DrawEllipse(rim, 12, 44, 40, 12);
+    }
+
+    /// <summary>计算器：灰身 + 深色屏 + 按键点阵。</summary>
+    private static void DrawCalc(Graphics g)
+    {
+        using var shell = RoundedRect(14, 4, 36, 56, 7);
+        using var b = new LinearGradientBrush(new Rectangle(14, 4, 36, 56),
+            Color.FromArgb(238, 241, 245), Color.FromArgb(198, 206, 216), 90f);
+        g.FillPath(b, shell);
+        using var border = new Pen(Ink, 2);
+        g.DrawPath(border, shell);
+        // 屏幕
+        using var scr = RoundedRect(19, 10, 26, 11, 2);
+        using var sb = new SolidBrush(Color.FromArgb(58, 68, 82));
+        g.FillPath(sb, scr);
+        // 按键 3×4
+        using var key = new SolidBrush(Color.FromArgb(120, 130, 144));
+        for (int r = 0; r < 4; r++)
+            for (int c = 0; c < 3; c++)
+                g.FillEllipse(key, 20 + c * 8, 27 + r * 7, 5, 5);
+    }
+
+    /// <summary>退出：红色电源键（圆环缺口 + 竖线）。</summary>
+    private static void DrawExit(Graphics g)
+    {
+        using var pen = new Pen(Red, 6) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        // 圆环缺口朝上（GDI+ 角度 0=右、顺时针：340° 起扫 220°，缺口 200°→340° 经过顶部 270°）
+        g.DrawArc(pen, 12, 12, 40, 40, 340, 220);
+        g.DrawLine(pen, 32, 8, 32, 30);
+    }
+
+    /// <summary>圆角矩形路径。</summary>
+    private static GraphicsPath RoundedRect(int x, int y, int w, int h, int r)
+    {
+        var path = new GraphicsPath();
+        int d = r * 2;
+        path.AddArc(x, y, d, d, 180, 90);
+        path.AddArc(x + w - d, y, d, d, 270, 90);
+        path.AddArc(x + w - d, y + h - d, d, d, 0, 90);
+        path.AddArc(x, y + h - d, d, d, 90, 90);
+        path.CloseFigure();
+        return path;
+    }
+}

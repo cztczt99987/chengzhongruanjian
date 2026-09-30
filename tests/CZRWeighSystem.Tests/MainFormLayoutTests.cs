@@ -8,7 +8,8 @@ namespace CZRWeighSystem.Tests;
 /// <summary>
 /// 首页布局回归测试（2026-09-30 五次调整）：
 /// 1. 软件启动默认全屏（最大化）；
-/// 2. 顶部称重条（空车去皮｜大屏重量｜重车过磅）整组横向居中，窗口缩放后仍居中；
+/// 2. 顶部白色工具栏：左快捷方式（记录查询/报表统计/视频监控/基础资料）｜
+///    称重条（空车去皮｜大屏重量｜重车过磅）整组横向居中｜右快捷方式（计算器/退出），最小窗口宽度不重叠；
 ///    空/重车按钮带自卸车图标（空厢举升/满载货堆）；稳定/通讯指示横排于大屏重量下方并成组居中；
 /// 3. 今日称重统计面板悬浮于摄像头 3 顶部（贴画面区右上角），点击可竖直收起（仅剩标题条）/展开；
 /// 4. 底部称重记录列表条数选择框：20/50/70/100 可选，默认 20 条。
@@ -165,9 +166,66 @@ public class MainFormLayoutTests
                 $"稳定/通讯未居中于大屏：偏差 {weightCenter - rowCenter}px");
             Assert.True(stable.Left >= weights.Left && comm.Right <= weights.Right,
                 $"稳定/通讯({stable.Left}~{comm.Right})超出大屏范围({weights.Left}~{weights.Right})");
-            // 指示行完整落在视频区上方，紧凑衔接不与画面区重叠
-            Assert.True(stable.Bottom <= video.Top && comm.Bottom <= video.Top,
+            // 指示行完整落在视频区上方，紧凑衔接不与画面区重叠（指示位于白色工具栏面板内，坐标需换算）
+            var topPanel = (Panel)Fld(form, "_topPanel");
+            Assert.True(topPanel.Top + stable.Bottom <= video.Top && topPanel.Top + comm.Bottom <= video.Top,
                 $"稳定/通讯指示与视频区(顶={video.Top})重叠");
+        });
+    }
+
+    [Fact]
+    public void 顶部快捷方式_六个按钮分列称重区两侧_均带图标且无换班()
+    {
+        Db.Initialize();
+        RunOnSta(() =>
+        {
+            using var form = new MainForm();
+            var panel = (Panel)Fld(form, "_topPanel");
+            var btns = (System.Collections.IList)Fld(form, "_shortcutButtons");
+            var tare = (Button)Fld(form, "_btnTare");
+            var gross = (Button)Fld(form, "_btnGross");
+
+            // 顺序：左 4（记录查询/报表统计/视频监控/基础资料）+ 右 2（计算器/退出）；明确不含"换班"
+            var expected = new[] { "记录查询", "报表统计", "视频监控", "基础资料", "计算器", "退出" };
+            Assert.Equal(expected.Length, btns.Count);
+            for (int i = 0; i < expected.Length; i++)
+            {
+                var b = (Button)btns[i]!;
+                Assert.Equal(expected[i], b.Text);
+                Assert.Same(panel, b.Parent);
+                Assert.NotNull(b.Image);
+            }
+            Assert.DoesNotContain(btns.Cast<Button>(), b => b.Text.Contains("换班"));
+
+            // 左 4 个位于空车按钮左侧；右 2 个位于重车按钮右侧
+            for (int i = 0; i < 4; i++)
+                Assert.True(((Button)btns[i]!).Right <= tare.Left, $"左侧快捷按钮 {((Button)btns[i]!).Text} 与空车按钮重叠");
+            for (int i = 4; i < 6; i++)
+                Assert.True(((Button)btns[i]!).Left >= gross.Right, $"右侧快捷按钮 {((Button)btns[i]!).Text} 与重车按钮重叠");
+        });
+    }
+
+    [Fact]
+    public void 顶部工具栏_最小窗口宽度下三组不重叠且不超界()
+    {
+        Db.Initialize();
+        RunOnSta(() =>
+        {
+            using var form = new MainForm();
+            form.WindowState = FormWindowState.Normal;
+            // MinimumSize 为 1240 外框，客户区约 1224
+            form.ClientSize = new Size(1224, 700);
+            Application.DoEvents();
+
+            var panel = (Panel)Fld(form, "_topPanel");
+            var btns = (System.Collections.IList)Fld(form, "_shortcutButtons");
+            var tare = (Button)Fld(form, "_btnTare");
+            var gross = (Button)Fld(form, "_btnGross");
+
+            Assert.True(((Button)btns[3]!).Right <= tare.Left, "最小宽度下左快捷组与空车按钮重叠");
+            Assert.True(gross.Right <= ((Button)btns[4]!).Left, "最小宽度下重车按钮与右快捷组重叠");
+            foreach (Button b in btns)
+                Assert.True(b.Right <= panel.ClientSize.Width, $"快捷按钮 {b.Text} 右缘超出工具栏");
         });
     }
 

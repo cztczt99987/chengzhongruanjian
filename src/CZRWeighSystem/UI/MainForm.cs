@@ -5,8 +5,9 @@ namespace CZRWeighSystem.UI;
 
 /// <summary>
 /// 称重主界面（2026-09-30 按目标版式二次改版）：
-/// 顶部为「空车去皮 / 重车过磅」手动选择按钮 + 大屏实时重量显示，稳定/通讯指示横排于大屏重量下方，
-/// 点击按钮弹出称重录入窗（首页不再放置信息录入区）；
+/// 顶部为白色工具栏：左侧快捷方式（记录查询/报表统计/视频监控/基础资料），
+/// 中间为「空车去皮 / 重车过磅」手动选择按钮 + 大屏实时重量显示（稳定/通讯指示横排于大屏下方），
+/// 右侧为计算器/退出快捷方式；点击称重按钮弹出录入窗（首页不再放置信息录入区）；
 /// 中部为 3 个摄像头画面槽位（最多显示 3 路），摄像头 3 画面上悬浮自绘的今日称重统计卡片（与画面顶边齐平，点击可收起/展开）；
 /// 底部为称重记录列表（可选显示条数 20/50/70/100，双击未完成行带车号打开录入窗结算）。
 /// 布局采用纯代码方式构建。
@@ -16,7 +17,10 @@ public class MainForm : Form
     private readonly WeighManager _manager = new();
     private readonly AppConfig _cfg = AppConfig.Current;
 
-    // ===== 顶部称重条 =====
+    // ===== 顶部工具栏（白色通栏：左侧快捷方式｜空车去皮/大屏重量/重车过磅｜右侧快捷方式） =====
+    private MenuStrip _menu = null!;
+    private Panel _topPanel = null!;
+    private readonly List<Button> _shortcutButtons = [];
     private Label _lblWeight = null!;        // 大字实时重量
     private Label _lblStable = null!;        // 稳定/动态指示
     private Label _lblComm = null!;          // 通讯状态指示（绿=正常，红=未通讯/中断）
@@ -152,17 +156,42 @@ public class MainForm : Form
         };
     }
 
-    // ---------- 顶部称重条：空车去皮 | 大屏重量 | 重车过磅（稳定/通讯指示横排于大屏下方） ----------
+    // ---------- 顶部白色工具栏：左侧快捷方式｜空车去皮/大屏重量/重车过磅｜右侧快捷方式 ----------
+    private const int TopPanelH = 142;    // 工具栏高度（含大屏下方稳定/通讯行）
+    private const int ShortcutW = 60;     // 快捷按钮宽（4 字标签 9pt 约 48px，足够）
+    private const int ShortcutH = 92;     // 快捷按钮高（与空/重车按钮同高对齐）
+    private const int ShortcutGap = 6;    // 快捷按钮间距
+    private const int ShortcutLeftCount = 4;
+
     private void BuildTopBar()
     {
+        // 白色工具栏：紧贴菜单栏下方通栏，底部分隔线与组间竖线在 Paint 中绘制
+        _topPanel = new Panel
+        {
+            Location = new Point(0, _menu.Height),
+            Size = new Size(ClientSize.Width, TopPanelH),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            BackColor = Color.White,
+        };
+        _topPanel.Paint += TopPanel_Paint;
+
+        // 左侧快捷方式（与对应菜单项等价的高频入口；参考行业软件版式）
+        AddShortcut("记录查询", "query", () => { using var f = new RecordQueryForm(); f.ShowDialog(this); });
+        AddShortcut("报表统计", "report", () => { using var f = new ReportForm(); f.ShowDialog(this); });
+        AddShortcut("视频监控", "video", () => { using var f = new VideoMonitorForm(_cameras); f.ShowDialog(this); });
+        AddShortcut("基础资料", "base", () => { using var f = new BaseInfoForm(); f.ShowDialog(this); });
+        // 右侧快捷方式：系统计算器 + 退出
+        AddShortcut("计算器", "calc", OpenCalculator);
+        AddShortcut("退出", "exit", Close);
+
         // 手动选择本次称重类型：点击弹出录入窗（2026-09-30 二次改版，录入区移入弹窗）
         // 浅色扁平按钮 + 自卸车图标（空厢举升=空车去皮，满载=重车过磅），图上文下
-        _btnTare = NewButton("空车去皮", 20, 36, 175, 92, Color.White);
+        _btnTare = NewButton("空车去皮", 20, 12, 170, 92, Color.White);
         _btnTare.Font = new Font("Microsoft YaHei UI", 12F, FontStyle.Bold);
         _btnTare.ForeColor = Color.FromArgb(55, 58, 62);
         _btnTare.FlatAppearance.BorderColor = Color.FromArgb(206, 212, 220);
         _btnTare.FlatAppearance.BorderSize = 1;
-        _btnTare.Image = TruckIcon.Draw(loaded: false);
+        _btnTare.Image = TruckIcon.Draw(loaded: false, 56);
         _btnTare.ImageAlign = ContentAlignment.MiddleCenter;
         _btnTare.TextImageRelation = TextImageRelation.ImageAboveText;
         _btnTare.Click += (_, _) => OpenWeighEntry(isTare: true);
@@ -170,21 +199,21 @@ public class MainForm : Form
         _lblWeight = new Label
         {
             Text = "0 " + _cfg.Unit,
-            Font = new Font("Consolas", 56F, FontStyle.Bold),
+            Font = new Font("Consolas", 54F, FontStyle.Bold),
             ForeColor = Color.OrangeRed,
             TextAlign = ContentAlignment.MiddleCenter,
-            Location = new Point(210, 30),
-            Size = new Size(490, 104),
+            Location = new Point(210, 6),
+            Size = new Size(450, 104),
             BorderStyle = BorderStyle.FixedSingle,
             BackColor = Color.Black,
         };
 
-        _btnGross = NewButton("重车过磅", 715, 36, 175, 92, Color.White);
+        _btnGross = NewButton("重车过磅", 715, 12, 170, 92, Color.White);
         _btnGross.Font = new Font("Microsoft YaHei UI", 12F, FontStyle.Bold);
         _btnGross.ForeColor = Color.FromArgb(55, 58, 62);
         _btnGross.FlatAppearance.BorderColor = Color.FromArgb(206, 212, 220);
         _btnGross.FlatAppearance.BorderSize = 1;
-        _btnGross.Image = TruckIcon.Draw(loaded: true);
+        _btnGross.Image = TruckIcon.Draw(loaded: true, 56);
         _btnGross.ImageAlign = ContentAlignment.MiddleCenter;
         _btnGross.TextImageRelation = TextImageRelation.ImageAboveText;
         _btnGross.Click += (_, _) => OpenWeighEntry(isTare: false);
@@ -195,8 +224,9 @@ public class MainForm : Form
             Text = "● 动态",
             Font = new Font("Microsoft YaHei UI", 14F, FontStyle.Bold),
             ForeColor = Color.Red,
+            BackColor = Color.White,
             AutoSize = true,
-            Location = new Point(905, 140),
+            Location = new Point(905, 114),
         };
         // 通讯状态指示：启动时未通讯显示红色，收到仪表数据后变绿
         _lblComm = new Label
@@ -204,33 +234,113 @@ public class MainForm : Form
             Text = "● 通讯",
             Font = new Font("Microsoft YaHei UI", 14F, FontStyle.Bold),
             ForeColor = Color.Red,
+            BackColor = Color.White,
             AutoSize = true,
-            Location = new Point(1010, 140),
+            Location = new Point(1010, 114),
         };
 
-        Controls.AddRange(new Control[] { _btnTare, _lblWeight, _btnGross, _lblStable, _lblComm });
+        _topPanel.Controls.AddRange(new Control[] { _btnTare, _lblWeight, _btnGross, _lblStable, _lblComm });
+        Controls.Add(_topPanel);
         // 居中布局在构造函数末尾统一执行（见 ctor 末尾的 LayoutTopBar 调用）
     }
 
+    /// <summary>新增一个工具栏快捷按钮（图标在上、文字在下，白底扁平，悬停浅蓝反馈）。</summary>
+    private void AddShortcut(string text, string icon, Action onClick)
+    {
+        var btn = new Button
+        {
+            Text = text,
+            Size = new Size(ShortcutW, ShortcutH),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Color.White,
+            ForeColor = Color.FromArgb(60, 66, 76),
+            // 8.5pt：4 字标签在 60px 按钮内一行排下（9pt 会折成两行）
+            Font = new Font("Microsoft YaHei UI", 8.5F),
+            Image = ShortcutIcon.Draw(icon, 38),
+            ImageAlign = ContentAlignment.MiddleCenter,
+            TextImageRelation = TextImageRelation.ImageAboveText,
+            Cursor = Cursors.Hand,
+            Tag = "shortcut",
+        };
+        btn.FlatAppearance.BorderSize = 0;
+        btn.FlatAppearance.MouseOverBackColor = Color.FromArgb(234, 243, 251);
+        btn.FlatAppearance.MouseDownBackColor = Color.FromArgb(213, 232, 248);
+        btn.Click += (_, _) => onClick();
+        _topPanel.Controls.Add(btn);
+        _shortcutButtons.Add(btn);
+    }
+
+    /// <summary>启动 Windows 自带计算器（操作员常用辅助工具）；系统精简无 calc 时提示。</summary>
+    private void OpenCalculator()
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("calc.exe")
+            {
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show("无法启动系统计算器：" + ex.Message, "提示",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
+    /// <summary>工具栏装饰：底部 1px 分隔线 + 快捷区与称重区之间竖向分隔线。</summary>
+    private void TopPanel_Paint(object? sender, PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        using var bottom = new Pen(Color.FromArgb(217, 222, 229));
+        g.DrawLine(bottom, 0, TopPanelH - 1, _topPanel.Width, TopPanelH - 1);
+        if (_shortcutButtons.Count >= ShortcutLeftCount + 2)
+        {
+            using var sep = new Pen(Color.FromArgb(229, 232, 238));
+            int leftX = (_shortcutButtons[ShortcutLeftCount - 1].Right + _btnTare.Left) / 2;
+            int rightX = (_btnGross.Right + _shortcutButtons[ShortcutLeftCount].Left) / 2;
+            g.DrawLine(sep, leftX, 14, leftX, TopPanelH - 15);
+            g.DrawLine(sep, rightX, 14, rightX, TopPanelH - 15);
+        }
+    }
+
     /// <summary>
-    /// 顶部称重条（空车去皮｜大屏重量｜重车过磅）整组横向居中，
-    /// 稳定/通讯指示横排于大屏重量下方并成组居中于大屏，窗口缩放时保持居中。
-    /// （统计面板位于画面区同一水平带下方，与顶部称重条无重叠）
+    /// 顶部工具栏横向布局：左快捷组、称重区（空车去皮｜大屏重量｜重车过磅）、右快捷组；
+    /// 称重区在两组之间居中，稳定/通讯指示横排于大屏重量下方并居中。
+    /// 最小窗口宽度（1240）下宽度刚好排满，不发生重叠；窗口缩放时重新布局。
     /// </summary>
     private void LayoutTopBar()
     {
-        int gap = 15;
-        int groupW = _btnTare.Width + gap + _lblWeight.Width + gap + _btnGross.Width;
-        int x = Math.Max(8, (ClientSize.Width - groupW) / 2);
-        _btnTare.Left = x;
+        const int gap = 10;
+        int centerW = _btnTare.Width + gap + _lblWeight.Width + gap + _btnGross.Width;
+        int leftW = ShortcutLeftCount * ShortcutW + (ShortcutLeftCount - 1) * ShortcutGap;
+        int rightCount = _shortcutButtons.Count - ShortcutLeftCount;
+        int rightW = rightCount * ShortcutW + Math.Max(0, rightCount - 1) * ShortcutGap;
+        int w = ClientSize.Width;   // 面板通栏锚定右缘，宽度与客户区一致
+
+        // 称重区优先相对窗口居中；左右两组不对称（4 vs 2），按可用区居中会右偏，
+        // 故只在最小窗口宽度排不下时才向两侧组让位（Clamp），保证三组始终不重叠
+        int edge = w >= leftW + rightW + centerW + 20 ? 10 : 0;
+        int ideal = (w - centerW) / 2;
+        int minLeft = edge + leftW;
+        int maxLeft = w - edge - rightW - centerW;
+        int cx = Math.Clamp(ideal, minLeft, Math.Max(minLeft, maxLeft));
+        _btnTare.Left = cx;
         _lblWeight.Left = _btnTare.Right + gap;
         _btnGross.Left = _lblWeight.Right + gap;
 
-        // 稳定/通讯指示：大屏重量下方横排（与两车按钮等高，不占用右侧空间）
+        for (int i = 0; i < ShortcutLeftCount; i++)
+            _shortcutButtons[i].Left = edge + i * (ShortcutW + ShortcutGap);
+        int rightX0 = w - edge - rightW;
+        for (int i = 0; i < rightCount; i++)
+            _shortcutButtons[ShortcutLeftCount + i].Left = rightX0 + i * (ShortcutW + ShortcutGap);
+
+        // 稳定/通讯指示：大屏重量下方横排（不占用右侧空间）
         const int indicatorGap = 24;
         int rowW = _lblStable.Width + indicatorGap + _lblComm.Width;
         _lblStable.Left = _lblWeight.Left + (_lblWeight.Width - rowW) / 2;
         _lblComm.Left = _lblStable.Right + indicatorGap;
+
+        _topPanel.Invalidate();   // 组间竖分隔线位置随布局重绘
     }
 
     /// <summary>打开称重录入弹窗（皮/毛由操作员手动选择）；保存成功后抓拍留证并刷新列表与统计。</summary>
@@ -670,7 +780,7 @@ public class MainForm : Form
     // ---------- 菜单栏 ----------
     private void BuildMenu()
     {
-        var menu = new MenuStrip();
+        _menu = new MenuStrip();
 
         // 系统菜单：修改密码 / 注销 / 退出（对应 PRD F1-04）
         var mSys = new ToolStripMenuItem("系统(&Y)");
@@ -763,7 +873,7 @@ public class MainForm : Form
         }
         mSys.DropDownItems.Add(new ToolStripSeparator());
         mSys.DropDownItems.Add(new ToolStripMenuItem("退出", null, (_, _) => Close()));
-        menu.Items.Add(mSys);
+        _menu.Items.Add(mSys);
 
         // 记录菜单：记录查询（对应 PRD 5.3 / F3-06、F3-07）
         var mRecord = new ToolStripMenuItem("记录(&R)");
@@ -772,7 +882,7 @@ public class MainForm : Form
             using var f = new RecordQueryForm();
             f.ShowDialog(this);
         }));
-        menu.Items.Add(mRecord);
+        _menu.Items.Add(mRecord);
 
         // 报表菜单：报表统计（对应 PRD 5.4 / F4-01~F4-05）
         var mReport = new ToolStripMenuItem("报表(&B)");
@@ -781,7 +891,7 @@ public class MainForm : Form
             using var f = new ReportForm();
             f.ShowDialog(this);
         }));
-        menu.Items.Add(mReport);
+        _menu.Items.Add(mReport);
 
         // 资料菜单：基础资料管理（对应 PRD 5.9 / F9-01~F9-05）
         var mBase = new ToolStripMenuItem("资料(&D)");
@@ -790,7 +900,7 @@ public class MainForm : Form
             using var f = new BaseInfoForm();
             f.ShowDialog(this);
         }));
-        menu.Items.Add(mBase);
+        _menu.Items.Add(mBase);
 
         var mSource = new ToolStripMenuItem("数据源(&S)");
         mSource.DropDownItems.Add(new ToolStripMenuItem("串口参数设置", null, (_, _) =>
@@ -818,15 +928,15 @@ public class MainForm : Form
                 if (f.ShowDialog(this) == DialogResult.OK) RestartCameras();
             }));
         }
-        menu.Items.Add(mVideo);
+        _menu.Items.Add(mVideo);
 
         mSource.DropDownItems.Add(new ToolStripSeparator());
         mSource.DropDownItems.Add(new ToolStripMenuItem("退出", null,
             (_, _) => Close()));
 
-        menu.Items.Add(mSource);
-        MainMenuStrip = menu;
-        Controls.Add(menu);
+        _menu.Items.Add(mSource);
+        MainMenuStrip = _menu;
+        Controls.Add(_menu);
     }
 
     // ---------- 状态栏 ----------
