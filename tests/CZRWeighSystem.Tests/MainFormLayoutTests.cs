@@ -22,7 +22,6 @@ public class MainFormLayoutTests
 {
     private sealed record LayoutSnapshot(
         string TareButtonText, string GrossButtonText,
-        bool TareHasImage, bool GrossHasImage,
         bool HasVehicleInput, FormWindowState WindowState,
         Rectangle VideoBounds, int VideoTileCount,
         Rectangle StatsBounds,
@@ -66,8 +65,6 @@ public class MainFormLayoutTests
         return new LayoutSnapshot(
             btnTare.Text,
             ((Button)Fld(form, "_btnGross")).Text,
-            btnTare.Image != null,
-            ((Button)Fld(form, "_btnGross")).Image != null,
             FldOrNull(form, "_txtVehicle") != null,
             form.WindowState,
             video.Bounds, tileCount, stats.Bounds, capture.Bounds,
@@ -98,11 +95,21 @@ public class MainFormLayoutTests
     }
 
     [Fact]
-    public void 顶部_空车去皮与重车过磅按钮带自卸车图标()
+    public void 顶部_空车去皮与重车过磅按钮带自卸车图标且无彩色背景()
     {
-        var s = BuildAndMeasure();
-        Assert.True(s.TareHasImage, "空车去皮按钮缺少图标");
-        Assert.True(s.GrossHasImage, "重车过磅按钮缺少图标");
+        Db.Initialize();
+        RunOnSta(() =>
+        {
+            using var form = new MainForm();
+            var tare = (Button)Fld(form, "_btnTare");
+            var gross = (Button)Fld(form, "_btnGross");
+
+            Assert.NotNull(tare.Image);   // 空厢举升图标
+            Assert.NotNull(gross.Image);  // 满载货堆图标
+            // 用户要求去掉红/绿背景色 → 白底扁平按钮
+            Assert.Equal(Color.White, tare.BackColor);
+            Assert.Equal(Color.White, gross.BackColor);
+        });
     }
 
     [Fact]

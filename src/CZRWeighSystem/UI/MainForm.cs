@@ -138,9 +138,12 @@ public class MainForm : Form
     private void BuildTopBar()
     {
         // 手动选择本次称重类型：点击弹出录入窗（2026-09-30 二次改版，录入区移入弹窗）
-        // 按钮配自卸车图标（空厢举升=空车去皮，满载=重车过磅），图上文下
-        _btnTare = NewButton("空车去皮", 20, 42, 175, 120, Color.FromArgb(198, 40, 40));
+        // 浅色扁平按钮 + 自卸车图标（空厢举升=空车去皮，满载=重车过磅），图上文下
+        _btnTare = NewButton("空车去皮", 20, 42, 175, 120, Color.White);
         _btnTare.Font = new Font("Microsoft YaHei UI", 12F, FontStyle.Bold);
+        _btnTare.ForeColor = Color.FromArgb(55, 58, 62);
+        _btnTare.FlatAppearance.BorderColor = Color.FromArgb(206, 212, 220);
+        _btnTare.FlatAppearance.BorderSize = 1;
         _btnTare.Image = TruckIcon.Draw(loaded: false);
         _btnTare.ImageAlign = ContentAlignment.MiddleCenter;
         _btnTare.TextImageRelation = TextImageRelation.ImageAboveText;
@@ -158,8 +161,11 @@ public class MainForm : Form
             BackColor = Color.Black,
         };
 
-        _btnGross = NewButton("重车过磅", 715, 42, 175, 120, Color.FromArgb(0, 130, 60));
+        _btnGross = NewButton("重车过磅", 715, 42, 175, 120, Color.White);
         _btnGross.Font = new Font("Microsoft YaHei UI", 12F, FontStyle.Bold);
+        _btnGross.ForeColor = Color.FromArgb(55, 58, 62);
+        _btnGross.FlatAppearance.BorderColor = Color.FromArgb(206, 212, 220);
+        _btnGross.FlatAppearance.BorderSize = 1;
         _btnGross.Image = TruckIcon.Draw(loaded: true);
         _btnGross.ImageAlign = ContentAlignment.MiddleCenter;
         _btnGross.TextImageRelation = TextImageRelation.ImageAboveText;
@@ -547,19 +553,20 @@ public class MainForm : Form
             }
         };
 
-        // 显示条数选择（20/50/70/100，默认 20）
+        // 显示条数选择（20/50/70/100，默认 20）；加宽下拉框保证选项完整显示
         var lblPage = new Label
         {
             Text = "显示条数：",
             AutoSize = true,
-            Location = new Point(_capturePanel.Width - 200, 21),
+            Location = new Point(_capturePanel.Width - 280, 21),
             Anchor = AnchorStyles.Top | AnchorStyles.Right,
         };
         _cboPageSize = new ComboBox
         {
             DropDownStyle = ComboBoxStyle.DropDownList,
-            Location = new Point(_capturePanel.Width - 110, 17),
-            Size = new Size(80, 28),
+            DropDownWidth = 130,
+            Location = new Point(_capturePanel.Width - 150, 17),
+            Size = new Size(120, 28),
             Anchor = AnchorStyles.Top | AnchorStyles.Right,
         };
         _cboPageSize.Items.AddRange(["20", "50", "70", "100"]);
