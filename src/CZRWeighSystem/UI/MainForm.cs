@@ -3,10 +3,11 @@ using CZRWeighSystem.Core;
 namespace CZRWeighSystem.UI;
 
 /// <summary>
-/// 称重主界面（2026-09-30 按目标版式改版）：
-/// 顶部为「空车去皮 / 重车过磅」手动选择按钮 + 大屏实时重量显示 + 稳定/通讯指示；
-/// 中部固定 3 个摄像头画面槽位（最多显示 3 路）；右侧为今日称重统计面板；
-/// 底部为称重记录列表（双击未完成行回填车号，便于二次磅配对）。
+/// 称重主界面（2026-09-30 按目标版式二次改版）：
+/// 顶部为「空车去皮 / 重车过磅」手动选择按钮 + 大屏实时重量显示 + 稳定/通讯指示，
+/// 点击按钮弹出称重录入窗（首页不再放置信息录入区）；
+/// 中部为 3 个摄像头画面槽位（最多显示 3 路），最右侧右上角为今日称重统计面板（点击可收起/展开）；
+/// 底部为称重记录列表（可选显示条数 20/50/70/100，双击未完成行带车号打开录入窗结算）。
 /// 布局采用纯代码方式构建。
 /// </summary>
 public class MainForm : Form
@@ -18,17 +19,8 @@ public class MainForm : Form
     private Label _lblWeight = null!;        // 大字实时重量
     private Label _lblStable = null!;        // 稳定/动态指示
     private Label _lblComm = null!;          // 通讯状态指示（绿=正常，红=未通讯/中断）
-    private Button _btnTare = null!;         // 空车去皮（本次重量按皮重保存）
-    private Button _btnGross = null!;        // 重车过磅（本次重量按毛重保存）
-
-    // ===== 信息录入 =====
-    private TextBox _txtVehicle = null!;     // 车号（弹窗软键盘选择，只读）
-    private TextBox _txtDeduct = null!;      // 扣重
-    private TextBox _txtGoods = null!;       // 货物
-    private TextBox _txtRemark = null!;      // 备注
-    private TextBox _txtOperator = null!;    // 司磅员
-    private Label _lblTareHint = null!;      // 车号待配对提示
-    private Button _btnVehicle = null!;      // 选择车牌按钮
+    private Button _btnTare = null!;         // 空车去皮（弹出具重录入窗）
+    private Button _btnGross = null!;        // 重车过磅（弹出毛重录入窗）
 
     // ===== 视频监控（首页中部固定 3 槽位；大屏弹窗见菜单「视频监控」；抓拍由保存称重触发）=====
     // 摄像头设置保存后整体重建，故不可 readonly
@@ -43,13 +35,12 @@ public class MainForm : Form
     /// <summary>首页画面槽位数量（最多同时显示 3 路摄像头画面）。</summary>
     internal const int MaxVideoTiles = 3;
 
-    // ===== 底部称重记录列表 =====
-    private GroupBox _capturePanel = null!;
-    private DataGridView _captureGrid = null!;
-    private readonly Database.WeighRecordRepository _recordRepo = new();
-
-    // ===== 右侧今日称重统计 =====
+    // ===== 右侧今日称重统计（点击可收起/展开）=====
+    private const int StatsW = 252;          // 展开宽度
+    private const int StatsCollapsedW = 30;  // 收起后窄条宽度
+    private bool _statsExpanded = true;
     private GroupBox _statsPanel = null!;
+    private Label _lblStatsCollapsed = null!;  // 收起状态竖排文字
     private Label _lblStatTotal = null!;     // 全部记录
     private Label _lblStatCount = null!;     // 今日磅单
     private Label _lblStatGross = null!;     // 今日毛重
@@ -57,30 +48,22 @@ public class MainForm : Form
     private Label _lblStatNet = null!;       // 今日净重
     private Label _lblTodaySummary = null!;  // 视频区下方今日汇总行
 
+    // ===== 底部称重记录列表 =====
+    private GroupBox _capturePanel = null!;
+    private DataGridView _captureGrid = null!;
+    private ComboBox _cboPageSize = null!;   // 显示条数：20/50/70/100
+    private readonly Database.WeighRecordRepository _recordRepo = new();
+
     // ===== 状态栏 =====
     private StatusStrip _status = null!;
     private ToolStripStatusLabel _tsslSource = null!;
     private ToolStripStatusLabel _tsslState = null!;
     private ToolStripStatusLabel _tsslTime = null!;
 
-    // ===== 对话框出口（internal 供测试注入静默实现；正常流程用 MessageBox）=====
-    /// <summary>确认框：返回 true=确认。测试注入后可静默自动确认。</summary>
-    internal Func<string, string, bool> ConfirmBox = (msg, title) =>
-        MessageBox.Show(msg, title, MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
-    /// <summary>结果提示框。测试注入后记录消息不弹窗。</summary>
-    internal Action<string, string, bool> InfoBox = (msg, title, ok) =>
-        MessageBox.Show(msg, title, MessageBoxButtons.OK,
-            ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
-
-    // ===== 自定义字段（自定义表单）=====
-    private readonly Database.CustomFieldRepository _fieldRepo = new();
-    private readonly List<(CustomField Def, Control Input)> _customInputs = [];
-
-    // 录入区高度随自定义字段行数变化，下方区域（视频/统计/记录列表）随之顺移
-    private int _inputPanelH = 120;     // 录入面板高度
-    private int _cameraY = 314;         // 视频监控区 y
-    private const int CameraH = 260;    // 视频监控区高度（固定）
-    private int _gridY = 648;           // 底部记录列表 y
+    // 布局参数：中部视频区、底部记录列表（顶部称重条下方直接是视频区）
+    private const int CameraY = 192;     // 视频监控区 y（顶部称重条底边 172 + 20）
+    private const int CameraH = 320;     // 视频监控区高度（固定）
+    private int _gridY = CameraY + CameraH + 34;   // 底部记录列表 y（中间留今日汇总行）
 
     // ===== 界面构建 =====
     public MainForm()
@@ -95,11 +78,12 @@ public class MainForm : Form
 
         BuildMenu();
         BuildTopBar();
-        BuildInputPanel();      // 内部计算 _inputPanelH / _cameraY / _gridY
         BuildVideoPanel();
         BuildStatsPanel();
         BuildCapturePanel();
         BuildStatusBar();
+        LayoutStatsPanel();      // 初始化统计面板展开态并同步视频区宽度
+        Resize += (_, _) => LayoutCameraWidth();   // 窗口缩放时视频区宽度跟随统计面板
 
         // 订阅业务事件（串口数据来自非 UI 线程，统一转发到 UI 线程）
         _manager.WeightUpdated += () => SafeInvoke(OnWeightUpdated);
@@ -150,10 +134,10 @@ public class MainForm : Form
     // ---------- 顶部称重条：空车去皮 | 大屏重量 | 重车过磅 | 稳定/通讯指示 ----------
     private void BuildTopBar()
     {
-        // 手动选择本次称重类型（2026-09-30 改版：原单按钮自动判断改为两按钮手动声明）
+        // 手动选择本次称重类型：点击弹出录入窗（2026-09-30 二次改版，录入区移入弹窗）
         _btnTare = NewButton("空车去皮", 20, 42, 175, 120, Color.FromArgb(198, 40, 40));
         _btnTare.Font = new Font("Microsoft YaHei UI", 14F, FontStyle.Bold);
-        _btnTare.Click += (_, _) => SaveTare();
+        _btnTare.Click += (_, _) => OpenWeighEntry(isTare: true);
 
         _lblWeight = new Label
         {
@@ -169,7 +153,7 @@ public class MainForm : Form
 
         _btnGross = NewButton("重车过磅", 715, 42, 175, 120, Color.FromArgb(0, 130, 60));
         _btnGross.Font = new Font("Microsoft YaHei UI", 14F, FontStyle.Bold);
-        _btnGross.Click += (_, _) => SaveGross();
+        _btnGross.Click += (_, _) => OpenWeighEntry(isTare: false);
 
         // 稳定/通讯指示（重车过磅右侧竖排）
         _lblStable = new Label
@@ -195,173 +179,16 @@ public class MainForm : Form
         Controls.AddRange(new Control[] { _btnTare, _lblWeight, _btnGross, _lblStable, _lblComm });
     }
 
-    // ---------- 信息录入区（紧凑两行；自定义字段从第 3 行起两列排布） ----------
-    private void BuildInputPanel()
+    /// <summary>打开称重录入弹窗（皮/毛由操作员手动选择）；保存成功后抓拍留证并刷新列表与统计。</summary>
+    private void OpenWeighEntry(bool isTare, string? prefillVehicle = null)
     {
-        var panel = new GroupBox
+        using var f = new WeighEntryDialog(_manager, isTare, prefillVehicle);
+        f.OnSaved = serial => CaptureFor(serial);
+        if (f.ShowDialog(this) == DialogResult.OK)
         {
-            Text = "信息录入（回车跳转下一项）",
-            Location = new Point(20, 182),
-            Size = new Size(1052, _inputPanelH),
-            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-        };
-
-        Label L(string text, int x, int y) => new Label
-        { Text = text, AutoSize = true, Location = new Point(x, y) };
-
-        // ---- 行1：车号（只读，点按钮弹软键盘选牌）｜ 货物 ｜ 扣重 ｜ 司磅员 ----
-        panel.Controls.Add(L("车号：", 20, 34));
-        _txtVehicle = NewTextBox(78, 30, 190);
-        _txtVehicle.ReadOnly = true;
-        _txtVehicle.TextChanged += (_, _) => OnVehicleLeft();   // 车号变化刷新配对提示
-        var btnVehicle = _btnVehicle = new Button
-        {
-            Text = "选择车牌", Location = new Point(273, 29), Size = new Size(90, 30),
-            FlatStyle = FlatStyle.Flat,
-            BackColor = Color.FromArgb(0, 122, 204), ForeColor = Color.White,
-        };
-        btnVehicle.Click += (_, _) => SelectVehicle();
-
-        panel.Controls.Add(L("货物：", 383, 34));
-        _txtGoods = NewTextBox(440, 30, 190);
-
-        panel.Controls.Add(L($"扣重({_cfg.Unit})：", 640, 34));
-        _txtDeduct = NewTextBox(730, 30, 130);
-
-        panel.Controls.Add(L("司磅员：", 875, 34));
-        _txtOperator = NewTextBox(940, 30, 100);
-        _txtOperator.Text = AppSession.DisplayName;   // 司磅员=当前登录用户，自动记录
-        _txtOperator.ReadOnly = true;                 // 不允许手工修改
-
-        // ---- 行2：备注 ｜ 车号待配对提示 ----
-        panel.Controls.Add(L("备注：", 20, 72));
-        _txtRemark = NewTextBox(78, 68, 330);
-        _lblTareHint = new Label
-        {
-            Text = "",
-            AutoSize = true,
-            Location = new Point(423, 72),
-            ForeColor = Color.FromArgb(0, 102, 204),
-        };
-
-        panel.Controls.AddRange(new Control[] {
-            _txtVehicle, btnVehicle, _txtGoods, _txtDeduct, _txtOperator,
-            _txtRemark, _lblTareHint,
-        });
-
-        // 回车键流转录入（对应 PRD F2-05）：扣重→货物→备注→空车去皮按钮
-        // （皮/毛保存动作由操作员在顶部按钮手动二选一，不再自动判断）
-        Control[] flow = { _txtDeduct, _txtGoods, _txtRemark };
-        for (int i = 0; i < flow.Length; i++)
-        {
-            int idx = i;
-            flow[i].PreviewKeyDown += (_, e) => { if (e.KeyCode == Keys.Enter) e.IsInputKey = true; };
-            flow[i].KeyDown += (_, e) =>
-            {
-                if (e.KeyCode != Keys.Enter) return;
-                e.SuppressKeyPress = true;
-                if (idx < flow.Length - 1)
-                    flow[idx + 1].Focus();
-                else
-                    _btnTare.Focus();    // 最后一项回车落到保存按钮，由操作员选择皮/毛
-            };
+            RefreshGrid();
+            RefreshStats();
         }
-
-        // 自定义字段（自定义表单）：从第 3 行起，延续两列布局
-        // （左列 标签x=20 输入x=78 宽330；右列 标签x=640 输入x=730 宽310）
-        var fields = _fieldRepo.GetAll(enabledOnly: true);
-        int row = 0;
-        for (int i = 0; i < fields.Count; i++)
-        {
-            var def = fields[i];
-            bool left = i % 2 == 0;
-            int lx = left ? 20 : 640;
-            int inX = left ? 78 : 730;
-            int inW = left ? 330 : 310;
-            int y = 68 + row * 38;
-
-            var lbl = new Label
-            { Text = def.Name + "：", AutoSize = true, Location = new Point(lx, y + 3) };
-            Control input = def.FieldType switch
-            {
-                "下拉" => NewCombo(inX, y, inW, def.OptionList),
-                "日期" => new DateTimePicker
-                {
-                    Location = new Point(inX, y),
-                    Size = new Size(inW, 28),
-                    Format = DateTimePickerFormat.Custom,
-                    CustomFormat = "yyyy-MM-dd",
-                },
-                _ => new TextBox { Location = new Point(inX, y), Size = new Size(inW, 28) },
-            };
-            panel.Controls.AddRange([lbl, input]);
-            _customInputs.Add((def, input));
-            if (!left) row++;              // 右列放完才换行
-        }
-        if (fields.Count % 2 == 1) row++;  // 末行单字段独占一行
-
-        // 布局参数随录入面板高度顺移：视频区、底部记录列表
-        _inputPanelH = 68 + Math.Max(1, row) * 38 + 14;
-        _cameraY = 182 + _inputPanelH + 12;
-        _gridY = _cameraY + CameraH + 34;   // 中间留今日汇总行
-
-        panel.Size = new Size(1052, _inputPanelH);
-        Controls.Add(panel);
-    }
-
-    /// <summary>弹出车牌软键盘，确认后回填车号并刷新档案提示。</summary>
-    private void SelectVehicle()
-    {
-        using var f = new VehiclePadDialog();
-        if (f.ShowDialog(this) == DialogResult.OK && f.ResultVehicle != null)
-        {
-            _txtVehicle.Text = f.ResultVehicle;
-            OnVehicleLeft();     // 未完成配对提示
-        }
-    }
-
-    private static TextBox NewTextBox(int x, int y, int w) => new()
-    { Location = new Point(x, y), Size = new Size(w, 28) };
-
-    private static Button NewButton(string text, int x, int y, int w, int h, Color back)
-    {
-        return new Button
-        {
-            Text = text,
-            Location = new Point(x, y),
-            Size = new Size(w, h),
-            BackColor = back,
-            ForeColor = Color.White,
-            FlatStyle = FlatStyle.Flat,
-            Font = new Font("Microsoft YaHei UI", 11F, FontStyle.Bold),
-        };
-    }
-
-    private static ComboBox NewCombo(int x, int y, int w, params string[] items)
-    {
-        var cbo = new ComboBox
-        {
-            Location = new Point(x, y),
-            Size = new Size(w, 28),
-            DropDownStyle = ComboBoxStyle.DropDown,   // 可输入可下拉
-            AutoCompleteMode = AutoCompleteMode.SuggestAppend,
-            AutoCompleteSource = AutoCompleteSource.ListItems,
-        };
-        cbo.Items.AddRange(items);
-        return cbo;
-    }
-
-    /// <summary>车号输入完成后：同车号已有未完成记录则提示配对（保存时按车号自动配对结算）。</summary>
-    private void OnVehicleLeft()
-    {
-        string no = _txtVehicle.Text.Trim();
-        if (no.Length == 0) { _lblTareHint.Text = ""; return; }
-
-        var hit = _manager.GetUnfinishedList()
-            .FirstOrDefault(r => r.VehicleNo == no);
-        _lblTareHint.Text = hit != null
-            ? $"[{no}] 有未完成的二次磅，点「重车过磅/空车去皮」保存时将自动配对结算"
-            : "";
     }
 
     // ---------- 视频监控面板（首页中部，固定 3 个画面槽位；大屏弹窗见菜单） ----------
@@ -370,13 +197,19 @@ public class MainForm : Form
         _videoPanel = new GroupBox
         {
             Text = "视频监控（最多 3 路，双击画面打开大屏）",
-            Location = new Point(20, _cameraY),
-            Size = new Size(1052, CameraH),
-            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            Location = new Point(20, CameraY),
+            Size = new Size(1060, CameraH),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left,   // 宽度由 LayoutCameraWidth 联动统计面板
         };
         FillVideoPanel();   // 构造时摄像头尚未启动，先显示占位；Load 后再绑定真实画面
         _videoStallTimer.Tick += (_, _) => CheckVideoStall();   // 定时检查各路是否长时间无画面
         Controls.Add(_videoPanel);
+    }
+
+    /// <summary>视频区宽度跟随右侧统计面板（保持 12px 间距）。</summary>
+    private void LayoutCameraWidth()
+    {
+        _videoPanel.Width = Math.Max(280, _statsPanel.Left - _videoPanel.Left - 12);
     }
 
     /// <summary>
@@ -538,7 +371,7 @@ public class MainForm : Form
         SetState($"视频监控：{_cfg.Cameras.Count} 路", true);
     }
 
-    // ---------- 右侧今日称重统计面板 ----------
+    // ---------- 右侧今日称重统计面板（点击可收起/展开） ----------
     private void BuildStatsPanel()
     {
         _statsPanel = new GroupBox
@@ -546,16 +379,19 @@ public class MainForm : Form
             Text = "今日称重统计",
             ForeColor = Color.White,
             BackColor = Color.FromArgb(23, 54, 110),
-            Location = new Point(1092, 32),
-            Size = new Size(252, _cameraY + CameraH - 32),
+            Location = new Point(ClientSize.Width - StatsW - 20, CameraY),   // 紧贴视频区右上角
+            Size = new Size(StatsW, CameraH),
             Anchor = AnchorStyles.Top | AnchorStyles.Right,
+            Cursor = Cursors.Hand,
         };
+        _statsPanel.Click += (_, _) => ToggleStatsPanel();
 
         // 名目在左、数值在右对齐（数值底色随面板深蓝，金色高亮）
         Label Val(string name, int y)
         {
-            _statsPanel.Controls.Add(new Label
-            { Text = name, AutoSize = true, Location = new Point(15, y) });
+            var nameLbl = new Label
+            { Text = name, AutoSize = true, Location = new Point(15, y), BackColor = Color.Transparent };
+            nameLbl.Click += (_, _) => ToggleStatsPanel();
             var v = new Label
             {
                 Text = "-",
@@ -563,18 +399,53 @@ public class MainForm : Form
                 Size = new Size(138, 28),
                 TextAlign = ContentAlignment.MiddleRight,
                 ForeColor = Color.FromArgb(255, 214, 90),
+                BackColor = Color.Transparent,
             };
+            v.Click += (_, _) => ToggleStatsPanel();
+            _statsPanel.Controls.Add(nameLbl);
             _statsPanel.Controls.Add(v);
             return v;
         }
 
-        _lblStatTotal = Val("全部记录：", 44);
-        _lblStatCount = Val("今日磅单：", 86);
-        _lblStatGross = Val("今日毛重：", 128);
-        _lblStatTare = Val("今日皮重：", 170);
-        _lblStatNet = Val("今日净重：", 212);
+        _lblStatTotal = Val("全部记录：", 56);
+        _lblStatCount = Val("今日磅单：", 106);
+        _lblStatGross = Val("今日毛重：", 156);
+        _lblStatTare = Val("今日皮重：", 206);
+        _lblStatNet = Val("今日净重：", 256);
+
+        // 收起状态的竖排提示（展开时隐藏）
+        _lblStatsCollapsed = new Label
+        {
+            Text = "今\r\n日\r\n统\r\n计",
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleCenter,
+            ForeColor = Color.White,
+            BackColor = Color.Transparent,
+            Visible = false,
+        };
+        _lblStatsCollapsed.Click += (_, _) => ToggleStatsPanel();
+        _statsPanel.Controls.Add(_lblStatsCollapsed);
 
         Controls.Add(_statsPanel);
+    }
+
+    /// <summary>展开/收起右侧今日统计面板（点击面板切换）。</summary>
+    internal void ToggleStatsPanel()
+    {
+        _statsExpanded = !_statsExpanded;
+        LayoutStatsPanel();
+    }
+
+    /// <summary>按展开/收起状态布局统计面板，并联动视频区宽度。</summary>
+    private void LayoutStatsPanel()
+    {
+        _statsPanel.Text = _statsExpanded ? "今日称重统计" : "";
+        _statsPanel.Width = _statsExpanded ? StatsW : StatsCollapsedW;
+        // 右锚定只在父容器缩放时生效，程序化改宽后需手动贴回右缘（保持 20px 边距）
+        _statsPanel.Left = ClientSize.Width - _statsPanel.Width - 20;
+        foreach (Control c in _statsPanel.Controls)
+            c.Visible = _statsExpanded != ReferenceEquals(c, _lblStatsCollapsed);
+        LayoutCameraWidth();
     }
 
     /// <summary>刷新右侧统计面板与今日汇总行（全部记录数、今日磅单数与毛/皮/净汇总）。</summary>
@@ -589,7 +460,7 @@ public class MainForm : Form
         _lblTodaySummary.Text = $"今日称重：磅单 {todayCount} 张    净重 {_cfg.FormatWeight(net)}";
     }
 
-    // ---------- 底部称重记录面板（最近 100 条；双击未完成行回填车号配对） ----------
+    // ---------- 底部称重记录面板（显示条数可选；双击未完成行带车号打开录入窗） ----------
     private void BuildCapturePanel()
     {
         // 视频区下方今日汇总行
@@ -597,7 +468,7 @@ public class MainForm : Form
         {
             Text = "今日称重：",
             AutoSize = true,
-            Location = new Point(20, _cameraY + CameraH + 6),
+            Location = new Point(20, CameraY + CameraH + 6),
             ForeColor = Color.FromArgb(0, 102, 204),
             Font = new Font("Microsoft YaHei UI", 10.5F, FontStyle.Bold),
         };
@@ -606,9 +477,9 @@ public class MainForm : Form
         int gridH = Math.Max(120, ClientSize.Height - 34 - _gridY);
         _capturePanel = new GroupBox
         {
-            Text = "称重记录（最近 100 条，双击未完成行回填车号）",
+            Text = "称重记录（双击未完成行带车号结算）",
             Location = new Point(20, _gridY),
-            Size = new Size(1052, gridH),
+            Size = new Size(ClientSize.Width - 40, gridH),
             Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
         };
 
@@ -641,25 +512,46 @@ public class MainForm : Form
         _captureGrid.Columns.Add("TareTime", "皮重时间");
         _captureGrid.Columns.Add("Status", "状态");
 
-        // 双击未完成行：回填车号准备二次磅配对（保存时按车号自动找到该记录结算）
+        // 双击未完成行：带车号打开录入窗（保存时按车号自动配对结算）
         _captureGrid.CellDoubleClick += (_, _) =>
         {
             if (_captureGrid.CurrentRow?.Tag is WeighRecord r && r.Status == "未完成")
             {
-                _txtVehicle.Text = r.VehicleNo;
-                _btnTare.Focus();
+                OpenWeighEntry(isTare: false, prefillVehicle: r.VehicleNo);
             }
         };
 
+        // 显示条数选择（20/50/70/100，默认 100）
+        var lblPage = new Label
+        {
+            Text = "显示条数：",
+            AutoSize = true,
+            Location = new Point(_capturePanel.Width - 200, 21),
+            Anchor = AnchorStyles.Top | AnchorStyles.Right,
+        };
+        _cboPageSize = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Location = new Point(_capturePanel.Width - 110, 17),
+            Size = new Size(80, 28),
+            Anchor = AnchorStyles.Top | AnchorStyles.Right,
+        };
+        _cboPageSize.Items.AddRange(["20", "50", "70", "100"]);
+        _cboPageSize.SelectedIndex = 3;
+        _cboPageSize.SelectedIndexChanged += (_, _) => RefreshGrid();
+
         _capturePanel.Controls.Add(_captureGrid);
+        _capturePanel.Controls.Add(lblPage);
+        _capturePanel.Controls.Add(_cboPageSize);
         Controls.Add(_capturePanel);
     }
 
-    /// <summary>刷新称重记录列表（最近 100 条，新记录在前；未完成行标红提醒）。</summary>
+    /// <summary>刷新称重记录列表（按选择的显示条数，新记录在前；未完成行标红提醒）。</summary>
     private void RefreshGrid()
     {
+        int pageSize = int.TryParse(_cboPageSize.Text, out int n) && n > 0 ? n : 100;
         _captureGrid.Rows.Clear();
-        foreach (var r in _recordRepo.Query(null, null, "", "", "", "").Take(100))
+        foreach (var r in _recordRepo.Query(null, null, "", "", "", "").Take(pageSize))
         {
             int i = _captureGrid.Rows.Add(
                 r.SerialNo,
@@ -876,167 +768,18 @@ public class MainForm : Form
         timer.Start();
     }
 
-    // ================================================================
-    // 业务动作
-    // ================================================================
-
-    // ===== 保存（手动选择皮重/毛重，2026-09-30 改版）=====
-
-    /// <summary>空车去皮：本次稳定重量按皮重保存；车号已有待配对记录时直接二次磅结算。</summary>
-    private void SaveTare() => SaveWeight(isTare: true);
-
-    /// <summary>重车过磅：本次稳定重量按毛重保存；车号已有待配对记录时直接二次磅结算。</summary>
-    private void SaveGross() => SaveWeight(isTare: false);
-
-    /// <summary>
-    /// 统一保存入口：按录入车号查找待配对记录——有则二次磅结算，无则第一次称重。
-    /// 皮/毛由操作员手动声明（确认框文案体现）；结算时毛/皮按两次重量大小自动分配，
-    /// 兼容先皮后毛与先毛后皮两种过磅顺序（对应 PRD 4.1 规则 1）。
-    /// </summary>
-    private void SaveWeight(bool isTare)
+    private static Button NewButton(string text, int x, int y, int w, int h, Color back)
     {
-        string action = isTare ? "空车去皮" : "重车过磅";
-        var first = FindUnfinishedByVehicle();
-
-        if (first != null) SaveSecondFlow(first, action);
-        else SaveFirstFlow(action);
-    }
-
-    /// <summary>按录入车号查找待配对（未完成）记录；未录入车号返回 null。</summary>
-    private WeighRecord? FindUnfinishedByVehicle()
-    {
-        string no = _txtVehicle.Text.Trim();
-        if (no.Length == 0) return null;
-        return _manager.GetUnfinishedList().FirstOrDefault(r => r.VehicleNo == no);
-    }
-
-    /// <summary>保存第一次称重（皮重/毛重均可，结算时自动按大小分配）。</summary>
-    private void SaveFirstFlow(string action)
-    {
-        double? deduct = ParseDeduct();
-        if (_txtDeduct.TextLength > 0 && deduct == null) return;
-
-        // 自定义字段采集与校验（必填/数字格式）
-        var ext = CollectExt();
-        if (ext == null) return;
-
-        // 保存前二次确认（显示车号与重量）
-        string weightText = _cfg.FormatWeight(_manager.StableKg);
-        if (!ConfirmBox($"{action}（第一次称重）\n车号：{_txtVehicle.Text}  重量：{weightText}", "确认操作"))
-            return;
-
-        var (ok, msg, firstRecord) = _manager.SaveFirstWeigh(
-            _txtVehicle.Text, _txtGoods.Text, null, null,
-            null, null, _txtRemark.Text,
-            deduct, _txtOperator.Text, ext);
-
-        InfoBox(msg, ok ? "成功" : "提示", ok);
-
-        if (ok)
+        return new Button
         {
-            ClearInput();
-            RefreshGrid();
-            RefreshStats();
-
-            // 一次磅保存即抓拍留证（对应 PRD F7-02）
-            if (firstRecord != null) CaptureFor(firstRecord.SerialNo);
-        }
-    }
-
-    /// <summary>保存第二次称重并结算（按车号自动配对一次磅记录）。</summary>
-    private void SaveSecondFlow(WeighRecord first, string action)
-    {
-        double? deduct = ParseDeduct();
-        if (_txtDeduct.TextLength > 0 && deduct == null) return;
-
-        // 保存前二次确认（显示配对车号与两次重量）
-        string weightText = _cfg.FormatWeight(_manager.StableKg);
-        if (!ConfirmBox($"{action}（第二次称重·结算）\n车号：{first.VehicleNo}  " +
-            $"一次磅：{_cfg.FormatWeight(first.GrossKg ?? 0)}  本次：{weightText}", "确认操作"))
-            return;
-
-        var (ok, msg, record) = _manager.SaveSecondWeigh(first, deduct, _txtOperator.Text);
-        InfoBox(msg, ok ? "结算成功" : "提示", ok);
-
-        if (ok)
-        {
-            ClearInput();
-            RefreshGrid();
-            RefreshStats();
-
-            // 结算完成自动抓拍留证（对应 PRD F7-02）
-            if (record != null) CaptureFor(record.SerialNo);
-
-            // 打印磅单：开启自动打印直接出单，否则询问（对应 PRD F5-01 / F9-04）
-            if (record != null)
-            {
-                if (AppConfig.Current.AutoPrintEnabled ||
-                    ConfirmBox("是否打印磅单？", "打印磅单"))
-                {
-                    Report.PoundTicketPrinter.Print(record);
-                }
-            }
-        }
-    }
-
-    /// <summary>解析扣重输入；留空 = 无扣重；非法输入时提示并返回 null。</summary>
-    private double? ParseDeduct()
-    {
-        if (_txtDeduct.TextLength == 0) return null;
-        if (!double.TryParse(_txtDeduct.Text, out double v) || v < 0)
-        {
-            InfoBox("扣重格式不正确（应为不小于 0 的数字）", "提示", false);
-            return null;
-        }
-        // 输入按显示单位换算为千克
-        return _cfg.Unit == "t" ? v * 1000 : v;
-    }
-
-    /// <summary>
-    /// 采集自定义字段值；校验失败（必填缺失/数字格式错误）提示并返回 null。
-    /// </summary>
-    private Dictionary<string, string>? CollectExt()
-    {
-        if (_customInputs.Count == 0) return [];
-        var ext = new Dictionary<string, string>();
-        foreach (var (def, input) in _customInputs)
-        {
-            string val = input.Text.Trim();
-            if (val.Length == 0)
-            {
-                if (def.Required)
-                {
-                    InfoBox($"[{def.Name}] 为必填项", "提示", false);
-                    input.Focus();
-                    return null;
-                }
-                continue;
-            }
-            if (def.FieldType == "数字" && !double.TryParse(val, out _))
-            {
-                InfoBox($"[{def.Name}] 需填写数字", "提示", false);
-                input.Focus();
-                return null;
-            }
-            ext[def.Name] = val;
-        }
-        return ext;
-    }
-
-    /// <summary>清空录入区并把焦点放回车号（对应 PRD F2-05）。</summary>
-    private void ClearInput()
-    {
-        _txtVehicle.Clear();
-        _txtDeduct.Clear();
-        _txtGoods.Clear();
-        _txtRemark.Clear();
-        foreach (var (_, input) in _customInputs)
-        {
-            if (input is DateTimePicker dtp) dtp.Value = DateTime.Today;
-            else input.Text = "";
-        }
-        _lblTareHint.Text = "";
-        _btnVehicle.Focus();
+            Text = text,
+            Location = new Point(x, y),
+            Size = new Size(w, h),
+            BackColor = back,
+            ForeColor = Color.White,
+            FlatStyle = FlatStyle.Flat,
+            Font = new Font("Microsoft YaHei UI", 11F, FontStyle.Bold),
+        };
     }
 
     // ================================================================
