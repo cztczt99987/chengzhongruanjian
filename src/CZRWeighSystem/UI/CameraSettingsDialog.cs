@@ -155,9 +155,9 @@ public class CameraSettingsDialog : Form
             btnSearch.Text = "搜索中…";
             try
             {
-                // SADP 广播收包需等待数秒，放后台线程避免界面卡死
-                var devices = await Task.Run(() => HikDeviceDiscovery.Search());
-                using var dlg = new DeviceListDialog(devices);
+                // SADP 广播 + 端口扫描需等待数秒，放后台线程避免界面卡死
+                var (devices, rtspDisabled) = await Task.Run(() => HikDeviceDiscovery.Search());
+                using var dlg = new DeviceListDialog(devices, rtspDisabled);
                 if (dlg.ShowDialog(this) == DialogResult.OK && dlg.SelectedDevice != null)
                     FillDevice(dlg.SelectedDevice);
             }
@@ -252,46 +252,64 @@ public class CameraSettingsDialog : Form
     }
 
     /// <summary>
-    /// 搜索结果选择对话框：列出 SADP 搜索到的局域网海康设备，
-    /// 选中后"填入"（或双击）回填到设置列表的选中行。
+    /// 搜索结果选择对话框：列出搜索到的设备（SADP 应答或 RTSP 端口开放），
+    /// 选中后"填入"（或双击）回填到设置列表的选中行；
+    /// 仅 8000 端口开放（RTSP/本地服务未开启）的疑似海康/萤石设备以提示行展示。
     /// </summary>
     private class DeviceListDialog : Form
     {
         /// <summary>用户选中的设备（点"填入"或双击行后非空）</summary>
         public HikDeviceInfo? SelectedDevice { get; private set; }
 
-        public DeviceListDialog(List<HikDeviceInfo> devices)
+        public DeviceListDialog(List<HikDeviceInfo> devices, List<string> rtspDisabled)
         {
-            Text = "搜索到的海康设备";
+            Text = "搜索到的设备";
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
             StartPosition = FormStartPosition.CenterParent;
-            ClientSize = new Size(520, 360);
+            ClientSize = new Size(560, 380);
             Font = new Font("Microsoft YaHei UI", 10F);
 
             var list = new ListView
             {
                 Location = new Point(20, 15),
-                Size = new Size(480, 250),
+                Size = new Size(520, 270),
                 View = View.Details,
                 FullRowSelect = true,
                 HideSelection = false,
             };
             list.Columns.Add("IP 地址", 150);
-            list.Columns.Add("型号", 160);
+            list.Columns.Add("型号", 170);
             list.Columns.Add("MAC 地址", 110);
-            list.Columns.Add("SDK 端口", 60);
+            list.Columns.Add("SDK 端口", 70);
+            foreach (var d in devices)
+                list.Items.Add(new ListViewItem(
+                    [d.Ip, d.Model, d.Mac, d.SdkPort > 0 ? d.SdkPort.ToString() : "-"]));
+
+            // 无可用设备时给出原因指引（萤石系消费摄像头默认关闭本地服务，不响应 SADP）
             if (devices.Count == 0)
-                list.Items.Add(new ListViewItem("未搜索到设备（可检查摄像头已通电接入局域网，或改手动填写）"));
-            else
-                foreach (var d in devices)
-                    list.Items.Add(new ListViewItem([d.Ip, d.Model, d.Mac, d.SdkPort.ToString()]));
+            {
+                if (rtspDisabled.Count > 0)
+                {
+                    AddHint(list, "发现疑似海康/萤石设备，但其 RTSP/本地服务未开启：");
+                    foreach (var ip in rtspDisabled)
+                        AddHint(list, $"    {ip}  （在萤石云视频App开启RTSP后重新搜索，或直接手动填入此IP）");
+                }
+                else
+                {
+                    AddHint(list, "未搜索到设备。请检查：");
+                    AddHint(list, "1. 摄像头已通电并接入同一局域网；");
+                    AddHint(list, "2. 萤石/海康消费系列默认关闭本地服务：萤石云视频App → 我的 → 工具 →");
+                    AddHint(list, "    局域网设备预览，扫描到设备并开启 RTSP/本地直播后重新搜索；");
+                    AddHint(list, "3. 仍搜不到可直接手动填写 IP/端口/用户名/密码。");
+                }
+            }
 
             var btnFill = new Button
             {
                 Text = "填 入",
-                Location = new Point(265, 285),
+                Location = new Point(305, 305),
                 Size = new Size(110, 34),
                 Enabled = false,
                 FlatStyle = FlatStyle.Flat,
@@ -301,7 +319,7 @@ public class CameraSettingsDialog : Form
             var btnCancel = new Button
             {
                 Text = "取 消",
-                Location = new Point(390, 285),
+                Location = new Point(430, 305),
                 Size = new Size(110, 34),
                 FlatStyle = FlatStyle.Flat,
             };
@@ -314,6 +332,10 @@ public class CameraSettingsDialog : Form
             Controls.Add(list);
             Controls.AddRange(new Control[] { btnFill, btnCancel });
             return;
+
+            // 灰色提示行（不参与选择）
+            static void AddHint(ListView lv, string text) =>
+                lv.Items.Add(new ListViewItem(text) { ForeColor = Color.Gray });
 
             // 选中行转 DialogResult：无选中行时提示并保持打开
             bool Pick(ListView lv)
