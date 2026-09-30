@@ -114,6 +114,34 @@ public class WeighRecordRepository
     }
 
     /// <summary>
+    /// 首页统计：全部记录数、今日磅单数与今日毛/皮/净汇总（今日按 first_time 判定，
+    /// 毛/皮/净只统计已完成记录）。CASE WHEN 为 SQLite / SQL Server 双方言通用。
+    /// </summary>
+    public (int TotalCount, int TodayCount, double TodayGrossKg, double TodayTareKg, double TodayNetKg)
+        GetHomeStats()
+    {
+        using var conn = Db.CreateConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT COUNT(*),
+                   COALESCE(SUM(CASE WHEN first_time >= @from AND status = '已完成' THEN 1 ELSE 0 END), 0),
+                   COALESCE(SUM(CASE WHEN first_time >= @from AND status = '已完成' THEN gross_kg ELSE 0 END), 0),
+                   COALESCE(SUM(CASE WHEN first_time >= @from AND status = '已完成' THEN tare_kg ELSE 0 END), 0),
+                   COALESCE(SUM(CASE WHEN first_time >= @from AND status = '已完成' THEN net_kg ELSE 0 END), 0)
+            FROM t_weigh_record
+            """;
+        cmd.Add("@from", DateTime.Now.ToString("yyyy-MM-dd 00:00:00"));
+        using var reader = cmd.ExecuteReader();
+        reader.Read();
+        return (
+            Convert.ToInt32(reader.GetValue(0)),
+            Convert.ToInt32(reader.GetValue(1)),
+            Convert.ToDouble(reader.GetValue(2)),
+            Convert.ToDouble(reader.GetValue(3)),
+            Convert.ToDouble(reader.GetValue(4)));
+    }
+
+    /// <summary>
     /// 删除超过天数仍未配对（未完成）的一次磅记录（首次称重超期自动清理）。
     /// first_time 为 yyyy-MM-dd HH:mm:ss 文本，字符串比较与时间比较等价（双方言通用）。
     /// 返回删除条数；days <= 0 时不清理。
