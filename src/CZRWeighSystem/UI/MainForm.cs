@@ -138,8 +138,12 @@ public class MainForm : Form
     private void BuildTopBar()
     {
         // 手动选择本次称重类型：点击弹出录入窗（2026-09-30 二次改版，录入区移入弹窗）
+        // 按钮配自卸车图标（空厢举升=空车去皮，满载=重车过磅），图上文下
         _btnTare = NewButton("空车去皮", 20, 42, 175, 120, Color.FromArgb(198, 40, 40));
-        _btnTare.Font = new Font("Microsoft YaHei UI", 14F, FontStyle.Bold);
+        _btnTare.Font = new Font("Microsoft YaHei UI", 12F, FontStyle.Bold);
+        _btnTare.Image = TruckIcon.Draw(loaded: false);
+        _btnTare.ImageAlign = ContentAlignment.MiddleCenter;
+        _btnTare.TextImageRelation = TextImageRelation.ImageAboveText;
         _btnTare.Click += (_, _) => OpenWeighEntry(isTare: true);
 
         _lblWeight = new Label
@@ -155,7 +159,10 @@ public class MainForm : Form
         };
 
         _btnGross = NewButton("重车过磅", 715, 42, 175, 120, Color.FromArgb(0, 130, 60));
-        _btnGross.Font = new Font("Microsoft YaHei UI", 14F, FontStyle.Bold);
+        _btnGross.Font = new Font("Microsoft YaHei UI", 12F, FontStyle.Bold);
+        _btnGross.Image = TruckIcon.Draw(loaded: true);
+        _btnGross.ImageAlign = ContentAlignment.MiddleCenter;
+        _btnGross.TextImageRelation = TextImageRelation.ImageAboveText;
         _btnGross.Click += (_, _) => OpenWeighEntry(isTare: false);
 
         // 稳定/通讯指示（重车过磅右侧竖排）
@@ -180,25 +187,20 @@ public class MainForm : Form
         };
 
         Controls.AddRange(new Control[] { _btnTare, _lblWeight, _btnGross, _lblStable, _lblComm });
-        // 注意：居中布局在构造函数末尾统一执行（LayoutTopBar 需引用统计面板位置做避让）
+        // 居中布局在构造函数末尾统一执行（见 ctor 末尾的 LayoutTopBar 调用）
     }
 
     /// <summary>
     /// 顶部称重条（空车去皮｜大屏重量｜重车过磅｜稳定/通讯指示）整组
-    /// 横向居中铺满顶部区域；窗口较窄时向左让出右上角的统计面板，避免遮挡。
+    /// 横向居中铺满顶部区域，窗口缩放时保持居中。
+    /// （统计面板位于画面区同一水平带下方，与顶部称重条无重叠）
     /// </summary>
     private void LayoutTopBar()
     {
-        // 统计面板尚未构建时（构造初期 Resize 触发）跳过避让计算，防止 NRE
-        if (_statsPanel == null) return;
-
         int gap = 15;
         int groupW = _btnTare.Width + gap + _lblWeight.Width + gap + _btnGross.Width
                    + gap + _lblStable.Width;
-        // 优先整组居中；空间不足时左移避让统计面板（保持 16px 间距）
-        int centeredX = Math.Max(8, (ClientSize.Width - groupW) / 2);
-        int avoidX = Math.Max(8, _statsPanel.Left - 16 - groupW);
-        int x = Math.Min(centeredX, avoidX);
+        int x = Math.Max(8, (ClientSize.Width - groupW) / 2);
         _btnTare.Left = x;
         _lblWeight.Left = _btnTare.Right + gap;
         _btnGross.Left = _lblWeight.Right + gap;
@@ -401,7 +403,7 @@ public class MainForm : Form
             ForeColor = Color.Black,
             BackColor = Color.FromArgb(189, 215, 238),   // 浅蓝样式（对应目标版式）
             Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Bold),
-            Location = new Point(ClientSize.Width - StatsW - 20, 32),   // 悬浮于窗口右上角
+            Location = new Point(ClientSize.Width - StatsW - 20, CameraY),   // 悬浮于摄像头 3 顶部（贴画面区右上角）
             Size = new Size(StatsW, StatsH),
             Anchor = AnchorStyles.Top | AnchorStyles.Right,
             Cursor = Cursors.Hand,

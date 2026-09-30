@@ -6,10 +6,11 @@ using System.Reflection;
 namespace CZRWeighSystem.Tests;
 
 /// <summary>
-/// 首页布局回归测试（2026-09-30 四次调整）：
+/// 首页布局回归测试（2026-09-30 五次调整）：
 /// 1. 软件启动默认全屏（最大化）；
-/// 2. 顶部称重条（空车去皮｜大屏重量｜重车过磅）宽窗口下整组居中，窄窗口时向左避让右上角统计面板；
-/// 3. 今日称重统计面板悬浮于窗口右上角，点击可竖直收起（仅剩标题条）/展开，箭头 ▲/▼ 切换；
+/// 2. 顶部称重条（空车去皮｜大屏重量｜重车过磅）整组横向居中，窗口缩放后仍居中；
+///    空/重车按钮带自卸车图标（空厢举升/满载货堆）；
+/// 3. 今日称重统计面板悬浮于摄像头 3 顶部（贴画面区右上角），点击可竖直收起（仅剩标题条）/展开；
 /// 4. 底部称重记录列表条数选择框：20/50/70/100 可选，默认 20 条。
 /// 注意：控件数据必须在窗体释放前的 STA 线程内采集（释放后子控件集合会被清空），
 /// STA 线程内的断言异常必须捕获回抛，否则会以未处理异常拖垮测试宿主。
@@ -20,14 +21,15 @@ namespace CZRWeighSystem.Tests;
 public class MainFormLayoutTests
 {
     private sealed record LayoutSnapshot(
-        string TareButtonText, string GrossButtonText, bool HasVehicleInput,
-        FormWindowState WindowState,
+        string TareButtonText, string GrossButtonText,
+        bool TareHasImage, bool GrossHasImage,
+        bool HasVehicleInput, FormWindowState WindowState,
         Rectangle VideoBounds, int VideoTileCount,
         Rectangle StatsBounds,
         Rectangle CaptureBounds, int CaptureColumnCount,
         string FirstColumnHeader, string LastColumnHeader,
         string PageSizeDefaultText, int GridRowCount,
-        int TopBarCenterDelta, bool TopBarAvoidsStats);
+        int TopBarCenterDelta);
 
     private static object? FldOrNull(MainForm form, string name) =>
         typeof(MainForm).GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(form);
@@ -62,16 +64,17 @@ public class MainFormLayoutTests
         var lblComm = (Label)Fld(form, "_lblComm");
         int groupCenter = (btnTare.Left + lblComm.Right) / 2;
         return new LayoutSnapshot(
-            ((Button)Fld(form, "_btnTare")).Text,
+            btnTare.Text,
             ((Button)Fld(form, "_btnGross")).Text,
+            btnTare.Image != null,
+            ((Button)Fld(form, "_btnGross")).Image != null,
             FldOrNull(form, "_txtVehicle") != null,
             form.WindowState,
             video.Bounds, tileCount, stats.Bounds, capture.Bounds,
             grid.Columns.Count,
             grid.Columns[0].HeaderText, grid.Columns[grid.Columns.Count - 1].HeaderText,
             pageSize.Text, grid.Rows.Count,
-            form.ClientSize.Width / 2 - groupCenter,
-            lblComm.Right <= stats.Left - 14);
+            form.ClientSize.Width / 2 - groupCenter);
     }
 
     private static LayoutSnapshot BuildAndMeasure()
@@ -95,13 +98,21 @@ public class MainFormLayoutTests
     }
 
     [Fact]
+    public void 顶部_空车去皮与重车过磅按钮带自卸车图标()
+    {
+        var s = BuildAndMeasure();
+        Assert.True(s.TareHasImage, "空车去皮按钮缺少图标");
+        Assert.True(s.GrossHasImage, "重车过磅按钮缺少图标");
+    }
+
+    [Fact]
     public void 软件启动_默认全屏最大化()
     {
         Assert.Equal(FormWindowState.Maximized, BuildAndMeasure().WindowState);
     }
 
     [Fact]
-    public void 顶部称重条_宽窗口整组居中_窄窗口避让统计面板()
+    public void 顶部称重条_整组横向居中_窗口变化后仍居中()
     {
         Db.Initialize();
         RunOnSta(() =>
@@ -109,17 +120,14 @@ public class MainFormLayoutTests
             using var form = new MainForm();
             form.WindowState = FormWindowState.Normal;
 
-            // 宽窗口（空间充足）→ 整组横向居中
-            form.Size = new Size(1920, 1000);
-            var wide = Snapshot(form);
-            Assert.True(Math.Abs(wide.TopBarCenterDelta) <= 2,
-                $"宽窗口下顶部称重条未居中：偏差 {wide.TopBarCenterDelta}px");
+            // 默认尺寸下应居中
+            var d1 = Snapshot(form).TopBarCenterDelta;
+            Assert.True(Math.Abs(d1) <= 2, $"默认尺寸下顶部称重条未居中：偏差 {d1}px");
 
-            // 窄窗口（空间不足）→ 左移避让统计面板，不得遮挡
-            form.Size = new Size(1380, 880);
-            var narrow = Snapshot(form);
-            Assert.True(narrow.TopBarAvoidsStats,
-                $"窄窗口下顶部称重条右缘({narrow.TopBarCenterDelta})未避让统计面板");
+            // 模拟窗口变化（Size 变更触发 Resize → 重新居中）
+            form.Size = new Size(1920, 1000);
+            var d2 = Snapshot(form).TopBarCenterDelta;
+            Assert.True(Math.Abs(d2) <= 2, $"窗口变化后顶部称重条未居中：偏差 {d2}px");
         });
     }
 
@@ -137,15 +145,16 @@ public class MainFormLayoutTests
     }
 
     [Fact]
-    public void 统计面板_悬浮于窗口右上角()
+    public void 统计面板_悬浮于摄像头3顶部()
     {
         var s = BuildAndMeasure();
-        // 位于窗口顶部（画面区上方）、贴右缘，并向下延伸压在画面区右上角上
-        Assert.True(s.StatsBounds.Top < s.VideoBounds.Top, "统计面板应位于画面区上方（窗口顶部）");
-        Assert.True(s.StatsBounds.Right >= s.VideoBounds.Right - 2,
-            $"统计面板({s.StatsBounds.Right})未贴齐右缘(视频区右缘={s.VideoBounds.Right})");
-        Assert.True(s.StatsBounds.Bottom > s.VideoBounds.Top,
-            $"统计面板底边({s.StatsBounds.Bottom})应下探覆盖画面区顶部({s.VideoBounds.Top})");
+        // 顶边与画面区对齐（摄像头 3 顶部）、贴画面区右缘，整体落在第 3 个槽位范围内
+        Assert.Equal(s.VideoBounds.Top, s.StatsBounds.Top);
+        Assert.True(s.StatsBounds.Right <= s.VideoBounds.Right + 2,
+            $"统计面板右缘({s.StatsBounds.Right})超出画面区右缘({s.VideoBounds.Right})");
+        int tile3Left = s.VideoBounds.Left + s.VideoBounds.Width * 2 / 3;
+        Assert.True(s.StatsBounds.Left >= tile3Left - 2,
+            $"统计面板左缘({s.StatsBounds.Left})未落在摄像头 3 槽位内(槽位左缘={tile3Left})");
     }
 
     [Fact]
