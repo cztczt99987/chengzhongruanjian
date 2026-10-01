@@ -322,11 +322,21 @@ public class WeighRecordRepository
 
         using var conn = Db.CreateConnection();
         using var cmd = conn.CreateCommand();
-        // "%" 拼进参数值而非 SQL 文本，避免 || 与 + 的方言连接符差异
-        cmd.CommandText = "SELECT COUNT(*) FROM t_weigh_record WHERE serial_no LIKE @p";
+        // "%" 拼进参数值而非 SQL 文本，避免 || 与 + 的方言连接符差异；
+        // 序号取同前缀最大序号 + 1（按行数编号时删除记录产生空洞会撞已有流水号，
+        // UNIQUE 冲突导致保存失败，见 SerialNoTests 回归）
+        cmd.CommandText = "SELECT serial_no FROM t_weigh_record WHERE serial_no LIKE @p";
         cmd.Add("@p", prefix + "%");
-        long count = Convert.ToInt64(cmd.ExecuteScalar());
-        return $"{prefix}{count + 1:D4}";
+        int max = 0;
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            string serial = reader.GetString(0);
+            if (serial.Length > prefix.Length
+                && int.TryParse(serial[prefix.Length..], out int seq) && seq > max)
+                max = seq;
+        }
+        return $"{prefix}{max + 1:D4}";
     }
 
     private static WeighRecord? GetById(DbConnection conn, long id)

@@ -1,3 +1,4 @@
+using CZRWeighSystem.Database;
 using CZRWeighSystem.UI;
 using System.Reflection;
 
@@ -18,6 +19,7 @@ public class AppNameTests
         string title = "";
         var thread = new Thread(() =>
         {
+            Db.Initialize();   // 与 Program.Main 启动顺序一致：先建表/迁移再创建主界面（幂等）
             using var form = new MainForm();
             title = form.Text;
         });
