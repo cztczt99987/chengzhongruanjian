@@ -290,12 +290,51 @@ public class MainFormLayoutTests
     }
 
     [Fact]
-    public void 底部记录列表_十一列完整保留_含金额列()
+    public void 底部记录列表_二十列完整保留_含金额与全部业务字段()
     {
         var s = BuildAndMeasure();
-        Assert.Equal(11, s.CaptureColumnCount);
+        Assert.Equal(20, s.CaptureColumnCount);
         Assert.Equal("流水号", s.FirstColumnHeader);
-        Assert.Equal("状态", s.LastColumnHeader);   // 金额列插在皮重时间与状态之间
+        Assert.Equal("状态", s.LastColumnHeader);   // 金额等列插在皮重时间与状态之间
+    }
+
+    [Fact]
+    public void 单位单选框_快速切换kg与吨_配置立即生效并刷新列表()
+    {
+        Db.Initialize();
+        var repo = new WeighRecordRepository();
+        repo.InsertFirstWeigh(new WeighRecord
+        { ScaleNo = "92", VehicleNo = "单位001", FirstTime = DateTime.Now, Status = "未完成", GrossKg = 1000 });
+
+        RunOnSta(() =>
+        {
+            using var form = new MainForm();
+            var rdoKg = (RadioButton)Fld(form, "_rdoKg");
+            var rdoTon = (RadioButton)Fld(form, "_rdoTon");
+            var grid = (DataGridView)Fld(form, "_captureGrid");
+            var cfg = AppConfig.Current;
+            string old = cfg.Unit;
+            try
+            {
+                rdoKg.Checked = true;   // 确保从 kg 开始（同值不触发切换）
+                Assert.Equal("kg", cfg.Unit);
+                Assert.EndsWith("kg", (string)grid.Rows[0].Cells["Gross"].Value!);
+
+                // 切吨：配置立即写回，列表按新单位显示（1000kg → 1t）
+                rdoTon.Checked = true;
+                Assert.Equal("t", cfg.Unit);
+                Assert.True(rdoKg.Checked == false, "kg/吨 单选应互斥");
+                Assert.EndsWith("t", (string)grid.Rows[0].Cells["Gross"].Value!);
+
+                rdoKg.Checked = true;   // 切回 kg
+                Assert.Equal("kg", cfg.Unit);
+            }
+            finally
+            {
+                cfg.Unit = old;   // 还原全局配置，避免影响其他测试
+                cfg.Save();
+            }
+        });
     }
 
     [Fact]

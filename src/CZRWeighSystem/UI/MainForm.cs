@@ -73,6 +73,8 @@ public class MainForm : Form
     private GroupBox _capturePanel = null!;
     private DataGridView _captureGrid = null!;
     private ComboBox _cboPageSize = null!;   // 显示条数：20/50/70/100（默认 20）
+    private RadioButton _rdoKg = null!;      // 显示单位 kg（快速切换，写回 config.Unit）
+    private RadioButton _rdoTon = null!;     // 显示单位 吨
     private readonly Database.WeighRecordRepository _recordRepo = new();
     private Core.BlackBoxMonitor? _blackBox;   // 黑匣子监控（重量稳定持续设定秒数后自动记录 + 抓拍）
 
@@ -705,17 +707,32 @@ public class MainForm : Form
             BackgroundColor = Color.White,
             BorderStyle = BorderStyle.FixedSingle,
         };
-        _captureGrid.Columns.Add("SerialNo", "流水号");
-        _captureGrid.Columns.Add("Date", "日期");
-        _captureGrid.Columns.Add("VehicleNo", "车牌号码");
-        _captureGrid.Columns.Add("Goods", "货物");
-        _captureGrid.Columns.Add("Gross", "毛重");
-        _captureGrid.Columns.Add("Tare", "皮重");
-        _captureGrid.Columns.Add("Net", "净重");
-        _captureGrid.Columns.Add("GrossTime", "毛重时间");
-        _captureGrid.Columns.Add("TareTime", "皮重时间");
-        _captureGrid.Columns.Add("AmountYuan", "金额(元)");
-        _captureGrid.Columns.Add("Status", "状态");
+        // 记录列表包含记录的全部业务字段；Fill 模式按权重分配列宽（关键列宽、时间/数值列窄）
+        void AddCol(string name, string header, float weight = 100)
+        {
+            _captureGrid.Columns.Add(name, header);
+            _captureGrid.Columns[name]!.FillWeight = weight;
+        }
+        AddCol("SerialNo", "流水号", 130);
+        AddCol("Date", "日期", 96);
+        AddCol("ScaleNo", "磅号", 50);
+        AddCol("VehicleNo", "车牌号码", 95);
+        AddCol("Goods", "货物", 68);
+        AddCol("SenderCompany", "发货单位", 105);
+        AddCol("ReceiverCompany", "收货单位", 105);
+        AddCol("Spec", "规格", 60);
+        AddCol("BatchNo", "批次号", 72);
+        AddCol("Gross", "毛重", 96);
+        AddCol("Tare", "皮重", 96);
+        AddCol("Deduct", "扣重", 64);
+        AddCol("Net", "净重", 96);
+        AddCol("Received", "实收", 96);
+        AddCol("AmountYuan", "金额(元)", 72);
+        AddCol("GrossTime", "毛重时间", 70);
+        AddCol("TareTime", "皮重时间", 70);
+        AddCol("Operator", "司磅员", 68);
+        AddCol("Remark", "备注", 110);
+        AddCol("Status", "状态", 70);
 
         // 双击未完成行：带车号打开录入窗（保存时按车号自动配对结算）
         _captureGrid.CellDoubleClick += (_, _) =>
@@ -747,13 +764,48 @@ public class MainForm : Form
         _cboPageSize.SelectedIndexChanged += (_, _) => RefreshGrid();
         _cboPageSize.SelectedIndex = 0;   // 默认 20 条（赋值触发刷新，列表按 20 条加载）
 
+        // 显示单位快速切换（kg/吨，位于显示条数左侧）：选中即写回 config 并刷新全部重量显示
+        _rdoKg = new RadioButton
+        {
+            Text = "kg",
+            AutoSize = true,
+            Location = new Point(_capturePanel.Width - 386, 19),
+            Anchor = AnchorStyles.Top | AnchorStyles.Right,
+            Checked = _cfg.Unit != "t",
+        };
+        _rdoTon = new RadioButton
+        {
+            Text = "吨",
+            AutoSize = true,
+            Location = new Point(_capturePanel.Width - 336, 19),
+            Anchor = AnchorStyles.Top | AnchorStyles.Right,
+            Checked = _cfg.Unit == "t",
+        };
+        _rdoKg.CheckedChanged += (_, _) => SwitchUnit("kg");
+        _rdoTon.CheckedChanged += (_, _) => SwitchUnit("t");
+
         _capturePanel.Controls.Add(_captureGrid);
         _capturePanel.Controls.Add(lblPage);
         _capturePanel.Controls.Add(_cboPageSize);
+        _capturePanel.Controls.AddRange([_rdoKg, _rdoTon]);
         // 表格先加入 → 处于 z 序前层，会把后加入的控件压住；显式置前保证条数选择框始终可见
         lblPage.BringToFront();
         _cboPageSize.BringToFront();
+        _rdoKg.BringToFront();
+        _rdoTon.BringToFront();
         Controls.Add(_capturePanel);
+    }
+
+    /// <summary>切换显示单位（kg/吨）：写回 config.json，列表、统计卡片、今日汇总与顶部大屏全部按新单位刷新。</summary>
+    private void SwitchUnit(string unit)
+    {
+        if (_cfg.Unit == unit) return;   // 构造时按当前单位设置单选框会触发事件，同值直接返回
+        _cfg.Unit = unit;
+        _cfg.Save();
+        RefreshGrid();      // 列表重量列
+        RefreshStats();     // 统计卡片与今日汇总
+        OnWeightUpdated();  // 顶部大屏实时重量与颜色
+        Log.Info($"显示单位已切换为：{(unit == "t" ? "吨" : "kg")}");
     }
 
     /// <summary>刷新称重记录列表（按选择的显示条数，新记录在前；未完成行标红提醒）。</summary>
@@ -765,15 +817,24 @@ public class MainForm : Form
         {
             int i = _captureGrid.Rows.Add(
                 r.SerialNo,
-                r.FirstTime?.ToString("yyyy-MM-dd HH:mm") ?? "",
+                r.FirstTime?.ToString("yyyy-MM-dd") ?? "",   // 日期只显日期（时间在毛/皮重时间列）
+                r.ScaleNo,
                 r.VehicleNo,
                 r.Goods ?? "",
+                r.SenderCompany ?? "",
+                r.ReceiverCompany ?? "",
+                r.Spec ?? "",
+                r.BatchNo ?? "",
                 _cfg.FormatWeight(r.GrossKg ?? 0),
                 r.TareKg.HasValue ? _cfg.FormatWeight(r.TareKg.Value) : "--",
+                r.DeductKg.HasValue ? _cfg.FormatWeight(r.DeductKg.Value) : "--",
                 r.NetKg.HasValue ? _cfg.FormatWeight(r.NetKg.Value) : "--",
+                r.ReceivedKg.HasValue ? _cfg.FormatWeight(r.ReceivedKg.Value) : "--",
+                r.AmountYuan?.ToString("0.##") ?? "--",
                 r.FirstTime?.ToString("HH:mm:ss") ?? "",
                 r.SecondTime?.ToString("HH:mm:ss") ?? "",
-                r.AmountYuan?.ToString("0.##") ?? "--",
+                r.Operator ?? "",
+                r.Remark ?? "",
                 r.Status);
             _captureGrid.Rows[i].Tag = r;
 
