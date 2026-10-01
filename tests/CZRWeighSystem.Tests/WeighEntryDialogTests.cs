@@ -197,6 +197,7 @@ public class WeighEntryDialogTests
             using var dlg = new WeighEntryDialog(manager, isTare: true);
             SilenceDialogs(dlg);
             NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = "";   // 清空"默认字母"预填，模拟未录车号
             PushStable(manager, 10000);
             Call(dlg, "Save");
 
@@ -321,6 +322,43 @@ public class WeighEntryDialogTests
             Assert.Equal("李四", Fld<TextBox>(dlg, "_txtCargoOwner").Text);
         });
         manager.Dispose();
+    }
+
+    [Fact]
+    public void 默认字母_编号框预填配置字母_带预填车号或关闭开关时不预填()
+    {
+        // 临时改配置并在结束时还原，避免污染其他用例
+        var cfg = AppConfig.Current;
+        var (useBak, letterBak) = (cfg.UseProvinceLetter, cfg.DefaultLetter);
+        try
+        {
+            cfg.UseProvinceLetter = true;
+            cfg.DefaultLetter = "D";
+
+            WeighManager manager = new();
+            RunOnSta(() =>
+            {
+                // 开关开启：编号框预填 D，光标在字母后供续输
+                using var dlg = new WeighEntryDialog(manager, isTare: true);
+                var txt = Fld<TextBox>(dlg, "_txtVehicle");
+                Assert.Equal("D", txt.Text);
+                Assert.Equal(txt.TextLength, txt.SelectionStart);
+
+                // 带预填车号进入：预填优先，不再叠字母
+                using var dlg2 = new WeighEntryDialog(manager, isTare: false, prefillVehicle: "冀A12345");
+                Assert.Equal("A12345", Fld<TextBox>(dlg2, "_txtVehicle").Text);
+
+                // 开关关闭：编号框留空
+                cfg.UseProvinceLetter = false;
+                using var dlg3 = new WeighEntryDialog(manager, isTare: true);
+                Assert.Equal("", Fld<TextBox>(dlg3, "_txtVehicle").Text);
+            });
+            manager.Dispose();
+        }
+        finally
+        {
+            (cfg.UseProvinceLetter, cfg.DefaultLetter) = (useBak, letterBak);
+        }
     }
 
     [Fact]

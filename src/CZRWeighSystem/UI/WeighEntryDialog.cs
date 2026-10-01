@@ -92,6 +92,14 @@ public class WeighEntryDialog : Form
         };
         // 预填放在事件挂接之后：带车号进入时同样触发回填上次信息
         ApplyPrefill(prefillVehicle);
+
+        // 综合设置开启"使用省、字母"且未带预填车号时，编号框预填默认字母
+        // （如配置 黑D → 省份下拉"黑"、编号框"D"），光标置于字母后供继续输入
+        if (_cfg.UseProvinceLetter && _cfg.DefaultLetter.Length > 0 && _txtVehicle.TextLength == 0)
+        {
+            _txtVehicle.Text = _cfg.DefaultLetter;
+        }
+        _txtVehicle.SelectionStart = _txtVehicle.TextLength;   // 光标到末尾，直接续输
         UpdateWeight();
 
         _tick.Tick += (_, _) => UpdateWeight();   // 实时重量/净重预览随仪表数据刷新
