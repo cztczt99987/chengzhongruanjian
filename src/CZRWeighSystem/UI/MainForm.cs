@@ -177,7 +177,7 @@ public class MainForm : Form
 
     // ---------- 顶部白色工具栏：左侧快捷方式｜空车去皮/大屏重量/重车过磅｜右侧快捷方式 ----------
     private const int TopPanelH = 142;    // 工具栏高度（含大屏下方稳定/通讯行）
-    private const int ShortcutW = 60;     // 快捷按钮宽（4 字标签 9pt 约 48px，足够）
+    private const int ShortcutW = 76;     // 快捷按钮宽（4 字标签 9pt 约 61px，留足余量保证单行不换行）
     private const int ShortcutH = 92;     // 快捷按钮高（与空/重车按钮同高对齐）
     private const int ShortcutGap = 6;    // 快捷按钮间距
     private const int ShortcutLeftCount = 4;
@@ -273,8 +273,8 @@ public class MainForm : Form
             FlatStyle = FlatStyle.Flat,
             BackColor = Color.White,
             ForeColor = Color.FromArgb(60, 66, 76),
-            // 8.5pt：4 字标签在 60px 按钮内一行排下（9pt 会折成两行）
-            Font = new Font("Microsoft YaHei UI", 8.5F),
+            // 9pt：4 字标签在 76px 按钮内单行排下
+            Font = new Font("Microsoft YaHei UI", 9F),
             Image = ShortcutIcon.Draw(icon, 38),
             ImageAlign = ContentAlignment.MiddleCenter,
             TextImageRelation = TextImageRelation.ImageAboveText,
@@ -325,20 +325,26 @@ public class MainForm : Form
     /// <summary>
     /// 顶部工具栏横向布局：左快捷组、称重区（空车去皮｜大屏重量｜重车过磅）、右快捷组；
     /// 称重区在两组之间居中，稳定/通讯指示横排于大屏重量下方并居中。
-    /// 最小窗口宽度（1240）下宽度刚好排满，不发生重叠；窗口缩放时重新布局。
+    /// 大屏宽度弹性伸缩（300~450）：快捷按钮加宽后，最小窗口宽度（1240）下自动收窄大屏
+    /// 保证三组不重叠；窗口缩放时重新布局。
     /// </summary>
     private void LayoutTopBar()
     {
         const int gap = 10;
-        int centerW = _btnTare.Width + gap + _lblWeight.Width + gap + _btnGross.Width;
         int leftW = ShortcutLeftCount * ShortcutW + (ShortcutLeftCount - 1) * ShortcutGap;
         int rightCount = _shortcutButtons.Count - ShortcutLeftCount;
         int rightW = rightCount * ShortcutW + Math.Max(0, rightCount - 1) * ShortcutGap;
         int w = ClientSize.Width;   // 面板通栏锚定右缘，宽度与客户区一致
 
+        // 大屏弹性宽度：以"称重区相对窗口居中"为先——左右留出对称空隙（需容纳较宽的左快捷组），
+        // 余下空间给大屏（默认窗口约 340，宽窗口封顶 450，最小窗口保底 300 优先保证不重叠）
+        int edge = w >= leftW + rightW + 810 + 20 ? 10 : 0;   // 810 = 称重区满配宽（170+10+450+10+170）
+        int symmetric = w - 2 * edge - 2 * leftW;             // 居中时称重区可占宽度
+        _lblWeight.Width = Math.Clamp(symmetric - 2 * gap - _btnTare.Width - _btnGross.Width, 300, 450);
+
+        int centerW = _btnTare.Width + gap + _lblWeight.Width + gap + _btnGross.Width;
         // 称重区优先相对窗口居中；左右两组不对称（4 vs 2），按可用区居中会右偏，
         // 故只在最小窗口宽度排不下时才向两侧组让位（Clamp），保证三组始终不重叠
-        int edge = w >= leftW + rightW + centerW + 20 ? 10 : 0;
         int ideal = (w - centerW) / 2;
         int minLeft = edge + leftW;
         int maxLeft = w - edge - rightW - centerW;
