@@ -98,6 +98,38 @@ public class WeighEntryDialogTests
     }
 
     [Fact]
+    public void 固定字段_保存写入品种与ExtJson固定键()
+    {
+        string vehicle = NewVehicle("F");
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+            SilenceDialogs(dlg);
+            UseTestScaleNo();
+            Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
+            Fld<TextBox>(dlg, "_txtVariety").Text = " 玉米 ";
+            Fld<TextBox>(dlg, "_txtOwner").Text = "张三";
+            Fld<TextBox>(dlg, "_txtOwnerPhone").Text = "13800000000";
+            Fld<TextBox>(dlg, "_txtDriverPhone").Text = "13911111111";
+            Fld<TextBox>(dlg, "_txtCargoOwner").Text = "李四";
+            PushStable(manager, 10000);
+            Call(dlg, "Save");
+
+            Assert.Equal(DialogResult.OK, dlg.DialogResult);
+        });
+        manager.Dispose();
+
+        var record = _repo.Query(null, null, vehicle, "", "", "").Single();
+        Assert.Equal("玉米", record.Goods);              // 品种 → Goods 列
+        var ext = record.ParseExt();                     // 人名/电话 → ext_json 固定键
+        Assert.Equal("张三", ext["地主姓名"]);
+        Assert.Equal("13800000000", ext["地主电话"]);
+        Assert.Equal("13911111111", ext["司机电话"]);
+        Assert.Equal("李四", ext["货主姓名"]);
+    }
+
+    [Fact]
     public void 重车过磅_车号有待配对记录_自动二次磅结算()
     {
         string vehicle = NewVehicle("L");

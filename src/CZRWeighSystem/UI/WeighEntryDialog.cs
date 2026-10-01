@@ -3,18 +3,18 @@ using CZRWeighSystem.Core;
 namespace CZRWeighSystem.UI;
 
 /// <summary>
-/// 称重录入弹窗（2026-09-30 二次改版：首页信息录入区移入弹窗）。
-/// 点首页「空车去皮 / 重车过磅」弹出，操作员在票据样式表单中填写车号等信息；
-/// 右侧实时显示当前重量、待配对一次磅（上次重量/时间）与预计净重；
-/// 保存走统一皮/毛流程（车号有待配对记录时自动二次磅结算）。
+/// 称重录入弹窗（2026-09-30 三次改版：票据区仿老软件过磅单表格样式）。
+/// 点首页「空车去皮 / 重车过磅」弹出，左侧米黄票据按网格两列布局：
+/// 左列固定字段（车牌号码/地主姓名/地主电话/司机电话/货主姓名/品种），
+/// 右列实时毛/皮/净预览；右栏保留实时重量、上次重量/时间、预计净重与保存按钮。
+/// 地主姓名等固定字段以固定键写入记录 ext_json（无需改表，磅单模板可直接引用），
+/// 品种存 Goods 列；保存走统一皮/毛流程（车号有待配对记录时自动二次磅结算）。
 /// </summary>
 public class WeighEntryDialog : Form
 {
     private readonly WeighManager _manager;
     private readonly bool _isTare;
     private readonly AppConfig _cfg = AppConfig.Current;
-    private readonly Database.CustomFieldRepository _fieldRepo = new();
-    private readonly List<(CustomField Def, Control Input)> _customInputs = [];
 
     // ===== 对话框出口（internal 供测试注入静默实现；正常流程用 MessageBox）=====
     /// <summary>确认框：返回 true=确认。测试注入后可静默自动确认。</summary>
@@ -30,16 +30,21 @@ public class WeighEntryDialog : Form
 
     // ===== 控件 =====
     private TextBox _txtVehicle = null!;     // 车牌号码（只读，点按钮弹软键盘选牌）
-    private TextBox _txtGoods = null!;       // 货物
-    private TextBox _txtDeduct = null!;      // 扣重
-    private TextBox _txtRemark = null!;      // 备注
+    private TextBox _txtVariety = null!;     // 品种（存记录 Goods 列）
+    private TextBox _txtOwner = null!;       // 地主姓名（ext_json 固定键）
+    private TextBox _txtOwnerPhone = null!;  // 地主电话（ext_json 固定键）
+    private TextBox _txtDriverPhone = null!; // 司机电话（ext_json 固定键）
+    private TextBox _txtCargoOwner = null!;  // 货主姓名（ext_json 固定键）
     private TextBox _txtOperator = null!;    // 司磅员（当前登录用户，只读）
     private Label _lblSerialNo = null!;      // No：待配对时显示一次磅流水号
     private Label _lblPairHint = null!;      // 配对/新车提示
-    private Label _lblCurrent = null!;       // 实时重量
+    private Label _lblGrossCell = null!;     // 票据右列：毛重预览
+    private Label _lblTareCell = null!;      // 票据右列：皮重预览
+    private Label _lblNetCell = null!;       // 票据右列：净重预览
+    private Label _lblCurrent = null!;       // 实时重量（右栏大屏）
     private Label _lblLastWeight = null!;    // 上次重量（待配对一次磅）
     private Label _lblLastTime = null!;      // 上次时间
-    private Label _lblNetPreview = null!;    // 预计净重
+    private Label _lblNetPreview = null!;    // 预计净重（右栏）
     private Button _btnSave = null!;         // 保存（待配对时文字为"保存并结算"）
     private readonly System.Windows.Forms.Timer _tick = new() { Interval = 200 };
 
@@ -79,7 +84,7 @@ public class WeighEntryDialog : Form
         _tick.Start();
     }
 
-    // ---------- 票据样式信息录入区（左侧浅黄过磅单） ----------
+    // ---------- 票据样式信息录入区（左侧米黄过磅单，网格两列布局仿老软件） ----------
     private void BuildTicket()
     {
         var ticket = new Panel
@@ -123,17 +128,57 @@ public class WeighEntryDialog : Form
         };
         ticket.Controls.Add(_lblSerialNo);
 
-        Label L(string t, int y) => new()
-        { Text = t, AutoSize = true, Location = new Point(25, y + 4), Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Bold) };
+        // ---- 固定字段表格：左列录入字段，右列毛/皮/净实时预览，网格线仿老过磅单 ----
+        var grid = new TableLayoutPanel
+        {
+            Location = new Point(25, 124),
+            Size = new Size(600, 306),
+            ColumnCount = 4,
+            RowCount = 6,
+            CellBorderStyle = TableLayoutPanelCellBorderStyle.Single,
+            BackColor = ticket.BackColor,
+        };
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 88));   // 字段名
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 248));  // 输入框
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 84));   // 重量名
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 176));  // 重量值
+        for (int i = 0; i < 6; i++)
+            grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
 
-        // 行1：车牌号码（只读 + 软键盘选牌）
-        ticket.Controls.Add(L("车牌号码：", 130));
-        _txtVehicle = new TextBox { Location = new Point(115, 130), Size = new Size(200, 28), ReadOnly = true };
+        Label Head(string t) => new()
+        {
+            Text = t,
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleCenter,
+            Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Bold),
+            BackColor = ticket.BackColor,
+            Margin = new Padding(0),
+        };
+        Label ValueCell() => new()
+        {
+            Text = "--",
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleRight,
+            Font = new Font("Consolas", 11F, FontStyle.Bold),
+            BackColor = Color.White,
+            Margin = new Padding(0),
+            Padding = new Padding(0, 0, 6, 0),
+        };
+        TextBox Input() => new() { Dock = DockStyle.Fill, Margin = new Padding(4, 10, 4, 10) };
+
+        // 行1：车牌号码（只读 + 软键盘选牌）｜ 毛重
+        grid.Controls.Add(Head("车牌号码"), 0, 0);
+        var platePanel = new Panel { Dock = DockStyle.Fill, BackColor = Color.White, Margin = new Padding(2) };
+        _txtVehicle = new TextBox { Dock = DockStyle.Fill, ReadOnly = true };
         var btnVehicle = new Button
         {
-            Text = "选择车牌", Location = new Point(320, 129), Size = new Size(92, 30),
+            Text = "选择车牌",
+            Dock = DockStyle.Right,
+            Width = 88,
             FlatStyle = FlatStyle.Flat,
-            BackColor = Color.FromArgb(0, 122, 204), ForeColor = Color.White,
+            BackColor = Color.FromArgb(0, 122, 204),
+            ForeColor = Color.White,
+            Font = new Font("Microsoft YaHei UI", 9F),
         };
         btnVehicle.Click += (_, _) =>
         {
@@ -141,59 +186,59 @@ public class WeighEntryDialog : Form
             if (f.ShowDialog(this) == DialogResult.OK && f.ResultVehicle != null)
                 _txtVehicle.Text = f.ResultVehicle;
         };
-        ticket.Controls.AddRange(new Control[] { _txtVehicle, btnVehicle });
+        platePanel.Controls.Add(_txtVehicle);
+        platePanel.Controls.Add(btnVehicle);
+        grid.Controls.Add(platePanel, 1, 0);
+        grid.Controls.Add(Head("毛重"), 2, 0);
+        _lblGrossCell = ValueCell();
+        grid.Controls.Add(_lblGrossCell, 3, 0);
 
-        // 行2：货物
-        ticket.Controls.Add(L("货物：", 172));
-        _txtGoods = new TextBox { Location = new Point(115, 172), Size = new Size(320, 28) };
-        ticket.Controls.Add(_txtGoods);
+        // 行2：地主姓名 ｜ 皮重
+        grid.Controls.Add(Head("地主姓名"), 0, 1);
+        _txtOwner = Input();
+        grid.Controls.Add(_txtOwner, 1, 1);
+        grid.Controls.Add(Head("皮重"), 2, 1);
+        _lblTareCell = ValueCell();
+        grid.Controls.Add(_lblTareCell, 3, 1);
 
-        // 行3：扣重
-        ticket.Controls.Add(L("扣重：", 214));
-        _txtDeduct = new TextBox { Location = new Point(115, 214), Size = new Size(150, 28) };
-        ticket.Controls.Add(_txtDeduct);
+        // 行3：地主电话 ｜ 净重
+        grid.Controls.Add(Head("地主电话"), 0, 2);
+        _txtOwnerPhone = Input();
+        grid.Controls.Add(_txtOwnerPhone, 1, 2);
+        grid.Controls.Add(Head("净重"), 2, 2);
+        _lblNetCell = ValueCell();
+        grid.Controls.Add(_lblNetCell, 3, 2);
+
+        // 行4：司机电话（右列留空）
+        grid.Controls.Add(Head("司机电话"), 0, 3);
+        _txtDriverPhone = Input();
+        grid.Controls.Add(_txtDriverPhone, 1, 3);
+
+        // 行5：货主姓名（右列留空）
+        grid.Controls.Add(Head("货主姓名"), 0, 4);
+        _txtCargoOwner = Input();
+        grid.Controls.Add(_txtCargoOwner, 1, 4);
+
+        // 行6：品种（存记录 Goods 列；右列留空）
+        grid.Controls.Add(Head("品种"), 0, 5);
+        _txtVariety = Input();
+        grid.Controls.Add(_txtVariety, 1, 5);
+        ticket.Controls.Add(grid);
+
+        // 表格下方：司磅员（当前登录用户，自动记录）
         ticket.Controls.Add(new Label
-        { Text = _cfg.Unit, AutoSize = true, Location = new Point(272, 218) });
-
-        // 行4：备注
-        ticket.Controls.Add(L("备注：", 256));
-        _txtRemark = new TextBox { Location = new Point(115, 256), Size = new Size(320, 28) };
-        ticket.Controls.Add(_txtRemark);
-
-        // 行5：司磅员（当前登录用户，自动记录）
-        ticket.Controls.Add(L("司磅员：", 298));
+        {
+            Text = "司磅员：",
+            AutoSize = true,
+            Location = new Point(25, 446),
+            Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Bold),
+        });
         _txtOperator = new TextBox
         {
-            Location = new Point(115, 298), Size = new Size(200, 28),
+            Location = new Point(113, 442), Size = new Size(200, 28),
             ReadOnly = true, Text = AppSession.DisplayName,
         };
         ticket.Controls.Add(_txtOperator);
-
-        // 自定义字段从行 6 起延续排布
-        var fields = _fieldRepo.GetAll(enabledOnly: true);
-        for (int i = 0; i < fields.Count; i++)
-        {
-            var def = fields[i];
-            int y = 340 + i * 40;
-            var lbl = new Label
-            {
-                Text = def.Name + "：", AutoSize = true,
-                Location = new Point(25, y + 4),
-                Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Bold),
-            };
-            Control input = def.FieldType switch
-            {
-                "下拉" => NewCombo(115, y, 320, def.OptionList),
-                "日期" => new DateTimePicker
-                {
-                    Location = new Point(115, y), Size = new Size(320, 28),
-                    Format = DateTimePickerFormat.Custom, CustomFormat = "yyyy-MM-dd",
-                },
-                _ => new TextBox { Location = new Point(115, y), Size = new Size(320, 28) },
-            };
-            ticket.Controls.AddRange([lbl, input]);
-            _customInputs.Add((def, input));
-        }
 
         // 底部：配对/新车提示
         _lblPairHint = new Label
@@ -207,20 +252,6 @@ public class WeighEntryDialog : Form
         ticket.Controls.Add(_lblPairHint);
 
         Controls.Add(ticket);
-    }
-
-    private static ComboBox NewCombo(int x, int y, int w, params string[] items)
-    {
-        var cbo = new ComboBox
-        {
-            Location = new Point(x, y),
-            Size = new Size(w, 28),
-            DropDownStyle = ComboBoxStyle.DropDown,   // 可输入可下拉
-            AutoCompleteMode = AutoCompleteMode.SuggestAppend,
-            AutoCompleteSource = AutoCompleteSource.ListItems,
-        };
-        cbo.Items.AddRange(items);
-        return cbo;
     }
 
     // ---------- 右侧实时重量与操作区 ----------
@@ -294,8 +325,10 @@ public class WeighEntryDialog : Form
     }
 
     /// <summary>
-    /// 刷新实时重量与配对信息：稳定绿/动态橙；车号匹配到未完成一次磅时
-    /// 显示其流水号/上次重量/上次时间与预计净重，保存按钮切换为"保存并结算"。
+    /// 刷新实时重量与配对信息：稳定绿/动态橙；票据右列按模式回填——
+    /// 本次称重填入对应行（去皮填皮重行、过毛填毛重行），配对的一次磅填对侧行；
+    /// 车号匹配到未完成一次磅时显示其流水号/上次重量/上次时间与预计净重，
+    /// 保存按钮切换为"保存并结算"。
     /// </summary>
     private void UpdateWeight()
     {
@@ -305,6 +338,23 @@ public class WeighEntryDialog : Form
         string no = _txtVehicle.Text.Trim();
         var first = no.Length == 0 ? null
             : _manager.GetUnfinishedList().FirstOrDefault(r => r.VehicleNo == no);
+
+        // 票据右列毛/皮/净：实时值进本次行，已存一次磅进对侧行，配对且稳定时预览净重
+        string live = _cfg.FormatWeight(_manager.CurrentKg);
+        string saved = first != null ? _cfg.FormatWeight(first.GrossKg ?? 0) : "--";
+        if (_isTare)
+        {
+            _lblTareCell.Text = live;
+            _lblGrossCell.Text = saved;
+        }
+        else
+        {
+            _lblGrossCell.Text = live;
+            _lblTareCell.Text = saved;
+        }
+        _lblNetCell.Text = first != null && _manager.IsStable
+            ? _cfg.FormatWeight(Math.Abs((first.GrossKg ?? 0) - _manager.StableKg))
+            : "--";
 
         if (first != null)
         {
@@ -338,12 +388,7 @@ public class WeighEntryDialog : Form
         string action = _isTare ? "空车去皮" : "重车过磅";
         string no = _txtVehicle.Text.Trim();
 
-        double? deduct = ParseDeduct();
-        if (_txtDeduct.TextLength > 0 && deduct == null) return;
-
-        // 自定义字段采集与校验（必填/数字格式）
         var ext = CollectExt();
-        if (ext == null) return;
 
         var first = no.Length == 0 ? null
             : _manager.GetUnfinishedList().FirstOrDefault(r => r.VehicleNo == no);
@@ -356,7 +401,7 @@ public class WeighEntryDialog : Form
                 $"一次磅：{_cfg.FormatWeight(first.GrossKg ?? 0)}  本次：{weightText}", "确认操作"))
                 return;
 
-            var (ok, msg, record) = _manager.SaveSecondWeigh(first, deduct, _txtOperator.Text);
+            var (ok, msg, record) = _manager.SaveSecondWeigh(first, null, _txtOperator.Text);
             InfoBox(msg, ok ? "结算成功" : "提示", ok);
             if (!ok) return;
 
@@ -366,14 +411,14 @@ public class WeighEntryDialog : Form
         }
         else
         {
-            // 第一次称重
+            // 第一次称重（品种存 Goods 列；扣重/备注已从表单移除，存 null）
             if (!ConfirmBox($"{action}（第一次称重）\n车号：{_txtVehicle.Text}  重量：{weightText}", "确认操作"))
                 return;
 
             var (ok, msg, newRecord) = _manager.SaveFirstWeigh(
-                _txtVehicle.Text, _txtGoods.Text, null, null,
-                null, null, _txtRemark.Text,
-                deduct, _txtOperator.Text, ext);
+                _txtVehicle.Text, _txtVariety.Text, null, null,
+                null, null, null,
+                null, _txtOperator.Text, ext);
             InfoBox(msg, ok ? "成功" : "提示", ok);
             if (!ok) return;
 
@@ -391,45 +436,19 @@ public class WeighEntryDialog : Form
         }
     }
 
-    /// <summary>解析扣重输入；留空 = 无扣重；非法输入时提示并返回 null。</summary>
-    private double? ParseDeduct()
+    /// <summary>采集固定字段非空值（以固定键写入记录 ext_json，记录查询与磅单模板可直接引用）。</summary>
+    private Dictionary<string, string> CollectExt()
     {
-        if (_txtDeduct.TextLength == 0) return null;
-        if (!double.TryParse(_txtDeduct.Text, out double v) || v < 0)
-        {
-            InfoBox("扣重格式不正确（应为不小于 0 的数字）", "提示", false);
-            return null;
-        }
-        // 输入按显示单位换算为千克
-        return _cfg.Unit == "t" ? v * 1000 : v;
-    }
-
-    /// <summary>采集自定义字段值；校验失败（必填缺失/数字格式错误）提示并返回 null。</summary>
-    private Dictionary<string, string>? CollectExt()
-    {
-        if (_customInputs.Count == 0) return [];
         var ext = new Dictionary<string, string>();
-        foreach (var (def, input) in _customInputs)
+        void Add(string key, TextBox box)
         {
-            string val = input.Text.Trim();
-            if (val.Length == 0)
-            {
-                if (def.Required)
-                {
-                    InfoBox($"[{def.Name}] 为必填项", "提示", false);
-                    input.Focus();
-                    return null;
-                }
-                continue;
-            }
-            if (def.FieldType == "数字" && !double.TryParse(val, out _))
-            {
-                InfoBox($"[{def.Name}] 需填写数字", "提示", false);
-                input.Focus();
-                return null;
-            }
-            ext[def.Name] = val;
+            string val = box.Text.Trim();
+            if (val.Length > 0) ext[key] = val;
         }
+        Add("地主姓名", _txtOwner);
+        Add("地主电话", _txtOwnerPhone);
+        Add("司机电话", _txtDriverPhone);
+        Add("货主姓名", _txtCargoOwner);
         return ext;
     }
 }
