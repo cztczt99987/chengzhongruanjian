@@ -713,32 +713,40 @@ public class MainForm : Form
             BackgroundColor = Color.White,
             BorderStyle = BorderStyle.FixedSingle,
         };
-        // 记录列表包含记录的全部业务字段；Fill 模式按权重分配列宽（关键列宽、时间/数值列窄）
-        void AddCol(string name, string header, float weight = 100)
+        // 记录列表包含记录的全部业务字段；按内容固定列宽保证字段完整展示，
+        // 列总宽超出面板时自动出现横向滚动条；状态列 Fill 模式：宽窗口拉伸补满右侧
+        void AddCol(string name, string header, int width)
         {
             _captureGrid.Columns.Add(name, header);
-            _captureGrid.Columns[name]!.FillWeight = weight;
+            var col = _captureGrid.Columns[name]!;
+            // 网格级默认 Fill 会忽略单列 Width，显式 None 才能按内容固定列宽
+            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
+            col.Width = width;
         }
-        AddCol("SerialNo", "流水号", 130);
+        AddCol("SerialNo", "流水号", 138);
         AddCol("Date", "日期", 96);
         AddCol("ScaleNo", "磅号", 50);
-        AddCol("VehicleNo", "车牌号码", 95);
-        AddCol("Goods", "货物", 68);
-        AddCol("SenderCompany", "发货单位", 105);
-        AddCol("ReceiverCompany", "收货单位", 105);
-        AddCol("Spec", "规格", 60);
-        AddCol("BatchNo", "批次号", 72);
-        AddCol("Gross", "毛重", 96);
-        AddCol("Tare", "皮重", 96);
-        AddCol("Deduct", "扣重", 64);
-        AddCol("Net", "净重", 96);
-        AddCol("Received", "实收", 96);
-        AddCol("AmountYuan", "金额(元)", 72);
-        AddCol("GrossTime", "毛重时间", 70);
-        AddCol("TareTime", "皮重时间", 70);
-        AddCol("Operator", "司磅员", 68);
-        AddCol("Remark", "备注", 110);
-        AddCol("Status", "状态", 70);
+        AddCol("VehicleNo", "车牌号码", 92);
+        AddCol("Goods", "货物", 62);
+        AddCol("SenderCompany", "发货单位", 140);
+        AddCol("ReceiverCompany", "收货单位", 140);
+        AddCol("Spec", "规格", 66);
+        AddCol("BatchNo", "批次号", 96);
+        AddCol("Gross", "毛重", 80);
+        AddCol("Tare", "皮重", 80);
+        AddCol("Deduct", "扣重", 60);
+        AddCol("Net", "净重", 80);
+        AddCol("Received", "实收", 80);
+        AddCol("AmountYuan", "金额(元)", 66);
+        AddCol("GrossTime", "毛重时间", 76);
+        AddCol("TareTime", "皮重时间", 76);
+        AddCol("Operator", "司磅员", 62);
+        AddCol("Remark", "备注", 92);
+        _captureGrid.Columns.Add("Status", "状态");
+        var statusCol = _captureGrid.Columns["Status"]!;   // 末列填充剩余宽度
+        statusCol.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+        statusCol.FillWeight = 1;
+        statusCol.MinimumWidth = 60;
 
         // 双击未完成行：带车号打开录入窗（保存时按车号自动配对结算）
         _captureGrid.CellDoubleClick += (_, _) =>
