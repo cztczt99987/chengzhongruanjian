@@ -102,6 +102,38 @@ public class SyncPayloadsTests
     }
 }
 
+/// <summary>服务端响应反序列化：photoId/recordNo 兼容数字与字符串两种返回。</summary>
+public class ApiResponseDeserializationTests
+{
+    private static readonly JsonSerializerOptions JsonOpts = new();
+
+    [Fact]
+    public void PhotoData_photoId为数字_可解析()
+    {
+        var photo = JsonSerializer.Deserialize<PhotoData>(
+            """{"photoId":3,"url":"/media/a.jpg","duplicate":false}""", JsonOpts);
+        Assert.Equal("3", photo!.PhotoId);
+        Assert.Equal("/media/a.jpg", photo.Url);
+    }
+
+    [Fact]
+    public void PhotoData_photoId为字符串_可解析()
+    {
+        var photo = JsonSerializer.Deserialize<PhotoData>(
+            """{"photoId":"ph_9f8e7d6c","url":null}""", JsonOpts);
+        Assert.Equal("ph_9f8e7d6c", photo!.PhotoId);
+    }
+
+    [Fact]
+    public void BatchResult_recordNo为数字_可解析()
+    {
+        var result = JsonSerializer.Deserialize<BatchResult>(
+            """{"clientRef":"20261002-01-0001","status":"created","recordNo":42,"reason":""}""",
+            JsonOpts);
+        Assert.Equal("42", result!.RecordNo);
+    }
+}
+
 /// <summary>地主电话录入校验（平台归属匹配要求 1 开头 11 位；非法整条拒收）。</summary>
 public class PhoneValidationTests
 {

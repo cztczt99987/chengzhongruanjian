@@ -66,15 +66,39 @@ public sealed record PingData(
     [property: JsonPropertyName("stationCode")] string StationCode,
     [property: JsonPropertyName("stationName")] string StationName);
 
+/// <summary>
+/// 宽松字符串转换：服务端偶有把字符串字段返回为数字的情况（如 photoId:3），
+/// 数字/字符串 token 都接受并统一为字符串，避免反序列化失败。
+/// </summary>
+public class FlexibleStringConverter : JsonConverter<string>
+{
+    public override string? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+        reader.TokenType switch
+        {
+            JsonTokenType.String => reader.GetString(),
+            JsonTokenType.Number => reader.TryGetInt64(out var l) ? l.ToString() : reader.GetDouble().ToString(),
+            JsonTokenType.Null => null,
+            _ => throw new JsonException($"无法将 {reader.TokenType} 读取为字符串"),
+        };
+
+    public override void Write(Utf8JsonWriter writer, string? value, JsonSerializerOptions options)
+    {
+        if (value is null) writer.WriteNullValue();
+        else writer.WriteStringValue(value);
+    }
+}
+
 public sealed record PhotoData(
-    [property: JsonPropertyName("photoId")] string PhotoId,
+    [property: JsonPropertyName("photoId")]
+    [property: JsonConverter(typeof(FlexibleStringConverter))] string PhotoId,
     [property: JsonPropertyName("url")] string? Url);
 
 /// <summary>批量推送逐条结果（记录/黑匣子/作废共用：created/duplicate/failed/voided…）。</summary>
 public sealed record BatchResult(
     [property: JsonPropertyName("clientRef")] string ClientRef,
     [property: JsonPropertyName("status")] string Status,
-    [property: JsonPropertyName("recordNo")] string? RecordNo,
+    [property: JsonPropertyName("recordNo")]
+    [property: JsonConverter(typeof(FlexibleStringConverter))] string? RecordNo,
     [property: JsonPropertyName("reason")] string? Reason);
 
 public sealed record BatchData(
