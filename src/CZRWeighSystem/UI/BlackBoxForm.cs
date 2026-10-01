@@ -49,14 +49,27 @@ public class BlackBoxForm : Form
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
         };
 
-        Label L(string t, int x, int y) => new Label { Text = t, AutoSize = true, Location = new Point(x, y) };
+        // 条件行用 FlowLayoutPanel 流式排列：AutoSize 复选框/标签宽度随 DPI 变化时
+        // 自动让位重排，不会像手排绝对坐标那样在高 DPI 下互相压住（125% 实测曾重叠）
+        var flow = new FlowLayoutPanel
+        {
+            Location = new Point(12, 38),
+            Size = new Size(860, 36),   // 宽度止于"查询"按钮(x≈930)之前，避免容器压住按钮
+            Anchor = AnchorStyles.Top | AnchorStyles.Left,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+        };
+
+        // 右间距控制元素间隔；顶边距让不同高度控件视觉居中
+        Label L(string t, int rightGap) => new()
+        { Text = t, AutoSize = true, Margin = new Padding(0, 9, rightGap, 0) };
 
         _dtpFrom = new DateTimePicker
         {
             // 统一固定 yyyy-MM-dd：Short 格式跟随系统区域，英文系统下会显示成 "31/ 7/2026"
             Format = DateTimePickerFormat.Custom,
             CustomFormat = "yyyy-MM-dd",
-            Location = new Point(70, 38),
+            Margin = new Padding(0, 5, 4, 0),
             Size = new Size(120, 28),
             Value = DateTime.Today.AddDays(-30),
         };
@@ -64,30 +77,36 @@ public class BlackBoxForm : Form
         {
             Format = DateTimePickerFormat.Custom,
             CustomFormat = "yyyy-MM-dd",
-            Location = new Point(222, 38),
+            Margin = new Padding(0, 5, 24, 0),
             Size = new Size(120, 28),
             Value = DateTime.Today,
         };
-        _chkMin = new CheckBox { Text = "重量≥", AutoSize = true, Location = new Point(360, 36) };
+        _chkMin = new CheckBox { Text = "重量≥", AutoSize = true, Margin = new Padding(0, 9, 4, 0) };
         _numMinKg = new NumericUpDown
         {
-            Location = new Point(420, 35),
+            Margin = new Padding(0, 4, 2, 0),
             Size = new Size(100, 28),
             DecimalPlaces = 1,
             Maximum = 1000000,
             Enabled = false,
         };
         _chkMin.CheckedChanged += (_, _) => _numMinKg.Enabled = _chkMin.Checked;
-        _chkMax = new CheckBox { Text = "重量≤", AutoSize = true, Location = new Point(540, 36) };
+        _chkMax = new CheckBox { Text = "重量≤", AutoSize = true, Margin = new Padding(0, 9, 4, 0) };
         _numMaxKg = new NumericUpDown
         {
-            Location = new Point(600, 35),
+            Margin = new Padding(0, 4, 2, 0),
             Size = new Size(100, 28),
             DecimalPlaces = 1,
             Maximum = 1000000,
             Enabled = false,
         };
         _chkMax.CheckedChanged += (_, _) => _numMaxKg.Enabled = _chkMax.Checked;
+
+        flow.Controls.AddRange(new Control[]
+        {
+            L("日期：", 4), _dtpFrom, L("至", 8), _dtpTo,
+            _chkMin, _numMinKg, L("kg", 20), _chkMax, _numMaxKg, L("kg", 0),
+        });
 
         var btnQuery = new Button
         {
@@ -110,12 +129,7 @@ public class BlackBoxForm : Form
         btnQuery.Click += (_, _) => DoQuery();
         btnReset.Click += (_, _) => ResetCondition();
 
-        panel.Controls.AddRange(new Control[]
-        {
-            L("日期：", 15, 40), _dtpFrom, L("至", 193, 40), _dtpTo,
-            _chkMin, _numMinKg, L("kg", 523, 40), _chkMax, _numMaxKg, L("kg", 703, 40),
-            btnQuery, btnReset,
-        });
+        panel.Controls.AddRange(new Control[] { flow, btnQuery, btnReset });
         Controls.Add(panel);
     }
 
