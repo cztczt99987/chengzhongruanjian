@@ -349,6 +349,17 @@ public class WeighRecordRepository
         return reader.Read() ? Map(reader) : null;
     }
 
+    /// <summary>按流水号查询记录（平台推送入队/作废同步用），无则返回 null。</summary>
+    public WeighRecord? GetBySerialNo(string serialNo)
+    {
+        using var conn = Db.CreateConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT * FROM t_weigh_record WHERE serial_no=@s";
+        cmd.Add("@s", serialNo);
+        using var reader = cmd.ExecuteReader();
+        return reader.Read() ? Map(reader) : null;
+    }
+
     /// <summary>
     /// 打印次数 +1（磅单打印成功后调用，综合设置开启"打印次数"累计时），返回累计后的次数。
     /// </summary>

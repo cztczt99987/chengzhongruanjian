@@ -114,6 +114,8 @@ public class ComprehensiveSettingsDialog : Form
 
         Tabs.TabPages.Add(EmbedPage(new DatabaseSettingsDialog(), "『联网设置』"));
 
+        Tabs.TabPages.Add(EmbedPage(new PlatformSyncSettingsDialog(), "『平台对接』"));
+
         var camera = new CameraSettingsDialog();
         camera.Saved += () => CamerasSaved?.Invoke();
         Tabs.TabPages.Add(EmbedPage(camera, "『视频设置』"));

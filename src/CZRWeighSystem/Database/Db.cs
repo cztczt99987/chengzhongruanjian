@@ -269,6 +269,22 @@ public static class Db
             images    TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_blackbox_time ON t_black_box(time);
+
+        CREATE TABLE IF NOT EXISTS t_push_queue (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            kind         TEXT NOT NULL,               -- photo / record / blackbox / void
+            client_ref   TEXT NOT NULL,               -- 幂等键（流水号/照片引用号/BX+黑匣子Id）
+            payload      TEXT NOT NULL,               -- 推送载荷 JSON
+            status       TEXT NOT NULL DEFAULT 'pending',   -- pending / done / failed
+            attempts     INTEGER NOT NULL DEFAULT 0,
+            next_attempt TEXT NOT NULL,               -- 下次推送时间（退避重试）
+            last_error   TEXT NOT NULL DEFAULT '',
+            result       TEXT NOT NULL DEFAULT '',    -- photoId / 平台称重单号
+            created_at   TEXT NOT NULL,
+            updated_at   TEXT NOT NULL
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_push_queue_ref ON t_push_queue(kind, client_ref);
+        CREATE INDEX IF NOT EXISTS idx_push_queue_due ON t_push_queue(status, kind, next_attempt);
         """;
 
     private const string SqlServerSchema = """
@@ -333,5 +349,25 @@ public static class Db
             sort_order  INT NOT NULL DEFAULT 0,
             enabled     BIT NOT NULL DEFAULT 1
         );
+        IF OBJECT_ID(N't_push_queue', N'U') IS NULL
+        CREATE TABLE t_push_queue (
+            id           BIGINT IDENTITY(1,1) PRIMARY KEY,
+            kind         NVARCHAR(16) NOT NULL,
+            client_ref   NVARCHAR(64) NOT NULL,
+            payload      NVARCHAR(MAX) NOT NULL,
+            status       NVARCHAR(16) NOT NULL DEFAULT 'pending',
+            attempts     INT NOT NULL DEFAULT 0,
+            next_attempt NVARCHAR(20) NOT NULL,
+            last_error   NVARCHAR(500) NOT NULL DEFAULT '',
+            result       NVARCHAR(200) NOT NULL DEFAULT '',
+            created_at   NVARCHAR(20) NOT NULL,
+            updated_at   NVARCHAR(20) NOT NULL
+        );
+        IF NOT EXISTS (SELECT 1 FROM sys.indexes
+            WHERE name = N'idx_push_queue_ref' AND object_id = OBJECT_ID(N't_push_queue'))
+        CREATE UNIQUE INDEX idx_push_queue_ref ON t_push_queue(kind, client_ref);
+        IF NOT EXISTS (SELECT 1 FROM sys.indexes
+            WHERE name = N'idx_push_queue_due' AND object_id = OBJECT_ID(N't_push_queue'))
+        CREATE INDEX idx_push_queue_due ON t_push_queue(status, kind, next_attempt);
         """;
 }

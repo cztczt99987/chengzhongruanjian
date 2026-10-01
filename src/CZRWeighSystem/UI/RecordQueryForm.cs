@@ -397,7 +397,11 @@ public class RecordQueryForm : Form
         var (ok, msg) = _auditRepo.VoidRecord(r.Id, dlg.Reason, Core.AppSession.DisplayName);
         MessageBox.Show(msg, ok ? "成功" : "提示",
             MessageBoxButtons.OK, ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
-        if (ok) DoQuery();
+        if (ok)
+        {
+            Sync.PushScheduler.Current?.EnqueueVoid(r.SerialNo, dlg.Reason);   // 平台侧同步作废
+            DoQuery();
+        }
     }
 
     /// <summary>查看选中记录的修改/作废留痕（对应 PRD F3-03 修改前后值）。</summary>

@@ -4,23 +4,24 @@ namespace CZRWeighSystem.Tests;
 
 /// <summary>
 /// 综合设置窗体测试（对应目标软件"综合设置 [F3]"）：
-/// 1) 构造冒烟：4 个页签齐全、标题正确，内嵌串口/联网/视频设置不抛异常；
+/// 1) 构造冒烟：5 个页签齐全、标题正确，内嵌串口/联网/平台对接/视频设置不抛异常；
 /// 2) 基本设置页保存：界面值逐项写入 AppConfig（公司信息/打印次数/省份/稳定秒数/锁屏/归零拦截/自动清除/二次称重禁止/黑匣子）。
 /// </summary>
 public class ComprehensiveSettingsDialogTests
 {
     [Fact]
-    public void Construct_HasFourTabs_DoesNotThrow()
+    public void Construct_HasFiveTabs_DoesNotThrow()
     {
         var ex = Record.Exception(() =>
         {
             using var f = new ComprehensiveSettingsDialog();
             Assert.Equal("综合设置 [F3]", f.Text);
-            Assert.Equal(4, f.Tabs.TabPages.Count);
+            Assert.Equal(5, f.Tabs.TabPages.Count);
             Assert.Contains("基本设置", f.Tabs.TabPages[0].Text);
             Assert.Contains("高级设置", f.Tabs.TabPages[1].Text);
             Assert.Contains("联网设置", f.Tabs.TabPages[2].Text);
-            Assert.Contains("视频设置", f.Tabs.TabPages[3].Text);
+            Assert.Contains("平台对接", f.Tabs.TabPages[3].Text);
+            Assert.Contains("视频设置", f.Tabs.TabPages[4].Text);
         });
         Assert.Null(ex);
     }

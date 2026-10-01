@@ -77,6 +77,7 @@ public class MainForm : Form
     private RadioButton _rdoTon = null!;     // 显示单位 吨
     private readonly Database.WeighRecordRepository _recordRepo = new();
     private Core.BlackBoxMonitor? _blackBox;   // 黑匣子监控（重量稳定持续设定秒数后自动记录 + 抓拍）
+    private Sync.PushScheduler? _sync;         // 平台推送调度器（记录/照片/黑匣子/作废同步）
 
     // ===== 状态栏 =====
     private StatusStrip _status = null!;
@@ -149,7 +150,14 @@ public class MainForm : Form
             // 启动黑匣子监控（重量稳定持续设定秒数后自动记录 + 抓拍，对应黑匣子功能）
             _blackBox = new Core.BlackBoxMonitor(_manager, () => _cameras);
             _blackBox.RecordSaved += r => SafeInvoke(() =>
-                SetState($"黑匣子已记录 {_cfg.FormatWeight(r.WeightKg)}（抓拍 {r.ParseImages().Count} 张）", true));
+            {
+                SetState($"黑匣子已记录 {_cfg.FormatWeight(r.WeightKg)}（抓拍 {r.ParseImages().Count} 张）", true);
+                _sync?.EnqueueBlackbox(r);   // 黑匣子留痕同步平台（设置中开启时）
+            });
+
+            // 启动平台推送调度器（结算记录/抓拍照片/黑匣子/作废 同步；未启用时空转）
+            _sync = new Sync.PushScheduler();
+            _sync.Start();
 
             // 启动时及每 6 小时检查一次自动备份（对应 PRD F11-02）
             Utils.BackupService.AutoBackupIfNeeded();
@@ -169,6 +177,7 @@ public class MainForm : Form
         {
             UnbindVideo();
             _videoStallTimer.Dispose();
+            _sync?.Dispose();
             _blackBox?.Dispose();
             _manager.Dispose();
             _cameras.Dispose();
@@ -372,7 +381,11 @@ public class MainForm : Form
     private void OpenWeighEntry(bool isTare, string? prefillVehicle = null)
     {
         using var f = new WeighEntryDialog(_manager, isTare, prefillVehicle);
-        f.OnSaved = serial => CaptureFor(serial);
+        f.OnSaved = serial =>
+        {
+            CaptureFor(serial);
+            _sync?.EnqueueRecord(serial);   // 二次磅结算完成后推送平台（一次磅内部跳过）
+        };
         if (f.ShowDialog(this) == DialogResult.OK)
         {
             RefreshGrid();

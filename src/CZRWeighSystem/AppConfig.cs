@@ -133,6 +133,18 @@ public class AppConfig
     /// <summary>自动备份最大保留份数（超出删除最旧的）</summary>
     public int AutoBackupKeep { get; set; } = 30;
 
+    // ===== 平台对接（公平计量平台推送，见 doc/API对接方案-称重软件.md）=====
+    /// <summary>是否启用平台对接（称重记录/照片/黑匣子/作废同步；综合设置-平台对接）</summary>
+    public bool PlatformSyncEnabled { get; set; } = false;
+    /// <summary>平台 API 地址（如 https://platform.example.com）</summary>
+    public string PlatformApiUrl { get; set; } = "";
+    /// <summary>接入标识 AppKey（平台管理端"计量站管理"生成）</summary>
+    public string PlatformAppKey { get; set; } = "";
+    /// <summary>接入密钥 AppSecret（config.json 明文存储已确认；泄露可在管理端重置立即失效）</summary>
+    public string PlatformAppSecret { get; set; } = "";
+    /// <summary>是否同步黑匣子记录（重量+抓拍留痕）</summary>
+    public bool PlatformSyncBlackbox { get; set; } = true;
+
     // ===== 视频监控（对应 PRD 5.7 / F7-01）=====
     /// <summary>是否启用视频监控与抓拍</summary>
     public bool CameraEnabled { get; set; } = true;

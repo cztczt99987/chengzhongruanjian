@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using CZRWeighSystem.Core;
 
 namespace CZRWeighSystem.UI;
@@ -524,6 +525,13 @@ public class WeighEntryDialog : Form
     /// <summary>统一保存：按车号查找待配对记录——有则二次磅结算，无则第一次称重。</summary>
     private void Save()
     {
+        // 地主电话是平台归属匹配的必填依据（格式非法平台整条拒收），录入时即校验
+        if (!ValidPhone(_txtOwnerPhone.Text.Trim()))
+        {
+            InfoBox("地主电话格式不正确：请输入 1 开头的 11 位手机号。", "提示", false);
+            return;
+        }
+
         string action = _isTare ? "空车去皮" : "重车过磅";
         string no = ComposeVehicleNo();
 
@@ -574,6 +582,10 @@ public class WeighEntryDialog : Form
             Report.PoundTicketPrinter.Print(record);
         }
     }
+
+    /// <summary>手机号格式校验（平台归属匹配要求 1 开头 11 位数字；留空不强填视为有效）。</summary>
+    internal static bool ValidPhone(string phone) =>
+        phone.Length == 0 || Regex.IsMatch(phone, "^1\\d{10}$");
 
     /// <summary>采集固定字段非空值（以固定键写入记录 ext_json，记录查询与磅单模板可直接引用）。</summary>
     private Dictionary<string, string> CollectExt()
