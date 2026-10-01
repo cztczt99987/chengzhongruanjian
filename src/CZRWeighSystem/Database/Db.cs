@@ -75,6 +75,7 @@ public static class Db
         cmd.ExecuteNonQuery();
         EnsureExtColumn(conn);
         EnsureCompanyDeductColumns(conn);
+        EnsurePrintCountColumn(conn);
         EnsureAmountColumn(conn);
     }
 
