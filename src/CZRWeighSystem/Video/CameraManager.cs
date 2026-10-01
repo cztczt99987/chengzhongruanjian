@@ -72,6 +72,25 @@ public class CameraManager : IDisposable
         return Directory.GetFiles(dir, serialNo + "_*.jpg").OrderBy(f => f).ToList();
     }
 
+    /// <summary>
+    /// 黑匣子抓拍：保存全部摄像头当前画面到 blackbox/yyyyMMdd/（与称重抓拍分目录存证），
+    /// 文件名 HHmmss_fff_camN.jpg。返回已保存的图片路径。
+    /// </summary>
+    public List<string> CaptureBlackBox()
+    {
+        var saved = new List<string>();
+        string dir = Path.Combine(AppContext.BaseDirectory,
+            "blackbox", DateTime.Now.ToString("yyyyMMdd"));
+        string prefix = DateTime.Now.ToString("HHmmss_fff");
+
+        for (int i = 0; i < _sources.Count; i++)
+        {
+            string file = Path.Combine(dir, $"{prefix}_cam{i + 1}.jpg");
+            if (_sources[i].CaptureTo(file)) saved.Add(file);
+        }
+        return saved;
+    }
+
     private void StopAll()
     {
         foreach (var s in _sources) s.Dispose();

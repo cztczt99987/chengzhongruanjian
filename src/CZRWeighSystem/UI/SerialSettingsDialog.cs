@@ -281,6 +281,9 @@ public class SerialSettingsDialog : Form
         _btnTest.Text = "测试读取";
     }
 
+    /// <summary>保存成功后触发（综合设置页签内嵌时，主界面据此重连串口）。</summary>
+    internal event Action? Saved;
+
     /// <summary>保存串口参数到 config.json。</summary>
     private void Save()
     {
@@ -299,6 +302,7 @@ public class SerialSettingsDialog : Form
         cfg.StopBits = SelectedStopBits.ToString();
         cfg.Save();
         Log.Info($"串口参数已保存：{cfg.PortName} {cfg.BaudRate} {cfg.DataBits}{cfg.Parity}{cfg.StopBits}");
+        Saved?.Invoke();
         MessageBox.Show("串口参数已保存，已按新参数重新连接串口。\r\n若通讯指示灯仍为红色，请检查仪表电源、串口线及端口号是否正确。",
             "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
         DialogResult = DialogResult.OK;

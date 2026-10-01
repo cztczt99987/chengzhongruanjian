@@ -26,6 +26,9 @@ public class WeighRecord
     /// <summary>扣重（千克）：从净重中扣除的杂重，实收 = 净重 - 扣重</summary>
     public double? DeductKg { get; set; }
 
+    /// <summary>应收金额（元）：二次磅结算时按收费分段自动计算；null = 未计费（未启用收费或未结算）</summary>
+    public decimal? AmountYuan { get; set; }
+
     public DateTime? FirstTime { get; set; }
     public DateTime? SecondTime { get; set; }
     public string? Operator { get; set; }
@@ -34,6 +37,9 @@ public class WeighRecord
     public string Status { get; set; } = "未完成";
     /// <summary>是否手工补录</summary>
     public bool IsManual { get; set; }
+
+    /// <summary>磅单已打印次数（综合设置开启"打印次数"累计后每次打印 +1）</summary>
+    public int PrintCount { get; set; }
 
     /// <summary>自定义字段值（JSON 对象，键=字段名；对应 t_weigh_record.ext_json）</summary>
     public string? ExtJson { get; set; }

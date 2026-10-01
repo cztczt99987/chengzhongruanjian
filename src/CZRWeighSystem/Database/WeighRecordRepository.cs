@@ -42,10 +42,11 @@ public class WeighRecordRepository
     /// <summary>
     /// 二次称重并结算：大者为毛重、小者为皮重（兼容先皮后毛与先毛后皮），
     /// 净重 = |一次重量 - 二次重量|（对应 PRD 4.1 规则 1）；
-    /// deductKg 非空时同时更新扣重（实收 = 净重 - 扣重，在显示/打印层计算）。
+    /// deductKg 非空时同时更新扣重（实收 = 净重 - 扣重，在显示/打印层计算）；
+    /// amountYuan 为按收费分段算出的应收金额（元），null = 未启用收费（不写金额）。
     /// </summary>
     public WeighRecord CompleteSecondWeigh(long id, double secondKg,
-        double? deductKg, string? operatorName)
+        double? deductKg, string? operatorName, decimal? amountYuan = null)
     {
         using var conn = Db.CreateConnection();
 
@@ -64,6 +65,7 @@ public class WeighRecordRepository
             first.TareKg = Math.Min(firstKg, secondKg);    // 皮重 = 小值
             first.NetKg = Math.Abs(firstKg - secondKg);    // 净重 = 差值
             if (deductKg.HasValue) first.DeductKg = deductKg;
+            first.AmountYuan = amountYuan;
             first.SecondTime = DateTime.Now;
             first.Status = "已完成";
             first.Operator = operatorName ?? first.Operator;
@@ -71,7 +73,7 @@ public class WeighRecordRepository
             const string sql = """
                 UPDATE t_weigh_record SET
                     gross_kg=@gross_kg, tare_kg=@tare_kg, net_kg=@net_kg, deduct_kg=@deduct_kg,
-                    second_time=@second_time, status=@status
+                    amount_yuan=@amount_yuan, second_time=@second_time, status=@status
                 WHERE id=@id;
                 """;
             using (var cmd = conn.CreateCommand())
@@ -82,6 +84,7 @@ public class WeighRecordRepository
                 cmd.Add("@tare_kg", first.TareKg);
                 cmd.Add("@net_kg", first.NetKg);
                 cmd.Add("@deduct_kg", first.DeductKg);
+                cmd.Add("@amount_yuan", first.AmountYuan.HasValue ? (double)first.AmountYuan.Value : null);
                 cmd.Add("@second_time", first.SecondTime?.ToString("yyyy-MM-dd HH:mm:ss"));
                 cmd.Add("@status", first.Status);
                 cmd.Add("@id", id);
@@ -336,6 +339,40 @@ public class WeighRecordRepository
         return reader.Read() ? Map(reader) : null;
     }
 
+    /// <summary>
+    /// 打印次数 +1（磅单打印成功后调用，综合设置开启"打印次数"累计时），返回累计后的次数。
+    /// </summary>
+    public int IncrementPrintCount(long id)
+    {
+        using var conn = Db.CreateConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "UPDATE t_weigh_record SET print_count = print_count + 1 WHERE id=@id";
+        cmd.Add("@id", id);
+        cmd.ExecuteNonQuery();
+
+        using var get = conn.CreateCommand();
+        get.CommandText = "SELECT print_count FROM t_weigh_record WHERE id=@id";
+        get.Add("@id", id);
+        return Convert.ToInt32(get.ExecuteScalar());
+    }
+
+    /// <summary>
+    /// 查询同车号最近一条有二次磅时间的记录时间（严格禁止 X 分钟内二次称重用）。
+    /// 无记录返回 null。
+    /// </summary>
+    public DateTime? GetLastFinishedTime(string vehicleNo)
+    {
+        using var conn = Db.CreateConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT MAX(second_time) FROM t_weigh_record
+            WHERE vehicle_no=@no AND status='已完成' AND second_time IS NOT NULL AND second_time <> ''
+            """;
+        cmd.Add("@no", vehicleNo);
+        var val = cmd.ExecuteScalar();
+        return val is string s && DateTime.TryParse(s, out var t) ? t : null;
+    }
+
     /// <summary>填充插入参数。</summary>
     private static void FillParams(DbCommand cmd, WeighRecord r)
     {
@@ -377,11 +414,13 @@ public class WeighRecordRepository
             GrossKg = GetDbl(reader, "gross_kg"),
             TareKg = GetDbl(reader, "tare_kg"),
             NetKg = GetDbl(reader, "net_kg"),
+            AmountYuan = GetDec(reader, "amount_yuan"),
             FirstTime = ParseTime(reader, "first_time"),
             SecondTime = ParseTime(reader, "second_time"),
             Operator = GetStr(reader, "operator"),
             Status = reader.GetString(reader.GetOrdinal("status")),
             IsManual = Convert.ToInt64(reader.GetValue(reader.GetOrdinal("is_manual"))) == 1,
+            PrintCount = Convert.ToInt32(reader.GetValue(reader.GetOrdinal("print_count"))),
             ExtJson = GetStr(reader, "ext_json"),
         };
     }
@@ -396,6 +435,13 @@ public class WeighRecordRepository
     {
         int i = r.GetOrdinal(col);
         return r.IsDBNull(i) ? null : Convert.ToDouble(r.GetValue(i));
+    }
+
+    /// <summary>读取金额列（元）；空值返回 null（数据库以 REAL/FLOAT 存储，读回转 decimal）。</summary>
+    private static decimal? GetDec(DbDataReader r, string col)
+    {
+        int i = r.GetOrdinal(col);
+        return r.IsDBNull(i) ? null : Convert.ToDecimal(r.GetValue(i));
     }
 
     private static DateTime? ParseTime(DbDataReader reader, string col)

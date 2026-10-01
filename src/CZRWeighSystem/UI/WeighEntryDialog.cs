@@ -13,7 +13,7 @@ namespace CZRWeighSystem.UI;
 public class WeighEntryDialog : Form
 {
     private readonly WeighManager _manager;
-    private readonly bool _isTare;
+    private bool _isTare;                    // 可经"切换"按钮在皮/毛模式间转换
     private readonly AppConfig _cfg = AppConfig.Current;
 
     // ===== 对话框出口（internal 供测试注入静默实现；正常流程用 MessageBox）=====
@@ -38,6 +38,8 @@ public class WeighEntryDialog : Form
     private TextBox _txtOperator = null!;    // 司磅员（当前登录用户，只读）
     private Label _lblSerialNo = null!;      // No：待配对时显示一次磅流水号
     private Label _lblPairHint = null!;      // 配对/新车提示
+    private Label _lblTicketType = null!;    // 票据副标题（皮重/毛重过磅单，随切换变化）
+    private Label _lblPanelTitle = null!;    // 右栏标题（本次皮重/本次毛重，随切换变化）
     private Label _lblGrossCell = null!;     // 票据右列：毛重预览
     private Label _lblTareCell = null!;      // 票据右列：皮重预览
     private Label _lblNetCell = null!;       // 票据右列：净重预览
@@ -54,7 +56,7 @@ public class WeighEntryDialog : Form
         _isTare = isTare;
         Text = (isTare ? "空车去皮" : "重车过磅") + $"（本次按{(isTare ? "皮" : "毛")}重保存）";
         StartPosition = FormStartPosition.CenterParent;
-        Size = new Size(950, 640);
+        Size = new Size(970, 640);   // 右栏内容与右边缘留出边距
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
@@ -104,14 +106,15 @@ public class WeighEntryDialog : Form
             Location = new Point(0, 12),
             Size = new Size(650, 36),
         });
-        ticket.Controls.Add(new Label
+        _lblTicketType = new Label
         {
-            Text = (_isTare ? "皮重" : "毛重") + "过磅单",
+            Text = (_isTare ? "皮重" : "毛重") + _cfg.SlipHeader,   // 票据副标题取综合设置的磅单抬头
             Font = new Font("Microsoft YaHei UI", 12F),
             TextAlign = ContentAlignment.MiddleCenter,
             Location = new Point(0, 52),
             Size = new Size(650, 28),
-        });
+        };
+        ticket.Controls.Add(_lblTicketType);
         ticket.Controls.Add(new Label
         {
             Text = DateTime.Now.ToString("yyyy 年 M 月 d 日"),
@@ -145,6 +148,7 @@ public class WeighEntryDialog : Form
         for (int i = 0; i < 6; i++)
             grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
 
+        // 单元格控件统一留 1px 内边距：避免控件盖住 TableLayoutPanel 的网格线
         Label Head(string t) => new()
         {
             Text = t,
@@ -152,24 +156,30 @@ public class WeighEntryDialog : Form
             TextAlign = ContentAlignment.MiddleCenter,
             Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Bold),
             BackColor = ticket.BackColor,
-            Margin = new Padding(0),
+            Margin = new Padding(1),
         };
         Label ValueCell() => new()
         {
             Text = "--",
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleRight,
-            Font = new Font("Consolas", 11F, FontStyle.Bold),
+            Font = new Font("Consolas", 12F, FontStyle.Bold),
             BackColor = Color.White,
-            Margin = new Padding(0),
+            Margin = new Padding(1),
             Padding = new Padding(0, 0, 6, 0),
         };
-        TextBox Input() => new() { Dock = DockStyle.Fill, Margin = new Padding(4, 10, 4, 10) };
+        // 12 号字 + 上下 7px 边距 → 输入框约 36px 高，视觉上更饱满
+        TextBox Input() => new()
+        {
+            Dock = DockStyle.Fill,
+            Font = new Font("Microsoft YaHei UI", 12F),
+            Margin = new Padding(6, 7, 6, 7),
+        };
 
         // 行1：车牌号码（只读 + 软键盘选牌）｜ 毛重
         grid.Controls.Add(Head("车牌号码"), 0, 0);
-        var platePanel = new Panel { Dock = DockStyle.Fill, BackColor = Color.White, Margin = new Padding(2) };
-        _txtVehicle = new TextBox { Dock = DockStyle.Fill, ReadOnly = true };
+        var platePanel = new Panel { Dock = DockStyle.Fill, BackColor = Color.White, Margin = new Padding(2, 7, 2, 7) };
+        _txtVehicle = new TextBox { Dock = DockStyle.Fill, Font = new Font("Microsoft YaHei UI", 12F), ReadOnly = true };
         var btnVehicle = new Button
         {
             Text = "选择车牌",
@@ -235,7 +245,8 @@ public class WeighEntryDialog : Form
         });
         _txtOperator = new TextBox
         {
-            Location = new Point(113, 442), Size = new Size(200, 28),
+            Location = new Point(113, 440), Size = new Size(200, 36),
+            Font = new Font("Microsoft YaHei UI", 12F),
             ReadOnly = true, Text = AppSession.DisplayName,
         };
         ticket.Controls.Add(_txtOperator);
@@ -257,14 +268,29 @@ public class WeighEntryDialog : Form
     // ---------- 右侧实时重量与操作区 ----------
     private void BuildWeightPanel()
     {
-        Controls.Add(new Label
+        // 顶部"切换"按钮：点击在皮重/毛重模式间转换（对应老软件过磅单的"切换"）
+        var btnToggle = new Button
+        {
+            Text = "切 换",
+            Location = new Point(685, 15),
+            Size = new Size(250, 40),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Color.White,
+            Font = new Font("Microsoft YaHei UI", 12F, FontStyle.Bold),
+        };
+        new ToolTip().SetToolTip(btnToggle, "在空车去皮（皮重）与重车过磅（毛重）之间切换");
+        btnToggle.Click += (_, _) => ToggleMode();
+        Controls.Add(btnToggle);
+
+        _lblPanelTitle = new Label
         {
             Text = _isTare ? "本次皮重" : "本次毛重",
             Font = new Font("Microsoft YaHei UI", 14F, FontStyle.Bold),
             ForeColor = Color.White,
             AutoSize = true,
-            Location = new Point(690, 22),
-        });
+            Location = new Point(690, 70),
+        };
+        Controls.Add(_lblPanelTitle);
 
         _lblCurrent = new Label
         {
@@ -274,7 +300,7 @@ public class WeighEntryDialog : Form
             BackColor = Color.Black,
             BorderStyle = BorderStyle.FixedSingle,
             TextAlign = ContentAlignment.MiddleCenter,
-            Location = new Point(685, 58),
+            Location = new Point(685, 106),
             Size = new Size(250, 72),
         };
         Controls.Add(_lblCurrent);
@@ -289,20 +315,20 @@ public class WeighEntryDialog : Form
             ForeColor = Color.FromArgb(255, 239, 130),
             Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Bold),
         };
-        Controls.Add(Info("上次重量：", 155));
-        _lblLastWeight = Val(155);
+        Controls.Add(Info("上次重量：", 200));
+        _lblLastWeight = Val(200);
         Controls.Add(_lblLastWeight);
-        Controls.Add(Info("上次时间：", 185));
-        _lblLastTime = Val(185);
+        Controls.Add(Info("上次时间：", 230));
+        _lblLastTime = Val(230);
         Controls.Add(_lblLastTime);
-        Controls.Add(Info("预计净重：", 215));
-        _lblNetPreview = Val(215);
+        Controls.Add(Info("预计净重：", 260));
+        _lblNetPreview = Val(260);
         Controls.Add(_lblNetPreview);
 
         _btnSave = new Button
         {
             Text = "保存",
-            Location = new Point(685, 280),
+            Location = new Point(685, 325),
             Size = new Size(250, 56),
             FlatStyle = FlatStyle.Flat,
             BackColor = Color.FromArgb(235, 235, 235),
@@ -314,7 +340,7 @@ public class WeighEntryDialog : Form
         var btnCancel = new Button
         {
             Text = "取消",
-            Location = new Point(685, 350),
+            Location = new Point(685, 395),
             Size = new Size(250, 44),
             FlatStyle = FlatStyle.Flat,
             BackColor = Color.FromArgb(235, 235, 235),
@@ -322,6 +348,16 @@ public class WeighEntryDialog : Form
         };
         btnCancel.Click += (_, _) => Close();
         Controls.Add(btnCancel);
+    }
+
+    /// <summary>"切换"按钮：皮重/毛重模式互换，同步刷新标题、票据副标题与右列预览。</summary>
+    private void ToggleMode()
+    {
+        _isTare = !_isTare;
+        Text = (_isTare ? "空车去皮" : "重车过磅") + $"（本次按{(_isTare ? "皮" : "毛")}重保存）";
+        _lblTicketType.Text = (_isTare ? "皮重" : "毛重") + _cfg.SlipHeader;
+        _lblPanelTitle.Text = _isTare ? "本次皮重" : "本次毛重";
+        UpdateWeight();
     }
 
     /// <summary>
@@ -333,7 +369,8 @@ public class WeighEntryDialog : Form
     private void UpdateWeight()
     {
         _lblCurrent.Text = _cfg.FormatWeight(_manager.CurrentKg);
-        _lblCurrent.ForeColor = _manager.IsStable ? Color.LimeGreen : Color.OrangeRed;
+        // 绿灯 = 达到"可保存"稳定要求（综合设置开启"数据稳定 X 秒"时须持续满该秒数）
+        _lblCurrent.ForeColor = _manager.IsStableForSave ? Color.LimeGreen : Color.OrangeRed;
 
         string no = _txtVehicle.Text.Trim();
         var first = no.Length == 0 ? null

@@ -70,10 +70,19 @@ public static class PoundTicketPrinter
     private sealed record FieldDef(string Key, string Label, Func<WeighRecord, AppConfig, string?> Get);
 
     /// <summary>
-    /// 弹出系统打印对话框打印磅单（返回 false=用户取消或失败）。
+    /// 弹出系统打印对话框打印磅单（返回 false=用户取消、超限或失败）。
+    /// 综合设置开启"打印次数"累计时：达到上限拒绝打印，打印成功后次数 +1。
     /// </summary>
     public static bool Print(WeighRecord r)
     {
+        var cfg = AppConfig.Current;
+        if (ExceedsPrintLimit(r, cfg))
+        {
+            MessageBox.Show(
+                $"该磅单已打印 {r.PrintCount} 次，达到允许上限 {cfg.MaxPrintCount} 次，不能再打印。",
+                "打印次数超限", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return false;
+        }
         try
         {
             using var doc = BuildRecordDocument(r, copies: 0);
@@ -84,6 +93,7 @@ public static class PoundTicketPrinter
             };
             if (dialog.ShowDialog() != DialogResult.OK) return false;
             doc.Print();
+            CountPrint(r);
             Log.Info($"磅单已打印：{r.SerialNo}（车号 {r.VehicleNo}）");
             return true;
         }
@@ -215,18 +225,38 @@ public static class PoundTicketPrinter
     }
 
     /// <summary>
-    /// 批量打印：一次打印对话框，多张磅单合并为单个打印任务（返回 false=用户取消或失败）。
+    /// 批量打印：一次打印对话框，多张磅单合并为单个打印任务（返回 false=用户取消、全部超限或失败）。
+    /// 综合设置开启"打印次数"累计时：达到上限的磅单自动跳过并提示。
     /// </summary>
     public static bool PrintBatch(IReadOnlyList<WeighRecord> records)
     {
         if (records.Count == 0) return false;
+        var cfg = AppConfig.Current;
+        var list = records.ToList();
+        int skipped = 0;
+        if (cfg.PrintCountEnabled)
+        {
+            skipped = list.Count(r => ExceedsPrintLimit(r, cfg));
+            list = list.Where(r => !ExceedsPrintLimit(r, cfg)).ToList();
+            if (list.Count == 0)
+            {
+                MessageBox.Show(
+                    $"所选磅单均已打印 {cfg.MaxPrintCount} 次（上限），无法打印。",
+                    "打印次数超限", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return false;
+            }
+        }
         try
         {
-            using var doc = BuildBatchDocument(records);
+            using var doc = BuildBatchDocument(list);
             using var dialog = new PrintDialog { Document = doc, UseEXDialog = true };
             if (dialog.ShowDialog() != DialogResult.OK) return false;
             doc.Print();
-            Log.Info($"批量打印磅单：{records.Count} 张");
+            foreach (var r in list) CountPrint(r);
+            if (skipped > 0)
+                MessageBox.Show($"已跳过 {skipped} 张达到打印次数上限的磅单。",
+                    "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            Log.Info($"批量打印磅单：{list.Count} 张");
             return true;
         }
         catch (Exception ex)
@@ -237,6 +267,20 @@ public static class PoundTicketPrinter
             return false;
         }
     }
+
+    /// <summary>打印成功后累计打印次数（综合设置关闭"打印次数"累计时不计数）。</summary>
+    private static void CountPrint(WeighRecord r)
+    {
+        var cfg = AppConfig.Current;
+        if (!cfg.PrintCountEnabled || r.Id <= 0) return;
+        r.PrintCount = new Database.WeighRecordRepository().IncrementPrintCount(r.Id);
+    }
+
+    /// <summary>
+    /// 打印次数是否已达上限（综合设置开启"打印次数"累计时：已打印次数 ≥ 允许次数）。
+    /// </summary>
+    internal static bool ExceedsPrintLimit(WeighRecord r, AppConfig cfg)
+        => cfg.PrintCountEnabled && r.PrintCount >= cfg.MaxPrintCount;
 
     /// <summary>按模板（或内置版式）渲染单张磅单页面。</summary>
     private static void RenderRecord(PrintTemplate? tpl, Graphics g, Rectangle bounds, WeighRecord r)
@@ -280,8 +324,9 @@ public static class PoundTicketPrinter
         using var smallFont = new Font("Microsoft YaHei UI", 9F);
         using var pen = new Pen(Color.Black, 1.2f);
 
-        // 标题 + 公司名/流水号行
-        g.DrawString("磅  单", titleFont, Brushes.Black, x, y);
+        // 标题 + 公司名/流水号行（标题取综合设置的磅单抬头，未填时回退"磅 单"）
+        string header = string.IsNullOrWhiteSpace(cfg.SlipHeader) ? "磅  单" : cfg.SlipHeader;
+        g.DrawString(header, titleFont, Brushes.Black, x, y);
         y += compact ? 34 : 52;
         if (Vis("公司名称") || Vis("流水号"))
         {
@@ -347,9 +392,13 @@ public static class PoundTicketPrinter
             y += compact ? 40 : 72;
         }
 
-        // 页脚
+        // 页脚（取综合设置的磅单底部文字，未填时回退系统默认文案）
         if (Vis("页脚"))
-            g.DrawString("本单据由 CZR 智能称重管理系统生成", smallFont, Brushes.Gray, x, y);
+        {
+            string footer = string.IsNullOrWhiteSpace(cfg.SlipFooter)
+                ? "本单据由 CZR 智能称重管理系统生成" : cfg.SlipFooter;
+            g.DrawString(footer, smallFont, Brushes.Gray, x, y);
+        }
     }
 
     /// <summary>

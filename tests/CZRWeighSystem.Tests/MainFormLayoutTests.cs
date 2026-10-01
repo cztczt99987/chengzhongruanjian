@@ -290,12 +290,12 @@ public class MainFormLayoutTests
     }
 
     [Fact]
-    public void 底部记录列表_十列完整保留()
+    public void 底部记录列表_十一列完整保留_含金额列()
     {
         var s = BuildAndMeasure();
-        Assert.Equal(10, s.CaptureColumnCount);
+        Assert.Equal(11, s.CaptureColumnCount);
         Assert.Equal("流水号", s.FirstColumnHeader);
-        Assert.Equal("状态", s.LastColumnHeader);
+        Assert.Equal("状态", s.LastColumnHeader);   // 金额列插在皮重时间与状态之间
     }
 
     [Fact]

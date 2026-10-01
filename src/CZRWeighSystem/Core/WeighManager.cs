@@ -13,6 +13,7 @@ public class WeighManager : IDisposable
     private readonly WeighRecordRepository _repo = new();
     private IWeightSource _source;
     private StabilityFilter _filter;
+    private bool _savedNeedsZero;   // 上次保存后仪表尚未归零（归零拦截用）
 
     // ===== 通讯状态（首页通讯指示灯用）=====
     private DateTime? _lastDataTime;          // 最近一次收到仪表数据的时间
@@ -24,6 +25,12 @@ public class WeighManager : IDisposable
 
     /// <summary>当前是否稳定（对应 PRD F2-02）</summary>
     public bool IsStable => _filter.IsStable;
+
+    /// <summary>
+    /// 是否达到"可保存"的稳定要求（综合设置开启"数据稳定 X 秒"时，
+    /// 需在稳定基础上持续保持该秒数；未开启时与 IsStable 一致）。
+    /// </summary>
+    public bool IsStableForSave => _filter.IsStableForSave;
 
     /// <summary>稳定重量值（千克），未稳定时为 0</summary>
     public double StableKg => _filter.StableKg;
@@ -40,7 +47,7 @@ public class WeighManager : IDisposable
     public WeighManager()
     {
         var cfg = AppConfig.Current;
-        _filter = new StabilityFilter(cfg.StableCount, cfg.StableToleranceKg);
+        _filter = new StabilityFilter(cfg.StableCount, cfg.StableToleranceKg, cfg.StableSeconds);
         _source = CreateSerialSource();
         AttachSource(_source);
     }
@@ -103,6 +110,20 @@ public class WeighManager : IDisposable
         if (unfinished.Any(r => r.VehicleNo == vehicleNo))
             return (false, $"车号 [{vehicleNo}] 存在未完成的二次磅，请先完成配对", null);
 
+        // ---- 严格禁止 X 分钟内二次称重（综合设置：防止同车间隔过短重复过磅）----
+        int forbidMin = AppConfig.Current.ForbidReweighMinutes;
+        if (forbidMin > 0)
+        {
+            var lastFinished = _repo.GetLastFinishedTime(vehicleNo.Trim());
+            if (lastFinished.HasValue &&
+                (DateTime.Now - lastFinished.Value).TotalMinutes < forbidMin)
+            {
+                return (false,
+                    $"严格禁止 {forbidMin} 分钟内二次称重：该车上次结算时间 " +
+                    $"{lastFinished.Value:HH:mm:ss}，请稍后再称", null);
+            }
+        }
+
         var record = new WeighRecord
         {
             ScaleNo = AppConfig.Current.ScaleNo,
@@ -119,6 +140,7 @@ public class WeighManager : IDisposable
             ExtJson = WeighRecord.ExtToJson(ext),
         };
         _repo.InsertFirstWeigh(record);
+        _savedNeedsZero = true;   // 保存后要求仪表归零后才能再次保存（归零拦截开启时）
         Log.Info($"保存一次磅：{record.SerialNo} 车号 {record.VehicleNo} 重量 {weight}kg");
         return (true, $"一次磅已保存：{record.SerialNo}", record);
     }
@@ -138,12 +160,19 @@ public class WeighManager : IDisposable
 
         try
         {
-            var result = _repo.CompleteSecondWeigh(first.Id, weight.Value, deductKg, operatorName);
+            // 按收费分段计算应收金额（净重 = |一次重量 - 二次重量|；未启用收费时为 null 不计费）
+            decimal? amountYuan = FeeCalculator.CalculateYuan(
+                Math.Abs((first.GrossKg ?? 0) - weight.Value), AppConfig.Current);
+
+            var result = _repo.CompleteSecondWeigh(first.Id, weight.Value, deductKg, operatorName, amountYuan);
+            _savedNeedsZero = true;
             Log.Info($"二次磅结算：{result.SerialNo} 车号 {result.VehicleNo} " +
-                     $"毛 {result.GrossKg} 皮 {result.TareKg} 净 {result.NetKg}");
-            return (true,
-                $"结算完成：{result.VehicleNo} 净重 {AppConfig.Current.FormatWeight(result.NetKg ?? 0)}",
-                result);
+                     $"毛 {result.GrossKg} 皮 {result.TareKg} 净 {result.NetKg}" +
+                     (result.AmountYuan.HasValue ? $" 应收 {result.AmountYuan}元" : ""));
+            string msg = $"结算完成：{result.VehicleNo} 净重 {AppConfig.Current.FormatWeight(result.NetKg ?? 0)}";
+            if (result.AmountYuan.HasValue)
+                msg += $"\n应收金额：{result.AmountYuan:0.##} 元";
+            return (true, msg, result);
         }
         catch (Exception ex)
         {
@@ -173,11 +202,28 @@ public class WeighManager : IDisposable
 
     /// <summary>
     /// 解析保存用重量：取当前稳定重量（扣重在录入区单独填写，不影响称量值）。
+    /// 综合设置规则：
+    /// 1) 数据稳定 X 秒——稳定须持续该秒数方可保存；
+    /// 2) 仪表不归零不允许保存——上次保存后仪表读数须回到接近 0 才允许再次保存。
     /// </summary>
     private (double? Weight, string? Error) ResolveWeight()
     {
+        var cfg = AppConfig.Current;
+
+        // 归零拦截：保存过一次后必须等仪表回到零位（阈值放宽到 20kg 或稳定容差取大者，
+        // 避免秤体微小漂移导致永远无法再保存）
+        if (cfg.BlockSaveUntilZero && _savedNeedsZero)
+        {
+            double zeroTolerance = Math.Max(cfg.StableToleranceKg, 20);
+            if (CurrentKg > zeroTolerance)
+                return (null, "仪表未归零，不允许保存数据，防止重复称重");
+            _savedNeedsZero = false;   // 已回到零位，解除拦截
+        }
+
         if (!IsStable)
             return (null, "重量未稳定，请等待稳定后再保存");
+        if (cfg.StableSeconds > 0 && !IsStableForSave)
+            return (null, $"数据已稳定，但未持续 {cfg.StableSeconds} 秒，请稍候再保存");
         if (StableKg <= 0)
             return (null, "当前重量为 0，请确认车辆已上磅");
 
@@ -218,6 +264,10 @@ public class WeighManager : IDisposable
         CurrentKg = data.ValueKg;
         WeightUpdated?.Invoke();
     }
+
+    /// <summary>注入一次重量采样（测试用：模拟仪表来数；生产代码走数据源事件）。</summary>
+    internal void InjectWeight(double kg)
+        => OnWeightReceived(new WeightData(kg, DateTime.Now));
 
     public void Dispose()
     {

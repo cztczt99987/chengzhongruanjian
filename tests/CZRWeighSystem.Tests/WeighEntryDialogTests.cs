@@ -251,4 +251,25 @@ public class WeighEntryDialogTests
         });
         manager.Dispose();
     }
+
+    [Fact]
+    public void 切换按钮_皮毛模式互换并刷新标题与右列()
+    {
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+
+            Call(dlg, "ToggleMode");
+            Assert.StartsWith("重车过磅", dlg.Text);
+            Assert.Contains("毛重过磅单", Fld<Label>(dlg, "_lblTicketType").Text);
+            Assert.Equal("本次毛重", Fld<Label>(dlg, "_lblPanelTitle").Text);
+
+            Call(dlg, "ToggleMode");
+            Assert.StartsWith("空车去皮", dlg.Text);
+            Assert.Contains("皮重过磅单", Fld<Label>(dlg, "_lblTicketType").Text);
+            Assert.Equal("本次皮重", Fld<Label>(dlg, "_lblPanelTitle").Text);
+        });
+        manager.Dispose();
+    }
 }

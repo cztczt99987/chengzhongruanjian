@@ -74,6 +74,7 @@ public class MainForm : Form
     private DataGridView _captureGrid = null!;
     private ComboBox _cboPageSize = null!;   // 显示条数：20/50/70/100（默认 20）
     private readonly Database.WeighRecordRepository _recordRepo = new();
+    private Core.BlackBoxMonitor? _blackBox;   // 黑匣子监控（重量稳定持续设定秒数后自动记录 + 抓拍）
 
     // ===== 状态栏 =====
     private StatusStrip _status = null!;
@@ -97,6 +98,16 @@ public class MainForm : Form
         Font = new Font("Microsoft YaHei UI", 10F);
         // 高 DPI（125%/150%）下按 DPI 缩放布局，避免文字截断与控件错位
         AutoScaleMode = AutoScaleMode.Dpi;
+        // F3 打开综合设置（对应目标软件快捷键）
+        KeyPreview = true;
+        KeyDown += (_, e) =>
+        {
+            if (e.KeyCode == Keys.F3 && AppSession.CurrentUser?.IsAdmin == true)
+            {
+                e.Handled = true;
+                OpenComprehensiveSettings();
+            }
+        };
 
         BuildMenu();
         BuildTopBar();
@@ -133,6 +144,11 @@ public class MainForm : Form
             FillVideoPanel();   // 摄像头源就绪后绑定首页画面（未启用时显示提示）
             AlignStatsToVideo();   // 画面布局完成后与画面顶边齐平
 
+            // 启动黑匣子监控（重量稳定持续设定秒数后自动记录 + 抓拍，对应黑匣子功能）
+            _blackBox = new Core.BlackBoxMonitor(_manager, () => _cameras);
+            _blackBox.RecordSaved += r => SafeInvoke(() =>
+                SetState($"黑匣子已记录 {_cfg.FormatWeight(r.WeightKg)}（抓拍 {r.ParseImages().Count} 张）", true));
+
             // 启动时及每 6 小时检查一次自动备份（对应 PRD F11-02）
             Utils.BackupService.AutoBackupIfNeeded();
             var backupTimer = new System.Windows.Forms.Timer { Interval = 6 * 60 * 60 * 1000 };
@@ -151,6 +167,7 @@ public class MainForm : Form
         {
             UnbindVideo();
             _videoStallTimer.Dispose();
+            _blackBox?.Dispose();
             _manager.Dispose();
             _cameras.Dispose();
         };
@@ -697,6 +714,7 @@ public class MainForm : Form
         _captureGrid.Columns.Add("Net", "净重");
         _captureGrid.Columns.Add("GrossTime", "毛重时间");
         _captureGrid.Columns.Add("TareTime", "皮重时间");
+        _captureGrid.Columns.Add("AmountYuan", "金额(元)");
         _captureGrid.Columns.Add("Status", "状态");
 
         // 双击未完成行：带车号打开录入窗（保存时按车号自动配对结算）
@@ -755,6 +773,7 @@ public class MainForm : Form
                 r.NetKg.HasValue ? _cfg.FormatWeight(r.NetKg.Value) : "--",
                 r.FirstTime?.ToString("HH:mm:ss") ?? "",
                 r.SecondTime?.ToString("HH:mm:ss") ?? "",
+                r.AmountYuan?.ToString("0.##") ?? "--",
                 r.Status);
             _captureGrid.Rows[i].Tag = r;
 
@@ -848,10 +867,12 @@ public class MainForm : Form
                 using var f = new PrintSettingsDialog();
                 f.ShowDialog(this);
             }));
-            // 称重设置（首次称重有效天数：超期未配对的一次磅自动删除；限管理员）
-            mSys.DropDownItems.Add(new ToolStripMenuItem("称重设置", null, (_, _) =>
+            // 综合设置（对应目标软件"综合设置 [F3]"：基本/串口/联网/视频设置；限管理员）
+            mSys.DropDownItems.Add(new ToolStripMenuItem("综合设置", null, (_, _) => OpenComprehensiveSettings()));
+            // 收费设置（按重量分段固定金额，参考行业"代磅收费"版式；限管理员）
+            mSys.DropDownItems.Add(new ToolStripMenuItem("收费设置", null, (_, _) =>
             {
-                using var f = new WeighSettingsDialog();
+                using var f = new FeeSettingsDialog();
                 f.ShowDialog(this);
             }));
             // 磅单模板管理（模板库：分类/搜索/预览/启用/复制/重命名/删除）
@@ -875,11 +896,16 @@ public class MainForm : Form
         mSys.DropDownItems.Add(new ToolStripMenuItem("退出", null, (_, _) => Close()));
         _menu.Items.Add(mSys);
 
-        // 记录菜单：记录查询（对应 PRD 5.3 / F3-06、F3-07）
+        // 记录菜单：记录查询（对应 PRD 5.3 / F3-06、F3-07）+ 黑匣子记录
         var mRecord = new ToolStripMenuItem("记录(&R)");
         mRecord.DropDownItems.Add(new ToolStripMenuItem("记录查询", null, (_, _) =>
         {
             using var f = new RecordQueryForm();
+            f.ShowDialog(this);
+        }));
+        mRecord.DropDownItems.Add(new ToolStripMenuItem("黑匣子记录", null, (_, _) =>
+        {
+            using var f = new BlackBoxForm();
             f.ShowDialog(this);
         }));
         _menu.Items.Add(mRecord);
@@ -939,6 +965,74 @@ public class MainForm : Form
         Controls.Add(_menu);
     }
 
+    // ---------- 综合设置（对应目标软件"综合设置 [F3]"，限管理员） ----------
+
+    /// <summary>打开综合设置：串口/摄像头在页签内保存后立即按新配置重连。</summary>
+    private void OpenComprehensiveSettings()
+    {
+        if (AppSession.CurrentUser?.IsAdmin != true)
+        {
+            MessageBox.Show("综合设置需要管理员权限。", "提示",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        using var f = new ComprehensiveSettingsDialog();
+        f.SerialSaved += () =>
+        {
+            _manager.RestartSerialSource();   // 保存后立即用新参数重连串口，无需重启软件
+            OnWeightUpdated();                // 刷新状态栏数据源描述与通讯指示灯
+        };
+        f.CamerasSaved += RestartCameras;
+        if (f.ShowDialog(this) == DialogResult.OK)
+            _blackBox?.Reload();              // 黑匣子新参数（基本设置页）立即生效
+    }
+
+    // ---------- 闲置锁屏（综合设置-基本设置：电脑闲置 X 分钟屏幕锁定） ----------
+
+    /// <summary>Win32 最后输入时间（用于闲置判定）。</summary>
+    [System.Runtime.InteropServices.StructLayout(
+        System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct LASTINPUTINFO
+    {
+        public uint cbSize;
+        public uint dwTime;
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [return: System.Runtime.InteropServices.MarshalAs(
+        System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool GetLastInputInfo(ref LASTINPUTINFO plii);
+
+    /// <summary>当前闲置秒数（键盘/鼠标无输入的持续时长）。</summary>
+    private static double IdleSeconds()
+    {
+        var info = new LASTINPUTINFO { cbSize = (uint)System.Runtime.InteropServices
+            .Marshal.SizeOf<LASTINPUTINFO>() };
+        if (!GetLastInputInfo(ref info)) return 0;
+        return Math.Max(0, Environment.TickCount - unchecked((int)info.dwTime)) / 1000.0;
+    }
+
+    /// <summary>每 30 秒检查闲置时长，达到设定分钟数弹出锁屏（解锁需当前账号密码）。</summary>
+    private bool _lockShown;   // 锁屏弹窗期间避免重复触发
+
+    private void CheckIdleLock()
+    {
+        int minutes = AppConfig.Current.IdleLockMinutes;
+        if (minutes <= 0 || _lockShown) return;
+        if (IdleSeconds() < minutes * 60) return;
+
+        _lockShown = true;
+        try
+        {
+            using var lockForm = new ScreenLockForm();
+            lockForm.ShowDialog(this);
+        }
+        finally
+        {
+            _lockShown = false;
+        }
+    }
+
     // ---------- 状态栏 ----------
     private void BuildStatusBar()
     {
@@ -956,6 +1050,7 @@ public class MainForm : Form
         {
             _tsslTime.Text = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
             UpdateCommIndicator();
+            CheckIdleLock();   // 闲置锁屏检查（综合设置-基本设置）
         };
         timer.Start();
     }
@@ -984,13 +1079,14 @@ public class MainForm : Form
         _lblWeight.Text = cfg.FormatWeight(_manager.CurrentKg);
 
         // 颜色状态：超载红 / 稳定绿 / 动态橙（对应 PRD F2-02、F2-03）
+        // 综合设置开启"数据稳定 X 秒"时，稳定持续满该秒数（绿灯亮、方可保存）才显示稳定
         if (_manager.IsOverload)
         {
             _lblWeight.ForeColor = Color.Red;
             _lblStable.Text = "● 超载";
             _lblStable.ForeColor = Color.Red;
         }
-        else if (_manager.IsStable)
+        else if (_manager.IsStableForSave)
         {
             _lblWeight.ForeColor = Color.LimeGreen;
             _lblStable.Text = "● 稳定";

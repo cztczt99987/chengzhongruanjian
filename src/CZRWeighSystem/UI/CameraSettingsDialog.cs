@@ -173,6 +173,9 @@ public class CameraSettingsDialog : Form
         if (!int.TryParse(card.TxtPort.Text, out int port) || port <= 0) card.TxtPort.Text = "554";
     }
 
+    /// <summary>保存成功后触发（综合设置页签内嵌时，主界面据此重启取流）。</summary>
+    internal event Action? Saved;
+
     /// <summary>把三张卡片内容写回配置并持久化（主界面收到 OK 后重启取流）。</summary>
     private void Save()
     {
@@ -181,6 +184,7 @@ public class CameraSettingsDialog : Form
         cfg.Cameras = CollectCameras();
         cfg.Save();
         Log.Info($"摄像头设置已保存：{cfg.Cameras.Count} 路，启用={cfg.CameraEnabled}");
+        Saved?.Invoke();
         MessageBox.Show("摄像头设置已保存，画面将按新配置刷新。", "成功",
             MessageBoxButtons.OK, MessageBoxIcon.Information);
         DialogResult = DialogResult.OK;

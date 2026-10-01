@@ -40,9 +40,13 @@ public class AppConfig
     /// <summary>磅号（一机双磅时区分两台磅，骨架暂用单磅）</summary>
     public string ScaleNo { get; set; } = "01";
 
-    // ===== 公司信息（对应 PRD F10-01，磅单抬头使用）=====
+    // ===== 公司信息（对应 PRD F10-01，磅单抬头使用；综合设置-基本设置）=====
     /// <summary>公司名称（打印在磅单上）</summary>
     public string CompanyName { get; set; } = "CZR 称重有限公司";
+    /// <summary>磅单抬头（打印磅单的大标题，空则打印"磅 单"）</summary>
+    public string SlipHeader { get; set; } = "过磅单";
+    /// <summary>磅单底部文字（打印在磅单页脚；空则打印系统默认文案）</summary>
+    public string SlipFooter { get; set; } = "";
 
     // ===== 打印设置（对应 PRD F9-04 / F5-02 / F5-03）=====
     /// <summary>磅单纸张 key：A4 / 241x140 / 241x93（目录见 PoundTicketPrinter.Papers）</summary>
@@ -66,8 +70,58 @@ public class AppConfig
     /// <summary>
     /// 首次称重有效天数：一次磅保存后超过该天数仍未配对二次磅，系统自动删除该记录；
     /// 删除后同车号再次称重按首次称重处理（不再提示配对）。0 = 不启用自动删除。
+    /// （综合设置-基本设置：自动清除 X 天内未使用的一次称重）
     /// </summary>
     public int FirstWeighExpireDays { get; set; } = 0;
+
+    // ===== 黑匣子（重量稳定持续设定秒数后自动记录重量 + 抓拍）=====
+    /// <summary>是否启用黑匣子自动记录</summary>
+    public bool BlackBoxEnabled { get; set; } = true;
+    /// <summary>触发重量（千克）：稳定重量达到该值才记录（过滤空磅/行人干扰）</summary>
+    public double BlackBoxMinKg { get; set; } = 200;
+    /// <summary>持续稳定秒数：稳定达到该秒数后记录并抓拍</summary>
+    public int BlackBoxSeconds { get; set; } = 10;
+
+    // ===== 综合设置-基本设置（目标软件版式，2026-10-01）=====
+    /// <summary>启用磅单"打印次数"累计（每张磅单最多打印 MaxPrintCount 次）</summary>
+    public bool PrintCountEnabled { get; set; } = true;
+    /// <summary>每个磅单最多允许打印次数（PrintCountEnabled 开启时生效）</summary>
+    public int MaxPrintCount { get; set; } = 5;
+    /// <summary>默认省份简称（车牌录入预填，如"黑"）</summary>
+    public string DefaultProvince { get; set; } = "黑";
+    /// <summary>默认发牌机关代号字母（车牌录入预填，如"D"）</summary>
+    public string DefaultLetter { get; set; } = "D";
+    /// <summary>车牌录入预填省、字母（使用 DefaultProvince + DefaultLetter）</summary>
+    public bool UseProvinceLetter { get; set; } = true;
+    /// <summary>数据稳定持续秒数（稳定须保持该秒数绿灯亮方可保存；0 = 不启用）</summary>
+    public int StableSeconds { get; set; } = 0;
+    /// <summary>电脑闲置锁定屏幕分钟数（0 = 不锁定）</summary>
+    public int IdleLockMinutes { get; set; } = 900;
+    /// <summary>仪表不归零不允许保存数据（防止重复称重）</summary>
+    public bool BlockSaveUntilZero { get; set; } = false;
+    /// <summary>严格禁止同车 X 分钟内二次称重（距上次结算不足该分钟数拒绝保存；0 = 不限制）</summary>
+    public int ForbidReweighMinutes { get; set; } = 0;
+
+    // ===== 收费设置（按重量分段固定金额，参考行业"代磅收费"版式，仅此一种模式）=====
+    /// <summary>是否启用收费：二次磅结算时按净重自动计算应收金额</summary>
+    public bool FeeEnabled { get; set; } = true;
+
+    /// <summary>其余收费：分段之外的重量按每吨该标准收费（元/吨）</summary>
+    public decimal FeeFallbackPerTon { get; set; } = 1;
+
+    /// <summary>
+    /// 重量分段固定金额（按净重匹配，含起点、不含终点；ToTon &lt;= 0 表示不封顶）。
+    /// 默认值与参考软件一致：0-3吨3元、3-5吨5元、5-10吨10元、10-22吨20元，
+    /// 22 吨以上金额为 0（按"其余每吨"标准计费）。
+    /// </summary>
+    public List<FeeBracket> FeeBrackets { get; set; } =
+    [
+        new() { FromTon = 0, ToTon = 3, AmountYuan = 3 },
+        new() { FromTon = 3, ToTon = 5, AmountYuan = 5 },
+        new() { FromTon = 5, ToTon = 10, AmountYuan = 10 },
+        new() { FromTon = 10, ToTon = 22, AmountYuan = 20 },
+        new() { FromTon = 22, ToTon = 0, AmountYuan = 0 },
+    ];
 
     // ===== 数据备份（对应 PRD F11-02 定时自动备份）=====
     /// <summary>是否启用每日自动备份（备份到 exe 目录 backups/）</summary>
@@ -140,6 +194,22 @@ public class AppConfig
         double value = Unit == "t" ? kg / 1000.0 : kg;
         return $"{value:0.##} {Unit}";
     }
+}
+
+/// <summary>
+/// 收费重量分段（按重量区分固定金额）：净重吨数 t 满足 FromTon &lt;= t &lt; ToTon
+/// （含起点、不含终点；ToTon &lt;= 0 为不封顶）。固定金额 &lt;= 0 表示该段按"其余每吨"标准计费。
+/// </summary>
+public class FeeBracket
+{
+    /// <summary>分段起点（吨，含）</summary>
+    public double FromTon { get; set; }
+
+    /// <summary>分段终点（吨，不含）；&lt;= 0 表示不封顶</summary>
+    public double ToTon { get; set; }
+
+    /// <summary>该段固定金额（元）；&lt;= 0 表示按"其余每吨"标准计费</summary>
+    public decimal AmountYuan { get; set; }
 }
 
 /// <summary>

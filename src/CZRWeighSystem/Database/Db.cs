@@ -75,6 +75,7 @@ public static class Db
         cmd.ExecuteNonQuery();
         EnsureExtColumn(conn);
         EnsureCompanyDeductColumns(conn);
+        EnsureAmountColumn(conn);
     }
 
     /// <summary>
@@ -148,6 +149,54 @@ public static class Db
             """);
     }
 
+    /// <summary>
+    /// 旧库升级：t_weigh_record 补 print_count 列（磅单打印次数累计，综合设置-基本设置）。
+    /// 重复执行报"列已存在"直接忽略（SQLite 无 IF NOT EXISTS）。
+    /// </summary>
+    private static void EnsurePrintCountColumn(DbConnection conn)
+    {
+        using var cmd = conn.CreateCommand();
+        if (IsSqlServer)
+        {
+            cmd.CommandText = """
+                IF NOT EXISTS (SELECT 1 FROM sys.columns
+                    WHERE object_id = OBJECT_ID(N't_weigh_record') AND name = 'print_count')
+                ALTER TABLE t_weigh_record ADD print_count INT NOT NULL DEFAULT 0;
+                """;
+            cmd.ExecuteNonQuery();
+        }
+        else
+        {
+            cmd.CommandText = "ALTER TABLE t_weigh_record ADD COLUMN print_count INTEGER NOT NULL DEFAULT 0;";
+            try { cmd.ExecuteNonQuery(); }
+            catch { /* 列已存在 */ }
+        }
+    }
+
+    /// <summary>
+    /// 旧库升级：t_weigh_record 补 amount_yuan 列（二次磅结算应收金额，元；
+    /// 按重量分段固定金额收费）。重复执行报"列已存在"直接忽略（SQLite 无 IF NOT EXISTS）。
+    /// </summary>
+    private static void EnsureAmountColumn(DbConnection conn)
+    {
+        using var cmd = conn.CreateCommand();
+        if (IsSqlServer)
+        {
+            cmd.CommandText = """
+                IF NOT EXISTS (SELECT 1 FROM sys.columns
+                    WHERE object_id = OBJECT_ID(N't_weigh_record') AND name = 'amount_yuan')
+                ALTER TABLE t_weigh_record ADD amount_yuan FLOAT;
+                """;
+            cmd.ExecuteNonQuery();
+        }
+        else
+        {
+            cmd.CommandText = "ALTER TABLE t_weigh_record ADD COLUMN amount_yuan REAL;";
+            try { cmd.ExecuteNonQuery(); }
+            catch { /* 列已存在 */ }
+        }
+    }
+
     // ==================== 建表脚本（双方言） ====================
 
     private const string SqliteSchema = """
@@ -169,6 +218,7 @@ public static class Db
             operator     TEXT,
             status       TEXT NOT NULL DEFAULT '未完成',
             is_manual    INTEGER NOT NULL DEFAULT 0,
+            print_count  INTEGER NOT NULL DEFAULT 0,
             created_at   TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_record_vehicle ON t_weigh_record(vehicle_no, status);
@@ -210,6 +260,14 @@ public static class Db
             sort_order  INTEGER NOT NULL DEFAULT 0,
             enabled     INTEGER NOT NULL DEFAULT 1
         );
+
+        CREATE TABLE IF NOT EXISTS t_black_box (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            time      TEXT NOT NULL,
+            weight_kg REAL NOT NULL,
+            images    TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_blackbox_time ON t_black_box(time);
         """;
 
     private const string SqlServerSchema = """
@@ -235,6 +293,7 @@ public static class Db
             operator     NVARCHAR(20),
             status       NVARCHAR(10) NOT NULL DEFAULT N'未完成',
             is_manual    BIT NOT NULL DEFAULT 0,
+            print_count  INT NOT NULL DEFAULT 0,
             created_at   NVARCHAR(20)
         );
         IF OBJECT_ID(N't_user', N'U') IS NULL

@@ -22,8 +22,10 @@ public class VehiclePadDialog : Form
         BackColor = Color.FromArgb(245, 246, 248),
     };
 
-    private static readonly string Provinces = "京津冀晋蒙辽吉黑沪苏浙皖闽赣鲁豫鄂湘粤桂琼渝川贵云藏陕甘青宁新";
-    private static readonly string Letters = "ABCDEFGHJKLMNPQRSTUVWXYZ";   // 车牌不用 I/O
+    /// <summary>省份简称表（综合设置-默认省份下拉复用）</summary>
+    internal static readonly string Provinces = "京津冀晋蒙辽吉黑沪苏浙皖闽赣鲁豫鄂湘粤桂琼渝川贵云藏陕甘青宁新";
+    /// <summary>车牌可用字母表（不含 I/O；综合设置-发牌机关代号下拉复用）</summary>
+    internal static readonly string Letters = "ABCDEFGHJKLMNPQRSTUVWXYZ";
     private static readonly string Digits = "0123456789";
     private static readonly string Marks = "挂学警港澳";
 
@@ -40,6 +42,11 @@ public class VehiclePadDialog : Form
         Font = new Font("Microsoft YaHei UI", 10F);
 
         BuildUi();
+
+        // 默认省份预填（综合设置-基本设置：使用省、字母时预填"省份+发牌机关代号"）
+        var cfg = AppConfig.Current;
+        if (cfg.UseProvinceLetter && cfg.DefaultProvince.Length > 0)
+            _lblPreview.Text = cfg.DefaultProvince + cfg.DefaultLetter;
     }
 
     private void BuildUi()
