@@ -16,6 +16,10 @@ public class WeighEntryDialog : Form
     private bool _isTare;                    // 可经"切换"按钮在皮/毛模式间转换
     private readonly AppConfig _cfg = AppConfig.Current;
 
+    // 两种模式的背景色：皮重=蓝、毛重=绿，一眼可辨当前在哪个流程
+    private static readonly Color TareBack = Color.FromArgb(0, 102, 164);
+    private static readonly Color GrossBack = Color.FromArgb(0, 145, 60);
+
     // ===== 对话框出口（internal 供测试注入静默实现；正常流程用 MessageBox）=====
     /// <summary>确认框：返回 true=确认。测试注入后可静默自动确认。</summary>
     internal Func<string, string, bool> ConfirmBox = (msg, title) =>
@@ -29,7 +33,8 @@ public class WeighEntryDialog : Form
     internal Action<string>? OnSaved;
 
     // ===== 控件 =====
-    private TextBox _txtVehicle = null!;     // 车牌号码（只读，点按钮弹软键盘选牌）
+    private ComboBox _cboPrefix = null!;     // 车牌省份简称（默认取综合设置的"默认省份"）
+    private TextBox _txtVehicle = null!;     // 车牌编号（省份简称后的手动输入部分）
     private TextBox _txtVariety = null!;     // 品种（存记录 Goods 列）
     private TextBox _txtOwner = null!;       // 地主姓名（ext_json 固定键）
     private TextBox _txtOwnerPhone = null!;  // 地主电话（ext_json 固定键）
@@ -64,13 +69,14 @@ public class WeighEntryDialog : Form
         Font = new Font("Microsoft YaHei UI", 10F);
         // 高 DPI 下按 DPI 缩放布局，避免文字截断与控件错位
         AutoScaleMode = AutoScaleMode.Dpi;
-        BackColor = Color.FromArgb(0, 145, 60);
+        BackColor = _isTare ? TareBack : GrossBack;
 
         BuildTicket();
         BuildWeightPanel();
 
-        _txtVehicle.Text = prefillVehicle ?? "";
+        ApplyPrefill(prefillVehicle);
         _txtVehicle.TextChanged += (_, _) => UpdateWeight();   // 车号变化即时刷新配对信息
+        _cboPrefix.SelectedIndexChanged += (_, _) => UpdateWeight();   // 省份变化 → 完整车号变化
         UpdateWeight();
 
         _tick.Tick += (_, _) => UpdateWeight();   // 实时重量/净重预览随仪表数据刷新
@@ -142,8 +148,8 @@ public class WeighEntryDialog : Form
             BackColor = ticket.BackColor,
         };
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 88));   // 字段名
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 248));  // 输入框
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 84));   // 重量名
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 264));  // 输入框（车牌行含省份下拉）
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 68));   // 重量名
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 176));  // 重量值
         for (int i = 0; i < 6; i++)
             grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
@@ -176,15 +182,33 @@ public class WeighEntryDialog : Form
             Margin = new Padding(6, 7, 6, 7),
         };
 
-        // 行1：车牌号码（只读 + 软键盘选牌）｜ 毛重
+        // 行1：车牌号码（省份简称下拉 + 手动输入 + 软键盘）｜ 毛重
         grid.Controls.Add(Head("车牌号码"), 0, 0);
         var platePanel = new Panel { Dock = DockStyle.Fill, BackColor = Color.White, Margin = new Padding(2, 7, 2, 7) };
-        _txtVehicle = new TextBox { Dock = DockStyle.Fill, Font = new Font("Microsoft YaHei UI", 12F), ReadOnly = true };
+        _cboPrefix = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Font = new Font("Microsoft YaHei UI", 12F),
+            Location = new Point(1, 1),
+            Size = new Size(54, 34),
+            FlatStyle = FlatStyle.Flat,
+        };
+        // 省份简称列表（首项为空 = 无省份），默认选中综合设置的"默认省份"
+        _cboPrefix.Items.Add("");
+        foreach (var p in VehiclePadDialog.Provinces) _cboPrefix.Items.Add(p.ToString());
+        int idx = _cboPrefix.Items.IndexOf(_cfg.DefaultProvince);
+        _cboPrefix.SelectedIndex = idx > 0 ? idx : 0;
+        _txtVehicle = new TextBox
+        {
+            Location = new Point(56, 1),
+            Size = new Size(114, 34),
+            Font = new Font("Microsoft YaHei UI", 12F),
+        };
         var btnVehicle = new Button
         {
             Text = "选择车牌",
-            Dock = DockStyle.Right,
-            Width = 88,
+            Location = new Point(170, 0),
+            Size = new Size(84, 36),
             FlatStyle = FlatStyle.Flat,
             BackColor = Color.FromArgb(0, 122, 204),
             ForeColor = Color.White,
@@ -193,9 +217,10 @@ public class WeighEntryDialog : Form
         btnVehicle.Click += (_, _) =>
         {
             using var f = new VehiclePadDialog();
-            if (f.ShowDialog(this) == DialogResult.OK && f.ResultVehicle != null)
-                _txtVehicle.Text = f.ResultVehicle;
+            if (f.ShowDialog(this) != DialogResult.OK || f.ResultVehicle == null) return;
+            ApplyPrefill(f.ResultVehicle);   // 软键盘给的是完整车牌：拆省份简称与编号
         };
+        platePanel.Controls.Add(_cboPrefix);
         platePanel.Controls.Add(_txtVehicle);
         platePanel.Controls.Add(btnVehicle);
         grid.Controls.Add(platePanel, 1, 0);
@@ -350,14 +375,45 @@ public class WeighEntryDialog : Form
         Controls.Add(btnCancel);
     }
 
-    /// <summary>"切换"按钮：皮重/毛重模式互换，同步刷新标题、票据副标题与右列预览。</summary>
+    /// <summary>"切换"按钮：皮重/毛重模式互换，同步刷新标题、背景色、票据副标题与右列预览。</summary>
     private void ToggleMode()
     {
         _isTare = !_isTare;
+        BackColor = _isTare ? TareBack : GrossBack;   // 皮重=蓝、毛重=绿，一眼可辨当前流程
         Text = (_isTare ? "空车去皮" : "重车过磅") + $"（本次按{(_isTare ? "皮" : "毛")}重保存）";
         _lblTicketType.Text = (_isTare ? "皮重" : "毛重") + _cfg.SlipHeader;
         _lblPanelTitle.Text = _isTare ? "本次皮重" : "本次毛重";
         UpdateWeight();
+    }
+
+    /// <summary>
+    /// 组合完整车号 = 省份简称 + 编号输入框内容；
+    /// 编号本身已以省份开头（如手输整牌）时不重复拼接。
+    /// </summary>
+    internal string ComposeVehicleNo()
+    {
+        string prefix = _cboPrefix.SelectedItem?.ToString() ?? "";
+        string rest = _txtVehicle.Text.Trim();
+        return rest.StartsWith(prefix, StringComparison.Ordinal) ? rest : prefix + rest;
+    }
+
+    /// <summary>
+    /// 填入完整车牌（预填车号或软键盘结果）：首位是省份简称时拆到省份下拉，
+    /// 其余进编号输入框；无省份简称时整体进输入框。
+    /// </summary>
+    private void ApplyPrefill(string? plate)
+    {
+        if (string.IsNullOrEmpty(plate)) return;
+        if (VehiclePadDialog.Provinces.Contains(plate[0]))
+        {
+            int idx = _cboPrefix.Items.IndexOf(plate[0].ToString());
+            if (idx > 0) _cboPrefix.SelectedIndex = idx;   // 与输入车牌一致的省份
+            _txtVehicle.Text = plate[1..];
+        }
+        else
+        {
+            _txtVehicle.Text = plate;
+        }
     }
 
     /// <summary>
@@ -372,7 +428,7 @@ public class WeighEntryDialog : Form
         // 绿灯 = 达到"可保存"稳定要求（综合设置开启"数据稳定 X 秒"时须持续满该秒数）
         _lblCurrent.ForeColor = _manager.IsStableForSave ? Color.LimeGreen : Color.OrangeRed;
 
-        string no = _txtVehicle.Text.Trim();
+        string no = ComposeVehicleNo();
         var first = no.Length == 0 ? null
             : _manager.GetUnfinishedList().FirstOrDefault(r => r.VehicleNo == no);
 
@@ -423,7 +479,7 @@ public class WeighEntryDialog : Form
     private void Save()
     {
         string action = _isTare ? "空车去皮" : "重车过磅";
-        string no = _txtVehicle.Text.Trim();
+        string no = ComposeVehicleNo();
 
         var ext = CollectExt();
 
@@ -449,11 +505,11 @@ public class WeighEntryDialog : Form
         else
         {
             // 第一次称重（品种存 Goods 列；扣重/备注已从表单移除，存 null）
-            if (!ConfirmBox($"{action}（第一次称重）\n车号：{_txtVehicle.Text}  重量：{weightText}", "确认操作"))
+            if (!ConfirmBox($"{action}（第一次称重）\n车号：{no}  重量：{weightText}", "确认操作"))
                 return;
 
             var (ok, msg, newRecord) = _manager.SaveFirstWeigh(
-                _txtVehicle.Text, _txtVariety.Text, null, null,
+                no, _txtVariety.Text, null, null,
                 null, null, null,
                 null, _txtOperator.Text, ext);
             InfoBox(msg, ok ? "成功" : "提示", ok);

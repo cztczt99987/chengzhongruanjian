@@ -71,6 +71,10 @@ public class WeighEntryDialogTests
     /// <summary>每次运行唯一车号：共享库会残留上次运行的记录，断言 Single 时不能重名。</summary>
     private static string NewVehicle(string prefix) => $"测{prefix}{Guid.NewGuid():N}"[..7];
 
+    /// <summary>清空省份简称（选中首项"无省份"）：测试车号不带前缀，ComposeVehicleNo 原样返回。</summary>
+    private static void NoPrefix(WeighEntryDialog dlg) =>
+        Fld<ComboBox>(dlg, "_cboPrefix").SelectedIndex = 0;
+
     [Fact]
     public void 空车去皮_无待配对记录_保存为第一次称重()
     {
@@ -83,6 +87,7 @@ public class WeighEntryDialogTests
             SilenceDialogs(dlg);
             UseTestScaleNo();
             dlg.OnSaved = _ => onSaved = true;
+            NoPrefix(dlg);
             Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
             PushStable(manager, 10000);
             Call(dlg, "Save");
@@ -107,6 +112,7 @@ public class WeighEntryDialogTests
             using var dlg = new WeighEntryDialog(manager, isTare: true);
             SilenceDialogs(dlg);
             UseTestScaleNo();
+            NoPrefix(dlg);
             Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
             Fld<TextBox>(dlg, "_txtVariety").Text = " 玉米 ";
             Fld<TextBox>(dlg, "_txtOwner").Text = "张三";
@@ -139,6 +145,7 @@ public class WeighEntryDialogTests
         {
             using var dlg = new WeighEntryDialog(manager, isTare: false);
             SilenceDialogs(dlg);
+            NoPrefix(dlg);
             Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
             PushStable(manager, 50000);
             Call(dlg, "Save");
@@ -164,6 +171,7 @@ public class WeighEntryDialogTests
         {
             using var dlg = new WeighEntryDialog(manager, isTare: true);
             SilenceDialogs(dlg);
+            NoPrefix(dlg);
             Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
             PushStable(manager, 30000);
             Call(dlg, "Save");
@@ -188,6 +196,7 @@ public class WeighEntryDialogTests
         {
             using var dlg = new WeighEntryDialog(manager, isTare: true);
             SilenceDialogs(dlg);
+            NoPrefix(dlg);
             PushStable(manager, 10000);
             Call(dlg, "Save");
 
@@ -208,6 +217,7 @@ public class WeighEntryDialogTests
         {
             using var dlg = new WeighEntryDialog(manager, isTare: false);
             SilenceDialogs(dlg);
+            NoPrefix(dlg);
             Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
             Call(dlg, "Save");   // 未推送稳定采样 → IsStable=false
 
@@ -229,6 +239,7 @@ public class WeighEntryDialogTests
         {
             using var dlg = new WeighEntryDialog(manager, isTare: false);
             // 车号变化触发 TextChanged → UpdateWeight 刷新配对信息
+            NoPrefix(dlg);
             Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
 
             Assert.Contains("未完成的二次磅", Fld<Label>(dlg, "_lblPairHint").Text);
@@ -269,6 +280,58 @@ public class WeighEntryDialogTests
             Assert.StartsWith("空车去皮", dlg.Text);
             Assert.Contains("皮重过磅单", Fld<Label>(dlg, "_lblTicketType").Text);
             Assert.Equal("本次皮重", Fld<Label>(dlg, "_lblPanelTitle").Text);
+        });
+        manager.Dispose();
+    }
+
+    [Fact]
+    public void 切换按钮_背景色随皮毛模式变化()
+    {
+        int tareBack = ((Color)typeof(WeighEntryDialog)
+            .GetField("TareBack", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!).ToArgb();
+        int grossBack = ((Color)typeof(WeighEntryDialog)
+            .GetField("GrossBack", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!).ToArgb();
+
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+            Assert.Equal(tareBack, dlg.BackColor.ToArgb());          // 皮重=蓝
+
+            Call(dlg, "ToggleMode");
+            Assert.Equal(grossBack, dlg.BackColor.ToArgb());         // 毛重=绿
+
+            Call(dlg, "ToggleMode");
+            Assert.Equal(tareBack, dlg.BackColor.ToArgb());
+        });
+        manager.Dispose();
+    }
+
+    [Fact]
+    public void 车牌省份前缀_默认取设置_组合与预填拆分正确()
+    {
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            // 默认省份 = 综合设置 DefaultProvince（默认"黑"），下拉应选中它
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+            Assert.Equal(AppConfig.Current.DefaultProvince,
+                Fld<ComboBox>(dlg, "_cboPrefix").SelectedItem);
+
+            // 完整车号 = 省份 + 手输编号
+            Fld<TextBox>(dlg, "_txtVehicle").Text = "A12345";
+            Assert.Equal(AppConfig.Current.DefaultProvince + "A12345", dlg.ComposeVehicleNo());
+
+            // 编号已含省份开头（手输整牌）时不重复拼接
+            string full = AppConfig.Current.DefaultProvince + "B6789";
+            Fld<TextBox>(dlg, "_txtVehicle").Text = full;
+            Assert.Equal(full, dlg.ComposeVehicleNo());
+
+            // 预填完整车牌：省份拆进下拉、编号进输入框
+            using var dlg2 = new WeighEntryDialog(manager, isTare: false, prefillVehicle: "冀A12345");
+            Assert.Equal("冀", Fld<ComboBox>(dlg2, "_cboPrefix").SelectedItem);
+            Assert.Equal("A12345", Fld<TextBox>(dlg2, "_txtVehicle").Text);
+            Assert.Equal("冀A12345", dlg2.ComposeVehicleNo());
         });
         manager.Dispose();
     }
