@@ -2,12 +2,11 @@ namespace CZRWeighSystem.UI;
 
 /// <summary>
 /// 综合设置窗体（对应目标软件"综合设置 [F3]"对话框，限管理员）。
-/// 顶部工具条：保存 / 退出；共 8 个页签：
-///   基本设置  —— 按目标软件版式实现（公司信息/打印次数/默认省份/数据稳定/锁屏/归零拦截/自动清除/二次称重禁止）
+/// 顶部工具条：保存 / 退出；共 4 个页签：
+///   基本设置  —— 按目标软件版式实现（公司信息/打印次数/默认省份/数据稳定/锁屏/归零拦截/自动清除/二次称重禁止/黑匣子）
 ///   高级设置  —— 内嵌原「串口参数设置」
 ///   联网设置  —— 内嵌原「数据库设置」
 ///   视频设置  —— 内嵌原「摄像头设置」
-///   界面设置 / 流水号 / 响铃 / 一机双秤 —— 预留页（内容待后续版本提供）
 /// 内嵌窗体保存逻辑照旧执行（写 config.json），FormClosing 被拦截以保持在页签内；
 /// 串口/摄像头保存后经 SerialSaved / CamerasSaved 事件通知主界面重启取流。
 /// </summary>
@@ -119,31 +118,8 @@ public class ComprehensiveSettingsDialog : Form
         camera.Saved += () => CamerasSaved?.Invoke();
         Tabs.TabPages.Add(EmbedPage(camera, "『视频设置』"));
 
-        // 预留页：目标软件截图未提供内容，待后续版本补充
-        foreach (var name in new[] { "『界面设置』", "『流水号』", "『响铃』", "『一机双秤』" })
-        {
-            var page = new TabPage(name);
-            page.Controls.Add(new Label
-            {
-                Text = "该页为预留设置页，内容暂未开放。",
-                ForeColor = Color.Gray,
-                AutoSize = true,
-            });
-            page.Resize += (_, _) => CenterPlaceholder(page);
-            CenterPlaceholder(page);
-            Tabs.TabPages.Add(page);
-        }
-
         Controls.Add(Tabs);
         Tabs.BringToFront();
-    }
-
-    /// <summary>预留页占位文字居中。</summary>
-    private static void CenterPlaceholder(TabPage page)
-    {
-        var lbl = (Label)page.Controls[0];
-        lbl.Location = new Point(
-            (page.Width - lbl.PreferredWidth) / 2, (page.Height - lbl.Height) / 2);
     }
 
     /// <summary>把现有设置窗体内嵌进页签：无边框、充满页签；保存/取消后的 Close 被拦截（避免控件被释放）。</summary>
@@ -160,7 +136,29 @@ public class ComprehensiveSettingsDialog : Form
         return page;
     }
 
-    // ---------- 基本设置页（按目标软件版式，5 个分组区块） ----------
+    // ---------- 基本设置页（按目标软件版式，6 个分组区块） ----------
+
+    /// <summary>
+    /// 行内紧排：items 依次紧随 anchor 右缘排布（只改 Left，不动作 y 与宽）。
+    /// AutoSize 标签的实测宽度随 DPI 字体缩放变化，固定坐标会在高 DPI 下被右侧输入框
+    /// 压住文字（用户截图反馈的"标签遮挡"）；以 SizeChanged 驱动重排，宽度一变立即纠正。
+    /// </summary>
+    private static void FlowRow(Control anchor, params Control[] items)
+    {
+        void LayoutRow()
+        {
+            var prev = anchor;
+            foreach (var c in items)
+            {
+                c.Left = prev.Right + 8;
+                prev = c;
+            }
+        }
+        anchor.SizeChanged += (_, _) => LayoutRow();
+        foreach (var c in items) c.SizeChanged += (_, _) => LayoutRow();
+        LayoutRow();
+    }
+
     private void BuildBasicPage(TabPage page)
     {
         var cfg = AppConfig.Current;
@@ -184,17 +182,15 @@ public class ComprehensiveSettingsDialog : Form
         {
             Minimum = 1, Maximum = 99,
             Value = cfg.MaxPrintCount,
-            Location = new Point(ChkPrintCount.GetPreferredSize(Size.Empty).Width + 30, 15),
+            Location = new Point(460, 15),
             Width = 60,
             TextAlign = HorizontalAlignment.Center,
         };
+        var lblCi = new Label { Text = "次", AutoSize = true, Location = new Point(528, 20) };
         grpPrint.Controls.Add(ChkPrintCount);
         grpPrint.Controls.Add(NumMaxPrint);
-        grpPrint.Controls.Add(new Label
-        { Text = "次", AutoSize = true, Location = new Point(NumMaxPrint.Right + 6, 20) });
-        void LayoutPrint() => NumMaxPrint.Location =
-            new Point(ChkPrintCount.GetPreferredSize(Size.Empty).Width + 30, 15);
-        grpPrint.Resize += (_, _) => LayoutPrint();
+        grpPrint.Controls.Add(lblCi);
+        FlowRow(ChkPrintCount, NumMaxPrint, lblCi);
 
         // ---- 区块 3：默认省份 / 数据稳定 ----
         var grpProvince = NewGroup(page, 272, 56);
@@ -235,7 +231,7 @@ public class ComprehensiveSettingsDialog : Form
         CboStableSeconds = new ComboBox
         {
             DropDownStyle = ComboBoxStyle.DropDownList,
-            Location = new Point(ChkStableSeconds.Right + 6, 16), Width = 64,
+            Location = new Point(470, 16), Width = 64,
             Enabled = cfg.StableSeconds > 0,
             BackColor = cfg.StableSeconds > 0 ? SystemColors.Window : SystemColors.Control,
         };
@@ -252,10 +248,12 @@ public class ComprehensiveSettingsDialog : Form
         {
             Text = "秒 绿灯亮，方可保存",
             AutoSize = true,
-            Location = new Point(CboStableSeconds.Right + 6, 21),
+            Location = new Point(542, 21),
         };
         grpProvince.Controls.AddRange([lblProvince, CboProvince, CboLetter,
             ChkUseProvinceLetter, ChkStableSeconds, CboStableSeconds, lblStableTail]);
+        FlowRow(lblProvince, CboProvince, CboLetter, ChkUseProvinceLetter,
+            ChkStableSeconds, CboStableSeconds, lblStableTail);
 
         // ---- 区块 4：闲置锁屏 / 归零拦截 ----
         var grpIdle = NewGroup(page, 342, 56);
@@ -278,6 +276,7 @@ public class ComprehensiveSettingsDialog : Form
             Checked = cfg.BlockSaveUntilZero,
         };
         grpIdle.Controls.AddRange([lblIdle, NumIdleLock, lblIdleTail, ChkBlockZero]);
+        FlowRow(lblIdle, NumIdleLock, lblIdleTail);   // 第二列 ChkBlockZero 固定 420 与区块 5 对齐
 
         // ---- 区块 5：自动清除 / 严格禁止二次称重 ----
         var grpClear = NewGroup(page, 412, 56);
@@ -288,9 +287,10 @@ public class ComprehensiveSettingsDialog : Form
             DropDownStyle = ComboBoxStyle.DropDownList,
             Location = new Point(88, 16), Width = 80,
         };
-        CboExpireDays.Items.AddRange([0, 7, 15, 30, 60, 90, 180, 365]);
-        CboExpireDays.SelectedItem = cfg.FirstWeighExpireDays;
-        if (CboExpireDays.SelectedIndex < 0) CboExpireDays.SelectedItem = 0;
+        CboExpireDays.Items.AddRange(Enumerable.Range(1, 30).Cast<object>().ToArray());
+        // 仅允许 1~30 天；配置值超出范围（含 0=历史"不启用"值）时回落到 30
+        CboExpireDays.SelectedItem =
+            cfg.FirstWeighExpireDays is >= 1 and <= 30 ? cfg.FirstWeighExpireDays : 30;
         var lblClearTail = new Label
         { Text = "天内未使用的一次称重", AutoSize = true, Location = new Point(176, 21) };
         var lblForbid = new Label
@@ -307,37 +307,41 @@ public class ComprehensiveSettingsDialog : Form
         { Text = "分钟内二次称重", AutoSize = true, Location = new Point(574, 21) };
         grpClear.Controls.AddRange([lblClear, CboExpireDays, lblClearTail,
             lblForbid, CboForbidMinutes, lblForbidTail]);
+        FlowRow(lblClear, CboExpireDays, lblClearTail);   // 第二列 lblForbid 固定 420 与区块 4 对齐
+        FlowRow(lblForbid, CboForbidMinutes, lblForbidTail);
 
         // ---- 区块 6：黑匣子（自原「称重设置」迁入：稳定持续设定秒数后自动记录 + 抓拍） ----
-        var grpBlackBox = NewGroup(page, 482, 56);
+        // 两行布局：复选框独占首行，数值输入放第二行，避免长文案在不同 DPI 下遮挡输入框
+        var grpBlackBox = NewGroup(page, 482, 90);
         ChkBlackBox = new CheckBox
         {
             Text = "启用黑匣子（稳定达到触发重量并持续秒数后自动记录 + 抓拍）",
             AutoSize = true,
-            Location = new Point(18, 19),
+            Location = new Point(18, 17),
             Checked = cfg.BlackBoxEnabled,
         };
         var lblMinKg = new Label
-        { Text = "触发重量（kg）：", AutoSize = true, Location = new Point(470, 21) };
+        { Text = "触发重量（kg，不小于）：", AutoSize = true, Location = new Point(30, 56) };
         NumBlackBoxMinKg = new NumericUpDown
         {
             DecimalPlaces = 1,
             Minimum = 0, Maximum = 1000000,
             Value = (decimal)cfg.BlackBoxMinKg,
-            Location = new Point(590, 16), Width = 80,
+            Location = new Point(200, 51), Width = 110,
             TextAlign = HorizontalAlignment.Center,
         };
         var lblSeconds = new Label
-        { Text = "持续（秒）：", AutoSize = true, Location = new Point(680, 21) };
+        { Text = "持续稳定（秒）：", AutoSize = true, Location = new Point(360, 56) };
         NumBlackBoxSeconds = new NumericUpDown
         {
             Minimum = 1, Maximum = 86400,
             Value = cfg.BlackBoxSeconds,
-            Location = new Point(762, 16), Width = 70,
+            Location = new Point(480, 51), Width = 90,
             TextAlign = HorizontalAlignment.Center,
         };
         grpBlackBox.Controls.AddRange([ChkBlackBox, lblMinKg, NumBlackBoxMinKg,
             lblSeconds, NumBlackBoxSeconds]);
+        FlowRow(lblMinKg, NumBlackBoxMinKg, lblSeconds, NumBlackBoxSeconds);
     }
 
     /// <summary>在页签上创建一个分组区块（仿目标软件的边框分节）。</summary>
@@ -367,6 +371,7 @@ public class ComprehensiveSettingsDialog : Form
         txt.Width = grp.Width - 130;
         grp.Controls.Add(lbl);
         grp.Controls.Add(txt);
+        FlowRow(lbl, txt);   // 高 DPI 下标签实测变宽时输入框自动右移，避免压住文字
         return txt;
     }
 
