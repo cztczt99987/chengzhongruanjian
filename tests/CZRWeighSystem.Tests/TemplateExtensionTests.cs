@@ -126,11 +126,18 @@ public class Code39Tests
 public class BuiltinTemplatesTests
 {
     [Fact]
-    public void 内置模板共5种且名称唯一()
+    public void 内置模板共8种_标准与金额各四种纸样且名称唯一()
     {
         var builtins = PrintTemplate.CreateBuiltins();
-        Assert.Equal(5, builtins.Count);
+        Assert.Equal(8, builtins.Count);
         Assert.Equal(builtins.Count, builtins.Select(t => t.Name).Distinct().Count());
+        // 两种样式（标准/金额）× 四种纸样（A4/三等分/二等分/竖联）
+        Assert.Equal(4, builtins.Count(t => t.Category == "标准"));
+        Assert.Equal(4, builtins.Count(t => t.Category == "金额"));
+        Assert.Equal(2, builtins.Count(t => t.PaperKey == "A4"));
+        Assert.Equal(2, builtins.Count(t => t.PaperKey == "241x140"));
+        Assert.Equal(2, builtins.Count(t => t.PaperKey == "241x93"));
+        Assert.Equal(2, builtins.Count(t => t.PaperKey == "120x140"));
         Assert.All(builtins, t =>
         {
             Assert.False(string.IsNullOrWhiteSpace(t.Name));

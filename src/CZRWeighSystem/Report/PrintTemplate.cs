@@ -60,8 +60,8 @@ public class PrintTemplate
     /// <summary>可用占位符名（模板设计器"插入字段"用）</summary>
     public static readonly string[] PlaceholderNames =
     [
-        "公司名称", "流水号", "磅号", "车号", "货物", "发货单位", "收货单位", "规格", "批次",
-        "毛重", "皮重", "净重", "扣重", "实收", "单位",
+        "公司名称", "磅单抬头", "流水号", "磅号", "车号", "货物", "发货单位", "收货单位", "规格", "批次",
+        "毛重", "皮重", "净重", "扣重", "实收", "金额", "单位",
         "一次磅时间", "二次磅时间", "打印时间", "司磅员", "备注", "状态",
     ];
 
@@ -71,6 +71,8 @@ public class PrintTemplate
         var ph = new Dictionary<string, string>
         {
             ["公司名称"] = cfg.CompanyName,
+            // 磅单类型行（综合设置的磅单抬头，如"过磅单"；老软件的"皮重过磅单/毛重过磅单"即此处配置）
+            ["磅单抬头"] = string.IsNullOrWhiteSpace(cfg.SlipHeader) ? "过磅单" : cfg.SlipHeader,
             ["流水号"] = r.SerialNo,
             ["磅号"] = r.ScaleNo,
             ["车号"] = r.VehicleNo,
@@ -84,6 +86,8 @@ public class PrintTemplate
             ["净重"] = FmtKg(r.NetKg, cfg),
             ["扣重"] = FmtKg(r.DeductKg, cfg),
             ["实收"] = FmtKg(r.ReceivedKg, cfg),
+            // 应收金额（元）：按收费分段自动计算；未启用收费/未结算为 "-"
+            ["金额"] = r.AmountYuan.HasValue ? r.AmountYuan.Value.ToString("0.##") : "-",
             ["单位"] = cfg.Unit,
             ["一次磅时间"] = r.FirstTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-",
             ["二次磅时间"] = r.SecondTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-",
@@ -200,14 +204,28 @@ public class PrintTemplate
     /// <summary>是否为内置模板文件</summary>
     public static bool IsBuiltinFileName(string fileName) => fileName.StartsWith("内置_");
 
-    /// <summary>创建 5 种内置行业模板（每次调用返回新实例）。</summary>
+    /// <summary>创建内置模板：标准磅单 / 金额磅单 两种样式 × A4、三等分（241×140）、
+    /// 二等分（241×93）、竖联（120×140）四种纸样，版式仿老软件过磅单（公司名抬头 + 类型 +
+    /// 字段网格：车牌/品种/地主/司机/货主 + 毛皮净），金额磅单额外含应收金额行。</summary>
     public static List<PrintTemplate> CreateBuiltins()
     {
-        var list = new List<PrintTemplate> { Builtin通用A4(), Builtin物流运输(), Builtin仓储出入库(), Builtin矿山销售(), Builtin针打连单() };
+        var list = new List<PrintTemplate>();
+        foreach (var (paperKey, suffix, vertical, dense) in new[]
+        {
+            ("A4", "-A4", false, false),
+            ("241x140", "-三等分", false, false),
+            ("241x93", "-二等分", false, true),
+            ("120x140", "-竖联", true, false),
+        })
+        {
+            list.Add(BuildTicketTemplate($"标准磅单{suffix}", "标准", paperKey, vertical, dense, withAmount: false));
+            list.Add(BuildTicketTemplate($"金额磅单{suffix}", "金额", paperKey, vertical, dense, withAmount: true));
+        }
         return list;
     }
 
-    /// <summary>把缺失的内置模板写入 templates/ 目录（已存在的不覆盖，保留用户改动）。</summary>
+    /// <summary>把缺失的内置模板写入 templates/ 目录（已存在的不覆盖，保留用户改动）；
+    /// 同时清理已废弃的旧版内置模板，启用配置指向被清理文件时自动迁移到新标准模板。</summary>
     public static void EnsureBuiltinsOnDisk()
     {
         foreach (var t in CreateBuiltins())
@@ -216,163 +234,153 @@ public class PrintTemplate
             if (!File.Exists(PathOf(file)))
                 t.Save(file);
         }
-    }
 
-    /// <summary>内置模板 1：通用A4磅单（通用/A4）。</summary>
-    private static PrintTemplate Builtin通用A4()
-    {
-        var t = new PrintTemplate { Name = "通用A4磅单", Category = "通用", PaperKey = "A4" };
-        t.Elements.Add(new TextElement { Text = "磅  单", X = 75, Y = 10, W = 60, H = 12, FontPt = 20, Bold = true, Align = TextAlign.Center });
-        t.Elements.Add(new QRCodeElement { Content = "{流水号}", X = 168, Y = 8, W = 24, H = 24 });
-        t.Elements.Add(new TextElement { Text = "{公司名称}", X = 15, Y = 26, W = 90, H = 8 });
-        t.Elements.Add(new TextElement { Text = "No. {流水号}", X = 110, Y = 26, W = 55, H = 8, Align = TextAlign.Right });
-        t.Elements.Add(new TextElement { Text = "车号：{车号}", X = 15, Y = 42, W = 85, H = 8 });
-        t.Elements.Add(new TextElement { Text = "货物：{货物}", X = 105, Y = 42, W = 90, H = 8 });
-        t.Elements.Add(new TextElement { Text = "发货单位：{发货单位}", X = 15, Y = 52, W = 45, H = 8 });
-        t.Elements.Add(new TextElement { Text = "收货单位：{收货单位}", X = 65, Y = 52, W = 45, H = 8 });
-        t.Elements.Add(new TextElement { Text = "规格：{规格}", X = 110, Y = 52, W = 40, H = 8 });
-        t.Elements.Add(new TextElement { Text = "批次：{批次}", X = 152, Y = 52, W = 43, H = 8 });
-        t.Elements.Add(new RectElement { X = 15, Y = 64, W = 180, H = 18 });
-        t.Elements.Add(new TextElement { Text = "毛重：{毛重} {单位}", X = 20, Y = 68, W = 55, H = 8, FontPt = 13, Bold = true });
-        t.Elements.Add(new TextElement { Text = "皮重：{皮重} {单位}", X = 80, Y = 68, W = 55, H = 8, FontPt = 13, Bold = true });
-        t.Elements.Add(new TextElement { Text = "净重：{净重} {单位}", X = 140, Y = 68, W = 50, H = 8, FontPt = 13, Bold = true });
-        t.Elements.Add(new TextElement { Text = "扣重：{扣重} {单位}　实收：{实收} {单位}", X = 20, Y = 75.5f, W = 120, H = 5, FontPt = 10 });
-        t.Elements.Add(new TextElement { Text = "一次磅时间：{一次磅时间}", X = 15, Y = 88, W = 95, H = 8 });
-        t.Elements.Add(new TextElement { Text = "备注：{备注}", X = 112, Y = 88, W = 83, H = 8 });
-        t.Elements.Add(new TextElement { Text = "二次磅时间：{二次磅时间}", X = 15, Y = 97, W = 95, H = 8 });
-        t.Elements.Add(new TextElement { Text = "司磅员：{司磅员}", X = 112, Y = 97, W = 83, H = 8 });
-        t.Elements.Add(new LineElement { X = 15, Y = 110, W = 180, H = 0 });
-        t.Elements.Add(new SignatureElement { Labels = ["司磅员签字", "客户签字"], X = 15, Y = 114, W = 180, H = 10 });
-        t.Elements.Add(new TextElement { Text = "本单据由 CZR 智能称重管理系统生成", X = 15, Y = 128, W = 120, H = 5, FontPt = 8, ForeColor = "#999999" });
-        return t;
-    }
-
-    /// <summary>内置模板 2：物流运输磅单（物流/A4）。</summary>
-    private static PrintTemplate Builtin物流运输()
-    {
-        var t = new PrintTemplate { Name = "物流运输磅单", Category = "物流", PaperKey = "A4" };
-        t.Elements.Add(new TextElement { Text = "物流运输磅单", X = 45, Y = 10, W = 120, H = 12, FontPt = 20, Bold = true, Align = TextAlign.Center });
-        t.Elements.Add(new TextElement { Text = "{公司名称}", X = 15, Y = 26, W = 90, H = 8 });
-        t.Elements.Add(new TextElement { Text = "No. {流水号}", X = 120, Y = 26, W = 75, H = 8, Align = TextAlign.Right });
-        t.Elements.Add(new TableElement
+        // 旧版内置模板（2026-10 按老软件版式重做前）：文件删除，启用中则迁移
+        string[] legacy =
+        [
+            "内置_通用A4磅单.json", "内置_物流运输磅单.json", "内置_仓储出入库磅单.json",
+            "内置_矿山销售磅单.json", "内置_针打连单.json",
+        ];
+        bool currentRemoved = false;
+        foreach (var legacyFile in legacy)
         {
-            X = 15, Y = 38, W = 180, RowH = 8,
-            Columns =
-            [
-                new() { Header = "车号", Text = "{车号}", Width = 50 },
-                new() { Header = "货物", Text = "{货物}", Width = 50 },
-                new() { Header = "规格", Text = "{规格}", Width = 40 },
-                new() { Header = "批次", Text = "{批次}", Width = 40 },
-            ],
-        });
-        t.Elements.Add(new QRCodeElement { Content = "{流水号}", X = 172, Y = 60, W = 23, H = 23 });
-        t.Elements.Add(new TextElement { Text = "发货单位：{发货单位}", X = 15, Y = 58, W = 90, H = 8 });
-        t.Elements.Add(new TextElement { Text = "收货单位：{收货单位}", X = 15, Y = 66, W = 90, H = 8 });
-        t.Elements.Add(new RectElement { X = 15, Y = 78, W = 180, H = 18 });
-        t.Elements.Add(new TextElement { Text = "毛重：{毛重:F1} {单位}", X = 20, Y = 82, W = 55, H = 8, FontPt = 13, Bold = true });
-        t.Elements.Add(new TextElement { Text = "皮重：{皮重:F1} {单位}", X = 80, Y = 82, W = 55, H = 8, FontPt = 13, Bold = true });
-        t.Elements.Add(new TextElement { Text = "净重：{净重:F1} {单位}", X = 140, Y = 82, W = 50, H = 8, FontPt = 13, Bold = true });
-        t.Elements.Add(new TextElement { Text = "扣重：{扣重} {单位}　实收：{实收:F1} {单位}", X = 20, Y = 89.5f, W = 130, H = 5, FontPt = 10 });
-        t.Elements.Add(new TextElement { Text = "一次磅时间：{一次磅时间}", X = 15, Y = 102, W = 95, H = 8 });
-        t.Elements.Add(new TextElement { Text = "二次磅时间：{二次磅时间}", X = 15, Y = 111, W = 95, H = 8 });
-        t.Elements.Add(new TextElement { Text = "司磅员：{司磅员}", X = 112, Y = 102, W = 55, H = 8 });
-        t.Elements.Add(new BarcodeElement { Content = "{流水号}", X = 15, Y = 124, W = 80, H = 14 });
-        t.Elements.Add(new SignatureElement { Labels = ["司磅员", "司机", "客户签字"], X = 15, Y = 144, W = 180, H = 10 });
-        t.Elements.Add(new TextElement { Text = "本单据由 CZR 智能称重管理系统生成", X = 15, Y = 158, W = 120, H = 5, FontPt = 8, ForeColor = "#999999" });
+            string path = PathOf(legacyFile);
+            if (!File.Exists(path)) continue;
+            currentRemoved |= AppConfig.Current.PrintTemplateFile == legacyFile;
+            try { File.Delete(path); }
+            catch (Exception ex) { Log.Error($"清理旧内置模板失败：{legacyFile}", ex); }
+        }
+        if (currentRemoved)
+        {
+            AppConfig.Current.PrintTemplateFile = BuiltinFileName(CreateBuiltins()[1]);   // 标准磅单-三等分
+            AppConfig.Current.Save();
+            Log.Info($"原启用模板已废弃，自动切换为：{AppConfig.Current.PrintTemplateFile}");
+        }
+    }
+
+    /// <summary>
+    /// 生成过磅单版式模板（仿老软件）：
+    /// 公司名大字抬头 + 磅单类型行 + 日期/流水号 + 字段网格（车牌、品种、地主姓名/电话、
+    /// 司机电话、货主姓名、毛皮净、金额）+ 磅重时间 + 签字栏。
+    /// withAmount：金额磅单（含金额行，替代标准版的部分字段位）；vertical：竖联竖版布局；
+    /// dense：二等分 241×93 紧凑布局。
+    /// </summary>
+    private static PrintTemplate BuildTicketTemplate(string name, string category, string paperKey,
+        bool vertical, bool dense, bool withAmount)
+    {
+        var t = new PrintTemplate { Name = name, Category = category, PaperKey = paperKey };
+        var (paperW, paperH) = PoundTicketPrinter.PaperSizeMm(paperKey);
+
+        if (vertical)
+        {
+            // ---- 竖联（120×140 竖版带孔纸）：字段单列逐行排布 ----
+            const float x0 = 4f, w = 112f;
+            t.Elements.Add(new TextElement { Text = "{公司名称}", X = x0, Y = 5, W = w, H = 6, FontPt = 12, Bold = true, Align = TextAlign.Center });
+            t.Elements.Add(new TextElement { Text = "{磅单抬头}", X = x0, Y = 12.5f, W = w, H = 5, FontPt = 10, Align = TextAlign.Center });
+            t.Elements.Add(new TextElement { Text = "No. {流水号}", X = x0, Y = 18.5f, W = w, H = 5, FontPt = 9, Align = TextAlign.Center });
+            t.Elements.Add(new TextElement { Text = "{打印时间:yyyy 年 M 月 d 日}", X = x0, Y = 24, W = w, H = 5, FontPt = 8, Align = TextAlign.Center });
+
+            // 字段表：10 行（标签列 28mm + 值列 84mm）
+            var rows = new List<(string Label, string Text)>
+            {
+                ("车牌号码", "{车号}"), ("品种", "{货物}"),
+                ("地主姓名", "{地主姓名}"), ("地主电话", "{地主电话}"),
+                ("司机电话", "{司机电话}"), ("货主姓名", "{货主姓名}"),
+                ("毛重", "{毛重} {单位}"), ("皮重", "{皮重} {单位}"), ("净重", "{净重} {单位}"),
+                (withAmount ? "金额(元)" : "状态", withAmount ? "{金额}" : "{状态}"),
+            };
+            const float gy0 = 30f, rowH0 = 8f, labelW0 = 30f;
+            t.Elements.Add(new RectElement { X = x0, Y = gy0, W = w, H = rowH0 * rows.Count });
+            for (int i = 1; i < rows.Count; i++)
+                t.Elements.Add(new LineElement { X = x0, Y = gy0 + i * rowH0, W = w, H = 0 });
+            t.Elements.Add(new LineElement { X = x0 + labelW0, Y = gy0, W = 0, H = rowH0 * rows.Count });
+            for (int i = 0; i < rows.Count; i++)
+            {
+                float ry = gy0 + i * rowH0;
+                t.Elements.Add(new TextElement { Text = rows[i].Label, X = x0 + 2, Y = ry + 2, W = labelW0 - 4, H = 5, FontPt = 9, Bold = true });
+                t.Elements.Add(new TextElement { Text = rows[i].Text, X = x0 + labelW0 + 2, Y = ry + 2, W = w - labelW0 - 4, H = 5, FontPt = 9 });
+            }
+
+            t.Elements.Add(new TextElement { Text = "司磅员：{司磅员}", X = x0, Y = 112.5f, W = w, H = 5, FontPt = 9 });
+            t.Elements.Add(new SignatureElement { Labels = ["司机签字", "客户签字"], X = x0, Y = 119, W = w, H = 9 });
+            t.Elements.Add(new TextElement { Text = "*竖联磅单请使用 120×140mm 带孔磅单纸", X = x0, Y = 130.5f, W = w, H = 4, FontPt = 6.5f, ForeColor = "#888888" });
+            _ = paperH;   // 纸高仅用于布局校验（元素坐标已控制在纸张内）
+            return t;
+        }
+
+        // ---- 横版（241×140 三等分 / 241×93 二等分 / A4 整版）----
+        float x = 8f, contentW = paperW - 16f;
+        t.Elements.Add(new TextElement { Text = "{公司名称}", X = x, Y = dense ? 3 : 5, W = contentW, H = dense ? 7f : 8, FontPt = dense ? 14 : 16, Bold = true, Align = TextAlign.Center });
+        t.Elements.Add(new TextElement { Text = "{磅单抬头}", X = x, Y = dense ? 10.5f : 15, W = contentW, H = dense ? 6f : 7, FontPt = dense ? 11 : 14, Align = TextAlign.Center });
+        t.Elements.Add(new TextElement { Text = "{打印时间:yyyy 年 M 月 d 日}", X = x, Y = dense ? 17.5f : 24.5f, W = contentW / 2, H = 5, FontPt = 9 });
+        t.Elements.Add(new TextElement { Text = "No. {流水号}", X = x + contentW / 2, Y = dense ? 17.5f : 24.5f, W = contentW / 2, H = 5, FontPt = 9, Align = TextAlign.Right });
+
+        // 字段网格：6 行 × [标签|值|标签|值]；金额磅单把品种/司磅员/备注位让给金额与状态
+        var left = withAmount
+            ? new[] { ("车牌号码", "{车号}"), ("地主姓名", "{地主姓名}"), ("地主电话", "{地主电话}"),
+                      ("司机电话", "{司机电话}"), ("货主姓名", "{货主姓名}"), ("司磅员", "{司磅员}") }
+            : new[] { ("车牌号码", "{车号}"), ("地主姓名", "{地主姓名}"), ("地主电话", "{地主电话}"),
+                      ("司机电话", "{司机电话}"), ("货主姓名", "{货主姓名}"), ("备注", "{备注}") };
+        var right = withAmount
+            ? new[] { ("毛重", "{毛重} {单位}"), ("皮重", "{皮重} {单位}"), ("净重", "{净重} {单位}"),
+                      ("金额(元)", "{金额}"), ("品种", "{货物}"), ("状态", "{状态}") }
+            : new[] { ("毛重", "{毛重} {单位}"), ("皮重", "{皮重} {单位}"), ("净重", "{净重} {单位}"),
+                      ("品种", "{货物}"), ("司磅员", "{司磅员}"), ("", "") };
+
+        float gy = dense ? 24f : 32f;
+        float rowH = dense ? 8.5f : 11f;
+        float labelW = contentW * 0.19f, valueW = contentW * 0.31f;
+        float x1 = x + labelW, x2 = x1 + valueW, x3 = x2 + labelW;
+        t.Elements.Add(new RectElement { X = x, Y = gy, W = contentW, H = rowH * 6 });
+        for (int i = 1; i < 6; i++)
+            t.Elements.Add(new LineElement { X = x, Y = gy + i * rowH, W = contentW, H = 0 });
+        foreach (var lx in new[] { x1, x2, x3 })
+            t.Elements.Add(new LineElement { X = lx, Y = gy, W = 0, H = rowH * 6 });
+        float valueOffset = dense ? 1.2f : 2.2f;
+        for (int i = 0; i < 6; i++)
+        {
+            float ry = gy + i * rowH + valueOffset;
+            t.Elements.Add(new TextElement { Text = left[i].Item1, X = x + 2, Y = ry, W = labelW - 4, H = 5, FontPt = 9, Bold = true });
+            t.Elements.Add(new TextElement { Text = left[i].Item2, X = x1 + 2, Y = ry, W = valueW - 4, H = 5, FontPt = 10 });
+            if (right[i].Item1.Length == 0) continue;
+            t.Elements.Add(new TextElement { Text = right[i].Item1, X = x2 + 2, Y = ry, W = labelW - 4, H = 5, FontPt = 9, Bold = true });
+            t.Elements.Add(new TextElement { Text = right[i].Item2, X = x3 + 2, Y = ry, W = valueW - 4, H = 5, FontPt = 10 });
+        }
+
+        // 网格下方：磅重时间行（二等分高度有限，二次磅时间与司磅员同行）
+        float below = gy + rowH * 6 + 1.5f;
+        if (dense)
+        {
+            t.Elements.Add(new TextElement { Text = "一次磅：{一次磅时间:HH:mm:ss}　二次磅：{二次磅时间:HH:mm:ss}", X = x, Y = below, W = contentW, H = 5, FontPt = 8 });
+            t.Elements.Add(new TextElement { Text = "司磅员：{司磅员}", X = x, Y = below + 6.5f, W = contentW, H = 5, FontPt = 8 });
+        }
+        else
+        {
+            t.Elements.Add(new TextElement { Text = "一次磅时间：{一次磅时间}", X = x, Y = below, W = contentW / 2, H = 5, FontPt = 9 });
+            t.Elements.Add(new TextElement { Text = "二次磅时间：{二次磅时间}", X = x + contentW / 2, Y = below, W = contentW / 2, H = 5, FontPt = 9, Align = TextAlign.Right });
+            t.Elements.Add(new SignatureElement { Labels = ["司机签字", "客户签字"], X = x, Y = below + 7, W = contentW, H = 10 });
+            t.Elements.Add(new TextElement { Text = "*金额由收费分段自动计算（金额磅单）；竖联磅单请使用 120×140mm 带孔磅单纸",
+                X = x, Y = below + 19, W = contentW, H = 4, FontPt = 6.5f, ForeColor = "#888888" });
+
+            // A4 整版补充：二维码、状态汇总表与流水号条码（其余纸样空间有限不放）
+            if (paperKey == "A4")
+            {
+                t.Elements.Add(new QRCodeElement { Content = "{流水号}", X = x + contentW - 22, Y = 4, W = 22, H = 22 });
+                t.Elements.Add(new TableElement
+                {
+                    X = x, Y = below + 30, W = contentW, RowH = 7,
+                    Columns =
+                    [
+                        new() { Header = "状态", Text = "{状态}", Width = 60 },
+                        new() { Header = "打印时间", Text = "{打印时间:yyyy-MM-dd HH:mm}", Width = 80 },
+                    ],
+                });
+                t.Elements.Add(new BarcodeElement { Content = "{流水号}", X = x, Y = below + 50, W = 90, H = 14 });
+            }
+        }
         return t;
     }
 
-    /// <summary>内置模板 3：仓储出入库磅单（仓储/A4）。</summary>
-    private static PrintTemplate Builtin仓储出入库()
-    {
-        var t = new PrintTemplate { Name = "仓储出入库磅单", Category = "仓储", PaperKey = "A4" };
-        t.Elements.Add(new TextElement { Text = "仓储出入库磅单", X = 45, Y = 10, W = 120, H = 12, FontPt = 20, Bold = true, Align = TextAlign.Center });
-        t.Elements.Add(new TextElement { Text = "{公司名称}", X = 15, Y = 26, W = 90, H = 8 });
-        t.Elements.Add(new TextElement { Text = "打印时间：{打印时间:yyyy-MM-dd HH:mm}", X = 15, Y = 34, W = 100, H = 6 });
-        t.Elements.Add(new TextElement { Text = "No. {流水号}", X = 120, Y = 26, W = 75, H = 8, Align = TextAlign.Right });
-        t.Elements.Add(new TableElement
-        {
-            X = 15, Y = 44, W = 180, RowH = 8,
-            Columns =
-            [
-                new() { Header = "车号", Text = "{车号}", Width = 35 },
-                new() { Header = "货物", Text = "{货物}", Width = 30 },
-                new() { Header = "规格", Text = "{规格}", Width = 25 },
-                new() { Header = "毛重（{单位}）", Text = "{毛重:F1}", Width = 30 },
-                new() { Header = "皮重（{单位}）", Text = "{皮重:F1}", Width = 30 },
-                new() { Header = "净重（{单位}）", Text = "{净重:F1}", Width = 30 },
-            ],
-        });
-        t.Elements.Add(new TextElement { Text = "扣重：{扣重} {单位}　实收：{实收:F1} {单位}", X = 15, Y = 64, W = 120, H = 8, FontPt = 11 });
-        t.Elements.Add(new RectElement { X = 15, Y = 76, W = 180, H = 16 });
-        t.Elements.Add(new TextElement { Text = "备注：{备注}", X = 20, Y = 82, W = 170, H = 6 });
-        t.Elements.Add(new BarcodeElement { Content = "{流水号}", X = 15, Y = 98, W = 80, H = 14 });
-        t.Elements.Add(new SignatureElement { Labels = ["仓管员", "司机", "库管"], X = 15, Y = 118, W = 180, H = 10 });
-        t.Elements.Add(new TextElement { Text = "本单据由 CZR 智能称重管理系统生成", X = 15, Y = 132, W = 120, H = 5, FontPt = 8, ForeColor = "#999999" });
-        return t;
-    }
-
-    /// <summary>内置模板 4：矿山销售磅单（矿山/A4）。</summary>
-    private static PrintTemplate Builtin矿山销售()
-    {
-        var t = new PrintTemplate { Name = "矿山销售磅单", Category = "矿山", PaperKey = "A4" };
-        t.Elements.Add(new TextElement { Text = "矿山销售磅单", X = 45, Y = 10, W = 120, H = 12, FontPt = 20, Bold = true, Align = TextAlign.Center });
-        t.Elements.Add(new TextElement { Text = "矿点：{磅号}", X = 15, Y = 26, W = 60, H = 8 });
-        t.Elements.Add(new TextElement { Text = "No. {流水号}", X = 120, Y = 26, W = 75, H = 8, Align = TextAlign.Right });
-        t.Elements.Add(new TextElement { Text = "车号：{车号}", X = 15, Y = 38, W = 60, H = 8 });
-        t.Elements.Add(new TextElement { Text = "货物：{货物}", X = 80, Y = 38, W = 60, H = 8 });
-        t.Elements.Add(new TextElement { Text = "规格：{规格}", X = 145, Y = 38, W = 50, H = 8 });
-        t.Elements.Add(new TableElement
-        {
-            X = 15, Y = 50, W = 180, RowH = 8,
-            Columns =
-            [
-                new() { Header = "发货单位", Text = "{发货单位}", Width = 60 },
-                new() { Header = "收货单位", Text = "{收货单位}", Width = 60 },
-                new() { Header = "批次", Text = "{批次}", Width = 60 },
-            ],
-        });
-        t.Elements.Add(new TextElement { Text = "净重：{净重:F1} {单位}", X = 15, Y = 72, W = 180, H = 14, FontPt = 22, Bold = true, Align = TextAlign.Center, ForeColor = "#CC0000" });
-        t.Elements.Add(new TextElement { Text = "毛重：{毛重:F1} {单位}　　皮重：{皮重:F1} {单位}", X = 15, Y = 90, W = 180, H = 8, FontPt = 11, Align = TextAlign.Center });
-        t.Elements.Add(new TextElement { Text = "扣重：{扣重} {单位}　　实收：{实收:F1} {单位}", X = 15, Y = 99, W = 180, H = 8, FontPt = 11, Align = TextAlign.Center });
-        t.Elements.Add(new TextElement { Text = "一次磅时间：{一次磅时间}", X = 15, Y = 112, W = 95, H = 8 });
-        t.Elements.Add(new TextElement { Text = "二次磅时间：{二次磅时间}", X = 15, Y = 121, W = 95, H = 8 });
-        t.Elements.Add(new BarcodeElement { Content = "{流水号}", X = 118, Y = 112, W = 77, H = 14 });
-        t.Elements.Add(new SignatureElement { Labels = ["司磅员", "购货方签字"], X = 15, Y = 134, W = 180, H = 10 });
-        t.Elements.Add(new TextElement { Text = "备注：{备注}", X = 15, Y = 148, W = 170, H = 8 });
-        return t;
-    }
-
-    /// <summary>内置模板 5：针打连单（物流/241x140，紧凑两列版式）。</summary>
-    private static PrintTemplate Builtin针打连单()
-    {
-        var t = new PrintTemplate { Name = "针打连单", Category = "物流", PaperKey = "241x140" };
-        t.Elements.Add(new BarcodeElement { Content = "{流水号}", X = 10, Y = 8, W = 60, H = 12 });
-        t.Elements.Add(new TextElement { Text = "磅  单", X = 90, Y = 6, W = 60, H = 10, FontPt = 16, Bold = true, Align = TextAlign.Center });
-        t.Elements.Add(new TextElement { Text = "No. {流水号}", X = 160, Y = 8, W = 71, H = 8, Align = TextAlign.Right });
-        t.Elements.Add(new TextElement { Text = "车号：{车号}", X = 10, Y = 26, W = 72, H = 7 });
-        t.Elements.Add(new TextElement { Text = "货物：{货物}", X = 85, Y = 26, W = 72, H = 7 });
-        t.Elements.Add(new TextElement { Text = "规格：{规格}", X = 160, Y = 26, W = 71, H = 7 });
-        t.Elements.Add(new TextElement { Text = "毛重：{毛重} {单位}", X = 10, Y = 36, W = 72, H = 8, FontPt = 12, Bold = true });
-        t.Elements.Add(new TextElement { Text = "皮重：{皮重} {单位}", X = 85, Y = 36, W = 72, H = 8, FontPt = 12, Bold = true });
-        t.Elements.Add(new TextElement { Text = "净重：{净重} {单位}", X = 160, Y = 36, W = 71, H = 8, FontPt = 12, Bold = true });
-        t.Elements.Add(new TextElement { Text = "扣重：{扣重} {单位}", X = 10, Y = 47, W = 72, H = 7 });
-        t.Elements.Add(new TextElement { Text = "实收：{实收} {单位}", X = 85, Y = 47, W = 72, H = 7 });
-        t.Elements.Add(new TableElement
-        {
-            X = 10, Y = 57, W = 221, RowH = 7,
-            Columns =
-            [
-                new() { Header = "发货单位", Text = "{发货单位}", Width = 110 },
-                new() { Header = "收货单位", Text = "{收货单位}", Width = 111 },
-            ],
-        });
-        t.Elements.Add(new TextElement { Text = "一次磅时间：{一次磅时间}", X = 10, Y = 74, W = 110, H = 7 });
-        t.Elements.Add(new TextElement { Text = "二次磅时间：{二次磅时间}", X = 10, Y = 82, W = 110, H = 7 });
-        t.Elements.Add(new SignatureElement { Labels = ["司磅员", "客户签字"], X = 10, Y = 92, W = 221, H = 8 });
-        t.Elements.Add(new TextElement { Text = "打印时间：{打印时间}", X = 10, Y = 104, W = 110, H = 7 });
-        return t;
-    }
 }
 
 // ==================== 元素模型 ====================

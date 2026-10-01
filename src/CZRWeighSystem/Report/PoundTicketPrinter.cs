@@ -14,8 +14,9 @@ public static class PoundTicketPrinter
     public static readonly (string Key, string Name, int W, int H)[] Papers =
     [
         ("A4", "A4（210×297mm）", 827, 1169),
-        ("241x140", "针打 241×140mm", 949, 551),
-        ("241x93", "针打 241×93mm", 949, 366),
+        ("241x140", "针打 241×140mm（三等分）", 949, 551),
+        ("241x93", "针打 241×93mm（二等分）", 949, 366),
+        ("120x140", "竖联带孔纸 120×140mm", 472, 551),
     ];
 
     /// <summary>纸张毫米尺寸（Papers 存储为 0.01 英寸，模板元素坐标为毫米；未知 key 回退第一项）。</summary>
