@@ -13,8 +13,12 @@ namespace CZRWeighSystem.UI;
 public class WeighEntryDialog : Form
 {
     private readonly WeighManager _manager;
+    private readonly Database.WeighRecordRepository _plateRepo = new();
     private bool _isTare;                    // 可经"切换"按钮在皮/毛模式间转换
     private readonly AppConfig _cfg = AppConfig.Current;
+
+    /// <summary>当天已保存过（未作废）的记录：车牌自动补全候选 + 选中后回填上次信息。</summary>
+    private List<WeighRecord> _todayRecords = [];
 
     // 两种模式的背景色：皮重=蓝、毛重=绿，一眼可辨当前在哪个流程
     private static readonly Color TareBack = Color.FromArgb(0, 102, 164);
@@ -74,9 +78,20 @@ public class WeighEntryDialog : Form
         BuildTicket();
         BuildWeightPanel();
 
+        // 当天已保存车牌：自动补全候选（输入一半时下拉出现），选中后回填上次填写的信息
+        _todayRecords = _plateRepo.Query(DateTime.Today, null, "", "", "", "")
+            .Where(r => r.Status != "已作废").ToList();
+        RefreshPlateSuggest();
+
+        _txtVehicle.TextChanged += (_, _) => { TryAutoFill(); UpdateWeight(); };   // 车号变化：回填上次信息 + 刷新配对
+        _cboPrefix.SelectedIndexChanged += (_, _) =>
+        {
+            RefreshPlateSuggest();             // 省份变化 → 补全候选按新省份重建
+            TryAutoFill();
+            UpdateWeight();
+        };
+        // 预填放在事件挂接之后：带车号进入时同样触发回填上次信息
         ApplyPrefill(prefillVehicle);
-        _txtVehicle.TextChanged += (_, _) => UpdateWeight();   // 车号变化即时刷新配对信息
-        _cboPrefix.SelectedIndexChanged += (_, _) => UpdateWeight();   // 省份变化 → 完整车号变化
         UpdateWeight();
 
         _tick.Tick += (_, _) => UpdateWeight();   // 实时重量/净重预览随仪表数据刷新
@@ -182,7 +197,7 @@ public class WeighEntryDialog : Form
             Margin = new Padding(6, 7, 6, 7),
         };
 
-        // 行1：车牌号码（省份简称下拉 + 手动输入 + 软键盘）｜ 毛重
+        // 行1：车牌号码（省份简称下拉 + 编号手输，带当天历史自动补全）｜ 毛重
         grid.Controls.Add(Head("车牌号码"), 0, 0);
         var platePanel = new Panel { Dock = DockStyle.Fill, BackColor = Color.White, Margin = new Padding(2, 7, 2, 7) };
         _cboPrefix = new ComboBox
@@ -201,28 +216,14 @@ public class WeighEntryDialog : Form
         _txtVehicle = new TextBox
         {
             Location = new Point(56, 1),
-            Size = new Size(114, 34),
+            Size = new Size(203, 34),
             Font = new Font("Microsoft YaHei UI", 12F),
-        };
-        var btnVehicle = new Button
-        {
-            Text = "选择车牌",
-            Location = new Point(170, 0),
-            Size = new Size(84, 36),
-            FlatStyle = FlatStyle.Flat,
-            BackColor = Color.FromArgb(0, 122, 204),
-            ForeColor = Color.White,
-            Font = new Font("Microsoft YaHei UI", 9F),
-        };
-        btnVehicle.Click += (_, _) =>
-        {
-            using var f = new VehiclePadDialog();
-            if (f.ShowDialog(this) != DialogResult.OK || f.ResultVehicle == null) return;
-            ApplyPrefill(f.ResultVehicle);   // 软键盘给的是完整车牌：拆省份简称与编号
+            // 当天保存过的车牌：输入一半时在下拉中出现（按编号前缀建议）
+            AutoCompleteMode = AutoCompleteMode.SuggestAppend,
+            AutoCompleteSource = AutoCompleteSource.CustomSource,
         };
         platePanel.Controls.Add(_cboPrefix);
         platePanel.Controls.Add(_txtVehicle);
-        platePanel.Controls.Add(btnVehicle);
         grid.Controls.Add(platePanel, 1, 0);
         grid.Controls.Add(Head("毛重"), 2, 0);
         _lblGrossCell = ValueCell();
@@ -398,7 +399,7 @@ public class WeighEntryDialog : Form
     }
 
     /// <summary>
-    /// 填入完整车牌（预填车号或软键盘结果）：首位是省份简称时拆到省份下拉，
+    /// 填入完整车牌（预填车号）：首位是省份简称时拆到省份下拉，
     /// 其余进编号输入框；无省份简称时整体进输入框。
     /// </summary>
     private void ApplyPrefill(string? plate)
@@ -414,6 +415,43 @@ public class WeighEntryDialog : Form
         {
             _txtVehicle.Text = plate;
         }
+    }
+
+    /// <summary>
+    /// 重建车牌自动补全候选：当天已保存记录中与当前选中省份匹配的车牌，
+    /// 去掉省份简称取编号部分去重后作为建议项（输入一半即在下拉中出现）。
+    /// </summary>
+    private void RefreshPlateSuggest()
+    {
+        string prefix = _cboPrefix.SelectedItem?.ToString() ?? "";
+        var src = new AutoCompleteStringCollection();
+        src.AddRange(_todayRecords
+            .Where(r => prefix.Length == 0 || r.VehicleNo.StartsWith(prefix, StringComparison.Ordinal))
+            .Select(r => r.VehicleNo.StartsWith(prefix, StringComparison.Ordinal)
+                ? r.VehicleNo[prefix.Length..]
+                : r.VehicleNo)
+            .Distinct()
+            .ToArray());
+        _txtVehicle.AutoCompleteCustomSource = src;
+    }
+
+    /// <summary>
+    /// 完整车号命中当天已保存记录时，自动回填上次填写的信息
+    /// （品种 + 地主姓名/地主电话/司机电话/货主姓名，取该车牌最新一条）。
+    /// </summary>
+    private void TryAutoFill()
+    {
+        string no = ComposeVehicleNo();
+        if (no.Length == 0) return;
+        var hit = _todayRecords.FirstOrDefault(r => r.VehicleNo == no);
+        if (hit == null) return;
+
+        var ext = hit.ParseExt();
+        _txtVariety.Text = hit.Goods ?? "";
+        _txtOwner.Text = ext.GetValueOrDefault("地主姓名", "");
+        _txtOwnerPhone.Text = ext.GetValueOrDefault("地主电话", "");
+        _txtDriverPhone.Text = ext.GetValueOrDefault("司机电话", "");
+        _txtCargoOwner.Text = ext.GetValueOrDefault("货主姓名", "");
     }
 
     /// <summary>

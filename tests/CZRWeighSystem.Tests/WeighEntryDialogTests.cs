@@ -285,6 +285,45 @@ public class WeighEntryDialogTests
     }
 
     [Fact]
+    public void 当天保存过的车牌_输入完整后自动回填上次信息并提供建议()
+    {
+        string plate = "黑T" + Guid.NewGuid().ToString("N")[..4];   // 黑T + 4 位编号，唯一
+        _repo.InsertFirstWeigh(new WeighRecord
+        {
+            ScaleNo = "85",
+            VehicleNo = plate,
+            Goods = "玉米",
+            ExtJson = WeighRecord.ExtToJson(new Dictionary<string, string>
+            {
+                ["地主姓名"] = "张三",
+                ["地主电话"] = "13800000000",
+                ["货主姓名"] = "李四",
+            }),
+        });
+
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+            var cbo = Fld<ComboBox>(dlg, "_cboPrefix");
+            cbo.SelectedIndex = cbo.Items.IndexOf("黑");            // 前缀与已存车牌一致
+
+            // 编号输入一半时：建议列表应包含该编号（去掉省份部分）
+            Fld<TextBox>(dlg, "_txtVehicle").Text = plate[1..3];    // 输入前 2 位
+            var src = Fld<TextBox>(dlg, "_txtVehicle").AutoCompleteCustomSource;
+            Assert.Contains(plate[1..], src.Cast<string>());
+
+            // 输入完整编号 → 组合车号命中当天记录 → 自动回填上次填写的信息
+            Fld<TextBox>(dlg, "_txtVehicle").Text = plate[1..];
+            Assert.Equal("玉米", Fld<TextBox>(dlg, "_txtVariety").Text);
+            Assert.Equal("张三", Fld<TextBox>(dlg, "_txtOwner").Text);
+            Assert.Equal("13800000000", Fld<TextBox>(dlg, "_txtOwnerPhone").Text);
+            Assert.Equal("李四", Fld<TextBox>(dlg, "_txtCargoOwner").Text);
+        });
+        manager.Dispose();
+    }
+
+    [Fact]
     public void 切换按钮_背景色随皮毛模式变化()
     {
         int tareBack = ((Color)typeof(WeighEntryDialog)
