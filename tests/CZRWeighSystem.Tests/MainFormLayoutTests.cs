@@ -290,10 +290,12 @@ public class MainFormLayoutTests
     }
 
     [Fact]
-    public void 底部记录列表_二十列完整保留_含金额与全部业务字段()
+    public void 底部记录列表_十六列与弹窗字段一致_含金额()
     {
         var s = BuildAndMeasure();
-        Assert.Equal(20, s.CaptureColumnCount);
+        // 字段与「空车去皮/重车过磅」录入弹窗一致：流水号/日期/车牌/品种/地主姓名/电话/
+        // 司机电话/货主姓名/毛/皮/净/金额/毛重时间/皮重时间/司磅员/状态
+        Assert.Equal(16, s.CaptureColumnCount);
         Assert.Equal("流水号", s.FirstColumnHeader);
         Assert.Equal("状态", s.LastColumnHeader);   // 金额等列插在皮重时间与状态之间
     }

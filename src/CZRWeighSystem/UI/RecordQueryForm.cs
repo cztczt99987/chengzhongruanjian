@@ -130,7 +130,8 @@ public class RecordQueryForm : Form
         _grid = new DataGridView
         {
             Location = new Point(12, 118),
-            Size = new Size(1210, 480),
+            // 高度留出底部两行：统计文字行（y≈578）+ 按钮行（y=608）
+            Size = new Size(1210, 444),
             Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
             ReadOnly = true,
             AllowUserToAddRows = false,
@@ -143,14 +144,20 @@ public class RecordQueryForm : Form
             BackgroundColor = Color.White,
         };
 
+        // 固定列与「空车去皮/重车过磅」录入弹窗字段一致：车牌、品种、地主姓名/电话、
+        // 司机电话、货主姓名 + 结算结果；AllCells 模式按内容自适应列宽（完整展示），
+        // 列总宽超出窗体时自动出现横向滚动条
         _grid.Columns.Add("SerialNo", "流水号");
-        _grid.Columns.Add("VehicleNo", "车号");
-        _grid.Columns.Add("Goods", "货物");
-        _grid.Columns.Add("Sender", "发货单位");
-        _grid.Columns.Add("Receiver", "收货单位");
+        _grid.Columns.Add("VehicleNo", "车牌号码");
+        _grid.Columns.Add("Goods", "品种");
+        _grid.Columns.Add("Owner", "地主姓名");
+        _grid.Columns.Add("OwnerPhone", "地主电话");
+        _grid.Columns.Add("DriverPhone", "司机电话");
+        _grid.Columns.Add("CargoOwner", "货主姓名");
         _grid.Columns.Add("Gross", $"毛重({_cfg.Unit})");
         _grid.Columns.Add("Tare", $"皮重({_cfg.Unit})");
         _grid.Columns.Add("Net", $"净重({_cfg.Unit})");
+        _grid.Columns.Add("AmountYuan", "金额(元)");
         _grid.Columns.Add("FirstTime", "一次磅时间");
         _grid.Columns.Add("SecondTime", "二次磅时间");
         _grid.Columns.Add("Operator", "司磅员");
@@ -165,16 +172,15 @@ public class RecordQueryForm : Form
     // ---------- 底部合计与导出 ----------
     private void BuildBottom()
     {
-        // 合计标签：放在底部居中偏左（避开左侧管理按钮区与右侧导出按钮区）
+        // 合计标签：独占按钮行上方一行（左对齐、不限宽），完整显示条数与净重合计
         _lblSummary = new Label
         {
             Text = "共 0 条",
             AutoSize = true,
-            Location = new Point(735, 616),
-            Anchor = AnchorStyles.Bottom,
+            Location = new Point(20, 578),
+            Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
             Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Bold),
-            MaximumSize = new Size(130, 0),
-            AutoEllipsis = true,
+            ForeColor = Color.FromArgb(0, 102, 204),
         };
 
         var btnExport = new Button
@@ -488,18 +494,21 @@ public class RecordQueryForm : Form
                 r.SerialNo,
                 r.VehicleNo,
                 r.Goods ?? "",
-                r.SenderCompany ?? "",
-                r.ReceiverCompany ?? "",
+                ext.GetValueOrDefault("地主姓名", ""),
+                ext.GetValueOrDefault("地主电话", ""),
+                ext.GetValueOrDefault("司机电话", ""),
+                ext.GetValueOrDefault("货主姓名", ""),
                 Fmt(r.GrossKg),
                 Fmt(r.TareKg),
                 Fmt(r.NetKg),
+                r.AmountYuan?.ToString("0.##") ?? "",
                 r.FirstTime?.ToString("yyyy-MM-dd HH:mm") ?? "",
                 r.SecondTime?.ToString("yyyy-MM-dd HH:mm") ?? "",
                 r.Operator ?? "",
                 r.Status);
-            // 自定义字段动态列取值
+            // 自定义字段动态列取值（固定列 15 个，动态列从索引 15 起）
             for (int k = 0; k < extFields.Count; k++)
-                _grid.Rows[i].Cells[12 + k].Value = ext.TryGetValue(extFields[k].Name, out var v) ? v : "";
+                _grid.Rows[i].Cells[15 + k].Value = ext.TryGetValue(extFields[k].Name, out var v) ? v : "";
             _grid.Rows[i].Tag = r;   // 行 Tag 保存完整记录，供补打使用
         }
 
