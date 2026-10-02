@@ -126,17 +126,18 @@ public class Code39Tests
 public class BuiltinTemplatesTests
 {
     [Fact]
-    public void 内置模板共8种_标准与金额各四种纸样且名称唯一()
+    public void 内置模板共9种_标准与金额各四种纸样且名称唯一()
     {
         var builtins = PrintTemplate.CreateBuiltins();
-        Assert.Equal(8, builtins.Count);
+        Assert.Equal(9, builtins.Count);
         Assert.Equal(builtins.Count, builtins.Select(t => t.Name).Distinct().Count());
-        // 两种样式（标准/金额）× 四种纸样（A4/三等分/二等分/竖联）
+        // 标准磅单/金额磅单 × 四种纸样（A4/二等分/三等分/竖联）+ 公平计量磅单（三等分）
         Assert.Equal(4, builtins.Count(t => t.Category == "标准"));
         Assert.Equal(4, builtins.Count(t => t.Category == "金额"));
+        Assert.Equal(1, builtins.Count(t => t.Category == "通用"));
         Assert.Equal(2, builtins.Count(t => t.PaperKey == "A4"));
         Assert.Equal(2, builtins.Count(t => t.PaperKey == "241x140"));
-        Assert.Equal(2, builtins.Count(t => t.PaperKey == "241x93"));
+        Assert.Equal(3, builtins.Count(t => t.PaperKey == "241x93"));
         Assert.Equal(2, builtins.Count(t => t.PaperKey == "120x140"));
         Assert.All(builtins, t =>
         {
@@ -145,6 +146,32 @@ public class BuiltinTemplatesTests
             Assert.Contains(t.PaperKey, PoundTicketPrinter.Papers.Select(p => p.Key));
             Assert.NotEmpty(t.Elements);
         });
+    }
+
+    [Fact]
+    public void 公平计量磅单_三等分_版式要素齐全()
+    {
+        var t = PrintTemplate.CreateBuiltins().Single(x => x.Name == "公平计量磅单-三等分");
+        Assert.Equal("241x93", t.PaperKey);
+
+        string text = string.Join("\n", t.Elements.OfType<TextElement>().Select(e => e.Text));
+        Assert.Contains("第{打印次数}次打印", text);
+        Assert.Contains("编号：{流水号}", text);
+        Assert.Contains("地主姓名", text);
+        Assert.Contains("司机电话", text);
+        Assert.Contains("毛重司磅", text);
+        Assert.Contains("皮重司磅", text);
+        Assert.Contains("承诺", text);
+    }
+
+    [Fact]
+    public void 打印次数占位符_取已打印次数加一()
+    {
+        var r = new WeighRecord { PrintCount = 2 };
+        var ph = PrintTemplate.BuildPlaceholders(r, AppConfig.Current);
+        Assert.Equal("3", ph["打印次数"]);
+        Assert.Equal("1", PrintTemplate.BuildPlaceholders(
+            new WeighRecord(), AppConfig.Current)["打印次数"]);
     }
 
     [Fact]
