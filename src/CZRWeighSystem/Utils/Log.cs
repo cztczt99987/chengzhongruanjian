@@ -11,6 +11,7 @@ public static class Log
     private static string Dir => Path.Combine(AppContext.BaseDirectory, "logs");
 
     public static void Info(string message) => Write("INFO ", message);
+    public static void Warn(string message) => Write("WARN ", message);
     public static void Error(string message, Exception? ex = null) =>
         Write("ERROR", ex == null ? message : $"{message} | {ex.GetType().Name}: {ex.Message}");
 

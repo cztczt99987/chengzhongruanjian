@@ -178,7 +178,6 @@ public static class PoundTicketPrinter
     /// </summary>
     public static PrintDocument BuildTemplateDocument(PrintTemplate t, WeighRecord r)
     {
-        var cfg = AppConfig.Current;
         int idx = Array.FindIndex(Papers, p => p.Key == t.PaperKey);
         var paper = idx >= 0 ? Papers[idx] : Papers[0];
 
@@ -186,11 +185,7 @@ public static class PoundTicketPrinter
         doc.OriginAtMargins = true;               // 原点=可打印区起点，模板坐标即所见即所得
         doc.DefaultPageSettings.Margins = new Margins(0, 0, 0, 0);   // 留白由模板坐标自带（对称）
         ApplyPaperSize(doc, paper);
-        doc.PrintPage += (_, e) =>
-        {
-            var g = e.Graphics!;
-            TemplateTicketRenderer.Render(t, g, r, cfg, g.DpiX / 25.4f);
-        };
+        doc.PrintPage += (_, e) => RenderPage(e, t, r);
         return doc;
     }
 
@@ -215,7 +210,7 @@ public static class PoundTicketPrinter
         int printed = 0;
         doc.PrintPage += (_, e) =>
         {
-            RenderRecord(tpl, e.Graphics!, e.MarginBounds, r);
+            RenderPage(e, tpl, r);
             printed++;
             e.HasMorePages = printed < pages;
         };
@@ -242,7 +237,7 @@ public static class PoundTicketPrinter
         int recordIdx = 0, pageInRecord = 0;
         doc.PrintPage += (_, e) =>
         {
-            RenderRecord(tpl, e.Graphics!, e.MarginBounds, records[recordIdx]);
+            RenderPage(e, tpl, records[recordIdx]);
             pageInRecord++;
             if (pageInRecord >= copies)
             {
@@ -324,6 +319,78 @@ public static class PoundTicketPrinter
         {
             DrawTicket(g, bounds, r);
         }
+    }
+
+    /// <summary>
+    /// PrintPage 共用入口：模板模式先按打印机实际纸张自适应缩放，再渲染。
+    /// 背景：驱动常忽略程序自定义纸张（PaperKind.Custom），回退到驱动当前表单
+    /// （如 120×140mm 竖联纸），导致右半栏被裁、走纸超过一联（2026-10-02 用户反馈）。
+    /// 纸张不符时不裁切：整体等比缩小放入实际纸张，并记日志 + 弹一次指引。
+    /// </summary>
+    private static void RenderPage(PrintPageEventArgs e, PrintTemplate? tpl, WeighRecord r)
+    {
+        if (tpl != null)
+        {
+            var (designW, designH) = PaperSizeMm(tpl.PaperKey);
+            var (availW, availH) = ActualPageMm(e, designW, designH);
+            float scale = ComputeFitScale(tpl, availW, availH);
+            bool narrow = availW < designW - 2f;     // 实际纸张比模板窄 → 需缩放防裁切
+            bool tooTall = availH > designH + 2f;    // 实际纸张比模板高 → 走纸超过一联
+            if (narrow || tooTall)
+            {
+                Log.Warn($"打印纸张与模板「{tpl.Name}」不符：模板纸 {designW:F0}×{designH:F0}mm，"
+                    + $"打印机实际 {availW:F0}×{availH:F0}mm"
+                    + (narrow ? $"（内容已按 {scale:P0} 缩放完整打印）" : "（走纸可能超过一联）"));
+                WarnPaperMismatchOnce(tpl, designW, designH, availW, availH, narrow);
+            }
+            if (scale < 1f) e.Graphics!.ScaleTransform(scale, scale);
+        }
+        RenderRecord(tpl, e.Graphics!, e.MarginBounds, r);
+    }
+
+    /// <summary>
+    /// 模板打印自适应缩放系数（≤1）：打印机实际纸张小于模板内容尺寸时等比缩小，
+    /// 保证内容完整不被裁切；纸张相符、内容为空或坐标为 0 时为 1。internal 便于单测。
+    /// </summary>
+    internal static float ComputeFitScale(PrintTemplate t, float availWmm, float availHmm)
+    {
+        if (t.Elements.Count == 0) return 1f;
+        float w = t.Elements.Max(e => e.X + e.W);
+        float h = t.Elements.Max(e => e.Y + e.H);
+        if (w <= 0 || h <= 0 || availWmm <= 0 || availHmm <= 0) return 1f;
+        return Math.Min(1f, Math.Min(availWmm / w, availHmm / h));
+    }
+
+    /// <summary>
+    /// 打印机实际可打印区域（毫米）：PageBounds 与 MarginBounds 取较小者（1/100 英寸 → 毫米）。
+    /// 驱动忽略自定义纸张回退默认纸张（更窄）时，按实际纸张渲染才不会把右半栏裁掉。
+    /// designW/designH：模板设计纸张（毫米），用于兜底判断。
+    /// </summary>
+    private static (float W, float H) ActualPageMm(PrintPageEventArgs e, float designW, float designH)
+    {
+        float w = Math.Min(e.PageBounds.Width, e.MarginBounds.Width) * 25.4f / 100f;
+        float h = Math.Min(e.PageBounds.Height, e.MarginBounds.Height) * 25.4f / 100f;
+        // 防御：个别驱动返回异常放大的边界（单位误判等）时退回设计纸张，不误缩放/误报
+        if (w > designW * 2f && h > designH * 2f) return (designW, designH);
+        return (w, h);
+    }
+
+    private static bool _paperWarned;
+
+    /// <summary>纸张不符指引（每进程只弹一次，避免批量打印反复打断）。</summary>
+    private static void WarnPaperMismatchOnce(PrintTemplate tpl, float designW, float designH,
+        float availW, float availH, bool narrow)
+    {
+        if (_paperWarned) return;
+        _paperWarned = true;
+        MessageBox.Show(
+            $"打印机当前纸张与模板「{tpl.Name}」不符：\n"
+            + $"　模板纸张：{designW:F0}×{designH:F0} mm\n"
+            + $"　打印机实际：{availW:F0}×{availH:F0} mm\n\n"
+            + (narrow ? "内容已自动缩放以完整打印。\n" : "走纸长度可能超过一联纸。\n")
+            + "如需标准效果，请在打印对话框中选择「241×93mm（三等分）」纸张；"
+            + "若打印机没有该纸张，请在打印机属性 → 首选项/自定义表单中新建 241×93mm 纸张。",
+            "打印纸张提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
     }
 
     // ==================== 绘制 ====================

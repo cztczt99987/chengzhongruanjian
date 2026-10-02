@@ -55,3 +55,47 @@ public class TemplatePrintRenderTests
         Assert.True(doc.OriginAtMargins);                // 模板坐标即所见即所得（内容不偏移）
     }
 }
+
+/// <summary>
+/// 模板打印自适应缩放（2026-10-02 用户反馈：驱动忽略自定义纸张回退 120×140 窄纸，
+/// 右半栏被裁、走纸超过一联）。缩放系数保证内容完整放入打印机实际纸张。
+/// </summary>
+public class PrintPaperFitTests
+{
+    private static PrintTemplate Fairness
+        => PrintTemplate.CreateBuiltins().Single(x => x.Name == "公平计量磅单-三等分");
+
+    [Fact]
+    public void 纸张相符时不缩放()
+        => Assert.Equal(1f, PoundTicketPrinter.ComputeFitScale(Fairness, 241, 93));
+
+    [Fact]
+    public void 纸张偏窄时按宽度比例缩小()
+    {
+        // 模板内容约 230×66mm；实际纸张 120×140（竖联纸）→ 按宽度 120/230 缩放
+        float scale = PoundTicketPrinter.ComputeFitScale(Fairness, 120, 140);
+        Assert.InRange(scale, 120f / 230f - 0.01f, 120f / 230f + 0.01f);
+        Assert.True(scale < 1f);
+    }
+
+    [Fact]
+    public void 纸张偏矮时按高度比例缩小()
+    {
+        var t = new PrintTemplate { PaperKey = "241x93" };
+        t.Elements.Add(new TextElement { X = 5, Y = 5, W = 100, H = 90 });   // 内容 105×95mm
+        float scale = PoundTicketPrinter.ComputeFitScale(t, 120, 80);
+        Assert.InRange(scale, 80f / 95f - 0.01f, 80f / 95f + 0.01f);
+    }
+
+    [Fact]
+    public void 空模板或非法尺寸时不缩放()
+    {
+        Assert.Equal(1f, PoundTicketPrinter.ComputeFitScale(new PrintTemplate(), 100, 100));
+        Assert.Equal(1f, PoundTicketPrinter.ComputeFitScale(Fairness, 0, 93));
+        Assert.Equal(1f, PoundTicketPrinter.ComputeFitScale(Fairness, 241, 0));
+    }
+
+    [Fact]
+    public void 纸张均大时不缩放()
+        => Assert.Equal(1f, PoundTicketPrinter.ComputeFitScale(Fairness, 400, 300));
+}
