@@ -183,12 +183,13 @@ public static class PoundTicketPrinter
         var paper = idx >= 0 ? Papers[idx] : Papers[0];
 
         var doc = new PrintDocument { DocumentName = "磅单模板预览" };
-        doc.DefaultPageSettings.Margins = new Margins(40, 40, 40, 40);
+        doc.OriginAtMargins = true;               // 原点=可打印区起点，模板坐标即所见即所得
+        doc.DefaultPageSettings.Margins = new Margins(0, 0, 0, 0);   // 留白由模板坐标自带（对称）
         ApplyPaperSize(doc, paper);
         doc.PrintPage += (_, e) =>
         {
-            e.Graphics!.TranslateTransform(e.MarginBounds.X, e.MarginBounds.Y);
-            TemplateTicketRenderer.Render(t, e.Graphics, r, cfg, e.Graphics.DpiX / 25.4f);
+            var g = e.Graphics!;
+            TemplateTicketRenderer.Render(t, g, r, cfg, g.DpiX / 25.4f);
         };
         return doc;
     }
@@ -207,7 +208,8 @@ public static class PoundTicketPrinter
         int pages = copies > 0 ? copies : Math.Max(1, cfg.PrintCopies);
 
         var doc = new PrintDocument { DocumentName = $"磅单_{r.SerialNo}" };
-        doc.DefaultPageSettings.Margins = new Margins(40, 40, 40, 40);
+        doc.OriginAtMargins = true;               // 原点=可打印区起点，模板坐标即所见即所得
+        doc.DefaultPageSettings.Margins = new Margins(0, 0, 0, 0);   // 留白由模板坐标自带（对称）
         ApplyPaperSize(doc, paper);
 
         int printed = 0;
@@ -233,7 +235,8 @@ public static class PoundTicketPrinter
         int copies = Math.Max(1, cfg.PrintCopies);
 
         var doc = new PrintDocument { DocumentName = $"磅单批量打印_{records.Count}张" };
-        doc.DefaultPageSettings.Margins = new Margins(40, 40, 40, 40);
+        doc.OriginAtMargins = true;               // 原点=可打印区起点，模板坐标即所见即所得
+        doc.DefaultPageSettings.Margins = new Margins(0, 0, 0, 0);   // 留白由模板坐标自带（对称）
         ApplyPaperSize(doc, paper);
 
         int recordIdx = 0, pageInRecord = 0;
@@ -314,8 +317,7 @@ public static class PoundTicketPrinter
     {
         if (tpl != null)
         {
-            // 模板模式：元素坐标为毫米，平移到边距起点后按设备分辨率渲染
-            g.TranslateTransform(bounds.X, bounds.Y);
+            // 模板模式：OriginAtMargins 已把原点放在可打印区起点，模板坐标（毫米）直接渲染
             TemplateTicketRenderer.Render(tpl, g, r, AppConfig.Current, g.DpiX / 25.4f);
         }
         else

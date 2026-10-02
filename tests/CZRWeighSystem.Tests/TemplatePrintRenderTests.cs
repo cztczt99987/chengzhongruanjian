@@ -5,7 +5,8 @@ namespace CZRWeighSystem.Tests;
 
 /// <summary>
 /// 模板按打印文档路径渲染的非空白回归（2026-10-02 用户反馈公平计量磅单打印预览全白）。
-/// 复现 BuildTemplateDocument 的 PrintPage 路径：TranslateTransform(边距起点) + DpiX 换算渲染。
+/// 复现 BuildTemplateDocument 的 PrintPage 路径：OriginAtMargins=true（原点=可打印区起点，
+/// 无需平移）+ DpiX 换算渲染。
 /// </summary>
 public class TemplatePrintRenderTests
 {
@@ -21,7 +22,6 @@ public class TemplatePrintRenderTests
         using (var g = System.Drawing.Graphics.FromImage(bmp))
         {
             g.Clear(System.Drawing.Color.White);
-            g.TranslateTransform(40, 40);   // BuildTemplateDocument：MarginBounds 起点（0.4 英寸）
             TemplateTicketRenderer.Render(t, g, new WeighRecord
             {
                 SerialNo = "PREVIEW-0001", VehicleNo = "冀A12345",
@@ -52,5 +52,6 @@ public class TemplatePrintRenderTests
         Assert.Equal((dps.Width, dps.Height), (pps.Width, pps.Height));
         Assert.InRange(dps.Width, 949 - 25, 949 + 25);   // 241×93mm → 0.01 英寸
         Assert.InRange(dps.Height, 366 - 25, 366 + 25);
+        Assert.True(doc.OriginAtMargins);                // 模板坐标即所见即所得（内容不偏移）
     }
 }

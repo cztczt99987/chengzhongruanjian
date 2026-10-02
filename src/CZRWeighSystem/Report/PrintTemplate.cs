@@ -21,6 +21,12 @@ public class PrintTemplate
     /// <summary>模板分类（内置模板按行业分类：通用/物流/仓储/矿山；模板库按此筛选）</summary>
     public string Category { get; set; } = "通用";
 
+    /// <summary>
+    /// 版式版本（内置模板专用）：内置模板版式调整时递增，EnsureBuiltinsOnDisk 发现
+    /// 磁盘文件版本低于当前定义即删除重建（用户自建/复制的模板无此属性不受影响）。
+    /// </summary>
+    public string? LayoutVersion { get; set; }
+
     /// <summary>元素列表；绘制顺序即列表顺序，末尾元素在最上层</summary>
     public List<TemplateElement> Elements { get; set; } = [];
 
@@ -250,7 +256,9 @@ public class PrintTemplate
             try
             {
                 var existing = Load(file);
-                if (existing.PaperKey == t.PaperKey) continue;   // 已是新映射，保留（含用户改动）
+                // 纸样映射或版式版本一致才保留（用户对内置模板的改动随之保留）
+                if (existing.PaperKey == t.PaperKey && existing.LayoutVersion == t.LayoutVersion)
+                    continue;
                 File.Delete(path);
                 if (AppConfig.Current.PrintTemplateFile == file)
                     migrateTo = BuiltinFileName(builtins.First(b =>
@@ -431,14 +439,14 @@ public class PrintTemplate
     /// </summary>
     private static PrintTemplate BuildFairnessTemplate(string name, string paperKey)
     {
-        var t = new PrintTemplate { Name = name, Category = "通用", PaperKey = paperKey };
-        const float w = 220f;   // 打印边距（各 ~10mm）内近满幅
+        var t = new PrintTemplate { Name = name, Category = "通用", PaperKey = paperKey, LayoutVersion = "2" };
+        const float x0 = 10f, w = 220f;   // 页宽 241，左右各留 10mm 对称白边
 
-        t.Elements.Add(new TextElement { Text = "{公司名称}", X = 0, Y = 2, W = w, H = 7, FontPt = 15, Bold = true, Align = TextAlign.Center });
-        t.Elements.Add(new TextElement { Text = "{磅单抬头}", X = 0, Y = 10, W = w, H = 5.5f, FontPt = 10.5f, Bold = true, Align = TextAlign.Center });
-        t.Elements.Add(new TextElement { Text = "第{打印次数}次打印", X = 160, Y = 10.8f, W = 60, H = 4.5f, FontPt = 7.5f, Align = TextAlign.Right });
-        t.Elements.Add(new TextElement { Text = "日期：{打印时间:yyyy年MM月dd日 HH:mm:ss}", X = 0, Y = 16, W = 120, H = 4.5f, FontPt = 8.5f });
-        t.Elements.Add(new TextElement { Text = "编号：{流水号}", X = 140, Y = 16, W = 80, H = 4.5f, FontPt = 8.5f, Align = TextAlign.Right });
+        t.Elements.Add(new TextElement { Text = "{公司名称}", X = x0, Y = 2, W = w, H = 7, FontPt = 15, Bold = true, Align = TextAlign.Center });
+        t.Elements.Add(new TextElement { Text = "{磅单抬头}", X = x0, Y = 10, W = w, H = 5.5f, FontPt = 10.5f, Bold = true, Align = TextAlign.Center });
+        t.Elements.Add(new TextElement { Text = "第{打印次数}次打印", X = x0 + 160, Y = 10.8f, W = 60, H = 4.5f, FontPt = 7.5f, Align = TextAlign.Right });
+        t.Elements.Add(new TextElement { Text = "日期：{打印时间:yyyy年MM月dd日 HH:mm:ss}", X = x0, Y = 16, W = 120, H = 4.5f, FontPt = 8.5f });
+        t.Elements.Add(new TextElement { Text = "编号：{流水号}", X = x0 + 140, Y = 16, W = 80, H = 4.5f, FontPt = 8.5f, Align = TextAlign.Right });
 
         // 四行字段网格：[标签 20 | 值 92 | 标签 24 | 值 84]
         const float gy = 21.5f, rowH = 8f, c1 = 20f, c2 = 112f, c3 = 136f;
@@ -449,24 +457,24 @@ public class PrintTemplate
             ("车号", "{车号}", "净重", "{净重} {单位}"),
             ("司机电话", "{司机电话}", "货主姓名", "{货主姓名}"),
         };
-        t.Elements.Add(new RectElement { X = 0, Y = gy, W = w, H = rowH * rows.Length });
+        t.Elements.Add(new RectElement { X = x0, Y = gy, W = w, H = rowH * rows.Length });
         for (int i = 1; i < rows.Length; i++)
-            t.Elements.Add(new LineElement { X = 0, Y = gy + i * rowH, W = w, H = 0 });
+            t.Elements.Add(new LineElement { X = x0, Y = gy + i * rowH, W = w, H = 0 });
         foreach (var cx in new[] { c1, c2, c3 })
-            t.Elements.Add(new LineElement { X = cx, Y = gy, W = 0, H = rowH * rows.Length });
+            t.Elements.Add(new LineElement { X = x0 + cx, Y = gy, W = 0, H = rowH * rows.Length });
         for (int i = 0; i < rows.Length; i++)
         {
             float ry = gy + i * rowH + 2;
-            t.Elements.Add(new TextElement { Text = rows[i].Item1, X = 2, Y = ry, W = c1 - 4, H = 5, FontPt = 9, Bold = true });
-            t.Elements.Add(new TextElement { Text = rows[i].Item2, X = c1 + 2, Y = ry, W = c2 - c1 - 4, H = 5, FontPt = 10 });
-            t.Elements.Add(new TextElement { Text = rows[i].Item3, X = c2 + 2, Y = ry, W = c3 - c2 - 4, H = 5, FontPt = 9, Bold = true });
-            t.Elements.Add(new TextElement { Text = rows[i].Item4, X = c3 + 2, Y = ry, W = w - c3 - 4, H = 5, FontPt = 10 });
+            t.Elements.Add(new TextElement { Text = rows[i].Item1, X = x0 + 2, Y = ry, W = c1 - 4, H = 5, FontPt = 9, Bold = true });
+            t.Elements.Add(new TextElement { Text = rows[i].Item2, X = x0 + c1 + 2, Y = ry, W = c2 - c1 - 4, H = 5, FontPt = 10 });
+            t.Elements.Add(new TextElement { Text = rows[i].Item3, X = x0 + c2 + 2, Y = ry, W = c3 - c2 - 4, H = 5, FontPt = 9, Bold = true });
+            t.Elements.Add(new TextElement { Text = rows[i].Item4, X = x0 + c3 + 2, Y = ry, W = w - c3 - 4, H = 5, FontPt = 10 });
         }
 
         // 毛重=第二次过磅、皮重=第一次过磅（公平计量站为先皮后毛流程）
-        t.Elements.Add(new TextElement { Text = "毛重司磅：{司磅员} {二次磅时间:yyyy-MM-dd HH:mm:ss}", X = 0, Y = 55.5f, W = 118, H = 4.5f, FontPt = 8 });
-        t.Elements.Add(new TextElement { Text = "皮重司磅：{司磅员} {一次磅时间:yyyy-MM-dd HH:mm:ss}", X = 118, Y = 55.5f, W = w - 118, H = 4.5f, FontPt = 8 });
-        t.Elements.Add(new TextElement { Text = "承诺：被作弊赔偿100万。", X = 0, Y = 61.5f, W = w, H = 4.5f, FontPt = 8 });
+        t.Elements.Add(new TextElement { Text = "毛重司磅：{司磅员} {二次磅时间:yyyy-MM-dd HH:mm:ss}", X = x0, Y = 55.5f, W = 118, H = 4.5f, FontPt = 8 });
+        t.Elements.Add(new TextElement { Text = "皮重司磅：{司磅员} {一次磅时间:yyyy-MM-dd HH:mm:ss}", X = x0 + 118, Y = 55.5f, W = w - 118, H = 4.5f, FontPt = 8 });
+        t.Elements.Add(new TextElement { Text = "承诺：被作弊赔偿100万。", X = x0, Y = 61.5f, W = w, H = 4.5f, FontPt = 8 });
         return t;
     }
 
