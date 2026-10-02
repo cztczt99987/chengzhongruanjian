@@ -29,19 +29,28 @@ public static class PoundTicketPrinter
     }
 
     /// <summary>
-    /// 解析打印纸张：优先使用打印机驱动中已安装的同尺寸纸张（±0.25mm 容差）。
+    /// 解析并应用打印纸张：优先使用打印机驱动中已安装的同尺寸纸张（±0.25mm 容差）。
     /// 针打连续纸的页长由驱动纸张决定，程序自定义纸张（PaperKind.Custom）常被驱动
     /// 忽略而按默认页长（近 A4）走纸，导致一张磅单占用多联连续纸；匹配驱动纸张可确保页长生效。
     /// 无匹配时回退程序自定义尺寸。
     /// </summary>
-    private static PaperSize ResolvePaperSize(PrintDocument doc, (string Key, string Name, int W, int H) paper)
+    private static void ApplyPaperSize(PrintDocument doc, (string Key, string Name, int W, int H) paper)
     {
-        foreach (PaperSize ps in doc.PrinterSettings.PaperSizes)
+        PaperSize Resolve()
         {
-            if (Math.Abs(ps.Width - paper.W) <= 25 && Math.Abs(ps.Height - paper.H) <= 25)
-                return ps;
+            foreach (PaperSize ps in doc.PrinterSettings.PaperSizes)
+            {
+                if (Math.Abs(ps.Width - paper.W) <= 25 && Math.Abs(ps.Height - paper.H) <= 25)
+                    return ps;
+            }
+            return new PaperSize(paper.Name, paper.W, paper.H);
         }
-        return new PaperSize(paper.Name, paper.W, paper.H);
+
+        doc.DefaultPageSettings.PaperSize = Resolve();
+        // WinForms 已知问题：只设 DefaultPageSettings 时，PrinterSettings.DefaultPageSettings
+        // 仍是驱动默认页长（近 A4），预览/部分驱动会按其渲染，导致预览空白或占多联——两处必须同步
+        doc.PrinterSettings.DefaultPageSettings.PaperSize = doc.DefaultPageSettings.PaperSize;
+        doc.PrinterSettings.DefaultPageSettings.Margins = doc.DefaultPageSettings.Margins;
     }
 
     // ===== 磅单字段目录（key 用于打印设置显隐配置，对应 F5-02）=====
@@ -174,8 +183,8 @@ public static class PoundTicketPrinter
         var paper = idx >= 0 ? Papers[idx] : Papers[0];
 
         var doc = new PrintDocument { DocumentName = "磅单模板预览" };
-        doc.DefaultPageSettings.PaperSize = ResolvePaperSize(doc, paper);
         doc.DefaultPageSettings.Margins = new Margins(40, 40, 40, 40);
+        ApplyPaperSize(doc, paper);
         doc.PrintPage += (_, e) =>
         {
             e.Graphics!.TranslateTransform(e.MarginBounds.X, e.MarginBounds.Y);
@@ -198,8 +207,8 @@ public static class PoundTicketPrinter
         int pages = copies > 0 ? copies : Math.Max(1, cfg.PrintCopies);
 
         var doc = new PrintDocument { DocumentName = $"磅单_{r.SerialNo}" };
-        doc.DefaultPageSettings.PaperSize = ResolvePaperSize(doc, paper);
         doc.DefaultPageSettings.Margins = new Margins(40, 40, 40, 40);
+        ApplyPaperSize(doc, paper);
 
         int printed = 0;
         doc.PrintPage += (_, e) =>
@@ -224,8 +233,8 @@ public static class PoundTicketPrinter
         int copies = Math.Max(1, cfg.PrintCopies);
 
         var doc = new PrintDocument { DocumentName = $"磅单批量打印_{records.Count}张" };
-        doc.DefaultPageSettings.PaperSize = ResolvePaperSize(doc, paper);
         doc.DefaultPageSettings.Margins = new Margins(40, 40, 40, 40);
+        ApplyPaperSize(doc, paper);
 
         int recordIdx = 0, pageInRecord = 0;
         doc.PrintPage += (_, e) =>
