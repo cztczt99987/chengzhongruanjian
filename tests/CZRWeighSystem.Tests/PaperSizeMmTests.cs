@@ -41,3 +41,61 @@ public class PaperSizeMmTests
         }
     }
 }
+
+/// <summary>
+/// 纸样命名回归（2026-10-02 用户反馈：二等分打出占好几联）——
+/// 行业惯例二等分 = 241×140、三等分 = 241×93，此前内置模板命名恰好相反，
+/// 用户按名字选"二等分"实际按 93mm 页高打印，驱动页长不符时一张磅单占用多联纸。
+/// </summary>
+public class PaperNamingTests
+{
+    [Fact]
+    public void 内置模板_二等分对应241x140_三等分对应241x93()
+    {
+        var byName = PrintTemplate.CreateBuiltins().ToDictionary(t => t.Name);
+
+        Assert.Equal("241x140", byName["标准磅单-二等分"].PaperKey);
+        Assert.Equal("241x93", byName["标准磅单-三等分"].PaperKey);
+        Assert.Equal("241x140", byName["金额磅单-二等分"].PaperKey);
+        Assert.Equal("241x93", byName["金额磅单-三等分"].PaperKey);
+    }
+
+    [Fact]
+    public void 纸张目录_显示名与尺寸对应正确()
+    {
+        Assert.Contains(PoundTicketPrinter.Papers,
+            p => p.Key == "241x140" && p.Name.Contains("二等分"));
+        Assert.Contains(PoundTicketPrinter.Papers,
+            p => p.Key == "241x93" && p.Name.Contains("三等分"));
+    }
+
+    [Fact]
+    public void EnsureBuiltinsOnDisk_旧映射内置文件_删除重建并迁移启用配置()
+    {
+        var builtins = PrintTemplate.CreateBuiltins();
+        string staleName = PrintTemplate.BuiltinFileName(
+            builtins.First(t => t.Name == "标准磅单-二等分"));
+
+        // 造一个旧映射文件：名字"二等分"内容却是 241x93（修复前的错误产物）
+        Directory.CreateDirectory(PrintTemplate.TemplatesDir);
+        new PrintTemplate { Name = "标准磅单-二等分", Category = "标准", PaperKey = "241x93" }
+            .Save(staleName);
+        var cfg = AppConfig.Current;
+        cfg.PrintTemplateFile = staleName;
+
+        try
+        {
+            PrintTemplate.EnsureBuiltinsOnDisk();
+
+            // 同名文件已按新映射重建（241x140），启用配置迁移到同尺寸的"标准磅单-三等分"
+            Assert.Equal("241x140", PrintTemplate.Load(staleName).PaperKey);
+            Assert.Equal("内置_标准磅单-三等分.json", cfg.PrintTemplateFile);
+            Assert.Equal("241x93", PrintTemplate.Load(cfg.PrintTemplateFile).PaperKey);
+        }
+        finally
+        {
+            cfg.PrintTemplateFile = "";
+            cfg.Save();
+        }
+    }
+}

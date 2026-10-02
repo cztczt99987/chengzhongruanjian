@@ -204,17 +204,19 @@ public class PrintTemplate
     /// <summary>是否为内置模板文件</summary>
     public static bool IsBuiltinFileName(string fileName) => fileName.StartsWith("内置_");
 
-    /// <summary>创建内置模板：标准磅单 / 金额磅单 两种样式 × A4、三等分（241×140）、
-    /// 二等分（241×93）、竖联（120×140）四种纸样，版式仿老软件过磅单（公司名抬头 + 类型 +
-    /// 字段网格：车牌/品种/地主/司机/货主 + 毛皮净），金额磅单额外含应收金额行。</summary>
+    /// <summary>创建内置模板：标准磅单 / 金额磅单 两种样式 × A4、二等分（241×140）、
+    /// 三等分（241×93）、竖联（120×140）四种纸样，版式仿老软件过磅单（公司名抬头 + 类型 +
+    /// 字段网格：车牌/品种/地主/司机/货主 + 毛皮净），金额磅单额外含应收金额行。
+    /// 纸样命名按行业惯例：二等分 = 241 宽 × 11 英寸高均分两份（每联 140mm），
+    /// 三等分 = 均分三份（每联 93mm）。</summary>
     public static List<PrintTemplate> CreateBuiltins()
     {
         var list = new List<PrintTemplate>();
         foreach (var (paperKey, suffix, vertical, dense) in new[]
         {
             ("A4", "-A4", false, false),
-            ("241x140", "-三等分", false, false),
-            ("241x93", "-二等分", false, true),
+            ("241x140", "-二等分", false, false),
+            ("241x93", "-三等分", false, true),
             ("120x140", "-竖联", true, false),
         })
         {
@@ -225,14 +227,48 @@ public class PrintTemplate
     }
 
     /// <summary>把缺失的内置模板写入 templates/ 目录（已存在的不覆盖，保留用户改动）；
-    /// 同时清理已废弃的旧版内置模板，启用配置指向被清理文件时自动迁移到新标准模板。</summary>
+    /// 同时清理旧版内置模板；纸样命名修正（2026-10-02，二等分/三等分此前反了）后，
+    /// 同名但 PaperKey 为旧映射的内置文件先删除重建，启用配置自动迁移到同尺寸新命名模板。</summary>
     public static void EnsureBuiltinsOnDisk()
     {
-        foreach (var t in CreateBuiltins())
+        var builtins = CreateBuiltins();
+
+        // 旧纸样命名的内置文件（如"内置_标准磅单-二等分.json"内容为 241x93）：
+        // 与新映射的 PaperKey 不符 → 删除（随后按新映射重建）；
+        // 该文件正被启用时记住迁移目标 = "同纸样 + 同分类"的新命名模板
+        string? migrateTo = null;
+        foreach (var t in builtins)
+        {
+            string file = BuiltinFileName(t);
+            string path = PathOf(file);
+            if (!File.Exists(path)) continue;
+            try
+            {
+                var existing = Load(file);
+                if (existing.PaperKey == t.PaperKey) continue;   // 已是新映射，保留（含用户改动）
+                File.Delete(path);
+                if (AppConfig.Current.PrintTemplateFile == file)
+                    migrateTo = BuiltinFileName(builtins.First(b =>
+                        b.PaperKey == existing.PaperKey && b.Category == existing.Category));
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"读取内置模板失败，按缺失重建：{file}", ex);
+            }
+        }
+
+        foreach (var t in builtins)
         {
             string file = BuiltinFileName(t);
             if (!File.Exists(PathOf(file)))
                 t.Save(file);
+        }
+
+        if (migrateTo != null)
+        {
+            AppConfig.Current.PrintTemplateFile = migrateTo;
+            AppConfig.Current.Save();
+            Log.Info($"纸样命名已修正（二等分=241×140、三等分=241×93），启用模板自动切换为：{migrateTo}");
         }
 
         // 旧版内置模板（2026-10 按老软件版式重做前）：文件删除，启用中则迁移
@@ -252,7 +288,7 @@ public class PrintTemplate
         }
         if (currentRemoved)
         {
-            AppConfig.Current.PrintTemplateFile = BuiltinFileName(CreateBuiltins()[1]);   // 标准磅单-三等分
+            AppConfig.Current.PrintTemplateFile = BuiltinFileName(CreateBuiltins()[1]);   // 标准磅单-二等分
             AppConfig.Current.Save();
             Log.Info($"原启用模板已废弃，自动切换为：{AppConfig.Current.PrintTemplateFile}");
         }
@@ -263,7 +299,7 @@ public class PrintTemplate
     /// 公司名大字抬头 + 磅单类型行 + 日期/流水号 + 字段网格（车牌、品种、地主姓名/电话、
     /// 司机电话、货主姓名、毛皮净、金额）+ 磅重时间 + 签字栏。
     /// withAmount：金额磅单（含金额行，替代标准版的部分字段位）；vertical：竖联竖版布局；
-    /// dense：二等分 241×93 紧凑布局。
+    /// dense：三等分 241×93 紧凑布局。
     /// </summary>
     private static PrintTemplate BuildTicketTemplate(string name, string category, string paperKey,
         bool vertical, bool dense, bool withAmount)
@@ -308,7 +344,7 @@ public class PrintTemplate
             return t;
         }
 
-        // ---- 横版（241×140 三等分 / 241×93 二等分 / A4 整版）----
+        // ---- 横版（241×140 二等分 / 241×93 三等分 / A4 整版）----
         float x = 8f, contentW = paperW - 16f;
         t.Elements.Add(new TextElement { Text = "{公司名称}", X = x, Y = dense ? 3 : 5, W = contentW, H = dense ? 7f : 8, FontPt = dense ? 14 : 16, Bold = true, Align = TextAlign.Center });
         t.Elements.Add(new TextElement { Text = "{磅单抬头}", X = x, Y = dense ? 10.5f : 15, W = contentW, H = dense ? 6f : 7, FontPt = dense ? 11 : 14, Align = TextAlign.Center });
@@ -347,7 +383,7 @@ public class PrintTemplate
             t.Elements.Add(new TextElement { Text = right[i].Item2, X = x3 + 2, Y = ry, W = valueW - 4, H = 5, FontPt = 10 });
         }
 
-        // 网格下方：磅重时间行（二等分高度有限，二次磅时间与司磅员同行）
+        // 网格下方：磅重时间行（三等分高度有限，二次磅时间与司磅员同行）
         float below = gy + rowH * 6 + 1.5f;
         if (dense)
         {

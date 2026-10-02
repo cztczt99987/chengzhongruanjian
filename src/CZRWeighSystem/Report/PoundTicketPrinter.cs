@@ -11,11 +11,12 @@ namespace CZRWeighSystem.Report;
 public static class PoundTicketPrinter
 {
     // ===== 可选纸张目录（尺寸单位：0.01 英寸，对应 F5-02 纸张可选）=====
+    // 命名按行业惯例：二等分 = 241×140mm（11 英寸均分两份），三等分 = 241×93mm（均分三份）
     public static readonly (string Key, string Name, int W, int H)[] Papers =
     [
         ("A4", "A4（210×297mm）", 827, 1169),
-        ("241x140", "针打 241×140mm（三等分）", 949, 551),
-        ("241x93", "针打 241×93mm（二等分）", 949, 366),
+        ("241x140", "针打 241×140mm（二等分）", 949, 551),
+        ("241x93", "针打 241×93mm（三等分）", 949, 366),
         ("120x140", "竖联带孔纸 120×140mm", 472, 551),
     ];
 
@@ -25,6 +26,22 @@ public static class PoundTicketPrinter
         int idx = Array.FindIndex(Papers, p => p.Key == key);
         var paper = idx >= 0 ? Papers[idx] : Papers[0];
         return (paper.W / 100f * 25.4f, paper.H / 100f * 25.4f);
+    }
+
+    /// <summary>
+    /// 解析打印纸张：优先使用打印机驱动中已安装的同尺寸纸张（±0.25mm 容差）。
+    /// 针打连续纸的页长由驱动纸张决定，程序自定义纸张（PaperKind.Custom）常被驱动
+    /// 忽略而按默认页长（近 A4）走纸，导致一张磅单占用多联连续纸；匹配驱动纸张可确保页长生效。
+    /// 无匹配时回退程序自定义尺寸。
+    /// </summary>
+    private static PaperSize ResolvePaperSize(PrintDocument doc, (string Key, string Name, int W, int H) paper)
+    {
+        foreach (PaperSize ps in doc.PrinterSettings.PaperSizes)
+        {
+            if (Math.Abs(ps.Width - paper.W) <= 25 && Math.Abs(ps.Height - paper.H) <= 25)
+                return ps;
+        }
+        return new PaperSize(paper.Name, paper.W, paper.H);
     }
 
     // ===== 磅单字段目录（key 用于打印设置显隐配置，对应 F5-02）=====
@@ -157,7 +174,7 @@ public static class PoundTicketPrinter
         var paper = idx >= 0 ? Papers[idx] : Papers[0];
 
         var doc = new PrintDocument { DocumentName = "磅单模板预览" };
-        doc.DefaultPageSettings.PaperSize = new PaperSize(paper.Name, paper.W, paper.H);
+        doc.DefaultPageSettings.PaperSize = ResolvePaperSize(doc, paper);
         doc.DefaultPageSettings.Margins = new Margins(40, 40, 40, 40);
         doc.PrintPage += (_, e) =>
         {
@@ -181,7 +198,7 @@ public static class PoundTicketPrinter
         int pages = copies > 0 ? copies : Math.Max(1, cfg.PrintCopies);
 
         var doc = new PrintDocument { DocumentName = $"磅单_{r.SerialNo}" };
-        doc.DefaultPageSettings.PaperSize = new PaperSize(paper.Name, paper.W, paper.H);
+        doc.DefaultPageSettings.PaperSize = ResolvePaperSize(doc, paper);
         doc.DefaultPageSettings.Margins = new Margins(40, 40, 40, 40);
 
         int printed = 0;
@@ -207,7 +224,7 @@ public static class PoundTicketPrinter
         int copies = Math.Max(1, cfg.PrintCopies);
 
         var doc = new PrintDocument { DocumentName = $"磅单批量打印_{records.Count}张" };
-        doc.DefaultPageSettings.PaperSize = new PaperSize(paper.Name, paper.W, paper.H);
+        doc.DefaultPageSettings.PaperSize = ResolvePaperSize(doc, paper);
         doc.DefaultPageSettings.Margins = new Margins(40, 40, 40, 40);
 
         int recordIdx = 0, pageInRecord = 0;
