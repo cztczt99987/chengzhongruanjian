@@ -252,15 +252,15 @@ public class WeighEntryDialog : Form
         {
             Font = new Font("Microsoft YaHei UI", 12F),
             Location = new Point(1, 1),
-            Size = new Size(54, 34),
+            Size = new Size(64, 34),   // 加宽：原 54 文字可用宽过窄，目标机"黑"字被右缘裁切
         };
         // 首项为"无省份"，默认选中综合设置的"默认省份"
         int idx = ProvincePicker.Items.IndexOf(_cfg.DefaultProvince);
         _cboPrefix.SelectedIndex = idx > 0 ? idx : 0;
         _txtVehicle = new TextBox
         {
-            Location = new Point(56, 1),
-            Size = new Size(203, 34),
+            Location = new Point(66, 1),    // 随省份框加宽右移，避免遮盖
+            Size = new Size(192, 34),       // 同步缩短：66+192=258 ≤ 面板可用宽 260
             Font = new Font("Microsoft YaHei UI", 12F),
             // 当天保存过的车牌：输入一半时在下拉中出现（按编号前缀建议）
             AutoCompleteMode = AutoCompleteMode.SuggestAppend,

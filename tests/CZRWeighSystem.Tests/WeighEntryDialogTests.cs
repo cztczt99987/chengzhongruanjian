@@ -921,6 +921,44 @@ public class WeighEntryDialogTests
         });
     }
 
+    /// <summary>
+    /// 省份框文字区宽度回归：目标电脑上"黑"字被右缘裁掉（字体渲染比本机偏宽），
+    /// 根因是文字可用宽（客户区减左右内边距）原仅约 25px（右侧给 ▼ 箭头留了 20px）。
+    /// 现要求文字区 ≥ 2 倍单字宽：目标机字体偏宽/文本缩放时单字仍完整可见，且箭头不侵入文字区。
+    /// </summary>
+    [Fact]
+    public void 车牌行_省份框文字区至少容纳两倍单字宽_不被右边缘裁切()
+    {
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+            var picker = Fld<ProvincePicker>(dlg, "_cboPrefix");
+            var txt = Fld<TextBox>(dlg, "_txtVehicle");
+
+            // 单字渲染宽（省份均为单字，"黑"即代表；NoPadding 取实际墨迹宽）
+            int glyph = TextRenderer.MeasureText("黑", picker.Font,
+                new Size(int.MaxValue, int.MaxValue), TextFormatFlags.NoPadding).Width;
+            int textZone = picker.ClientSize.Width - picker.Padding.Horizontal;
+            Assert.True(textZone >= glyph * 2,
+                $"省份框文字可用宽 {textZone}px 应 ≥ 2 倍单字宽 {glyph * 2}px（过窄时'黑'等字被右缘裁切）");
+
+            // 自绘 ▼ 箭头（x=Width-13 起 8px 宽）不得侵入文字区，且完整落在框内
+            int arrowLeft = picker.Width - 13;
+            int textZoneRight = picker.ClientSize.Width - picker.Padding.Right;
+            Assert.True(arrowLeft >= textZoneRight,
+                $"箭头左缘 {arrowLeft} 不得侵入文字区（文字区右缘 {textZoneRight}）");
+            Assert.True(arrowLeft + 8 <= picker.Width - 2,
+                $"箭头右缘 {arrowLeft + 8} 应落在框内（控件宽 {picker.Width}）");
+
+            // 编号框不遮盖省份框，且不越出车牌面板（输入列 264，面板左右 Margin 各 2 → 可用 260）
+            Assert.True(txt.Left > picker.Right,
+                $"编号框左缘 {txt.Left} 应大于省份框右缘 {picker.Right}（不得遮盖）");
+            Assert.True(txt.Right <= 260, $"编号框右缘 {txt.Right} 应 ≤ 260（面板可用宽）");
+        });
+        manager.Dispose();
+    }
+
     [Fact]
     public void 省份选择器_鼠标按下时延迟到消息周期外打开()
     {

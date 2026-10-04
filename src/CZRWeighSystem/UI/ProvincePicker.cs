@@ -33,7 +33,9 @@ internal sealed class ProvincePicker : Button
         FlatStyle = FlatStyle.Flat;
         BackColor = Color.White;
         TextAlign = ContentAlignment.MiddleLeft;
-        Padding = new Padding(7, 0, 20, 0);
+        // 右侧留 14px 给自绘 ▼ 箭头（箭头画在 Width-13 起 8px 宽）；
+        // 原 20px 挤得文字可用宽仅约 27px，目标机字体渲染偏宽时"黑"字被右缘裁切（2026-10-04 实机反馈）
+        Padding = new Padding(7, 0, 14, 0);
         FlatAppearance.BorderColor = Color.FromArgb(171, 173, 179);
         FlatAppearance.BorderSize = 1;
         Cursor = Cursors.Hand;
