@@ -50,14 +50,11 @@ public class PaperSizeMmTests
 public class PaperNamingTests
 {
     [Fact]
-    public void 内置模板_二等分对应241x140_三等分对应241x93()
+    public void 内置模板_三等分为241x93()
     {
+        // 2026-10 精简后内置模板仅保留"公平计量磅单-三等分"（241×93 三等分连单）
         var byName = PrintTemplate.CreateBuiltins().ToDictionary(t => t.Name);
-
-        Assert.Equal("241x140", byName["标准磅单-二等分"].PaperKey);
-        Assert.Equal("241x93", byName["标准磅单-三等分"].PaperKey);
-        Assert.Equal("241x140", byName["金额磅单-二等分"].PaperKey);
-        Assert.Equal("241x93", byName["金额磅单-三等分"].PaperKey);
+        Assert.Equal("241x93", byName["公平计量磅单-三等分"].PaperKey);
     }
 
     [Fact]
@@ -81,45 +78,15 @@ public class PaperNamingTests
     }
 
     [Fact]
-    public void EnsureBuiltinsOnDisk_旧映射内置文件_删除重建并迁移启用配置()
-    {
-        var builtins = PrintTemplate.CreateBuiltins();
-        string staleName = PrintTemplate.BuiltinFileName(
-            builtins.First(t => t.Name == "标准磅单-二等分"));
-
-        // 造一个旧映射文件：名字"二等分"内容却是 241x93（修复前的错误产物）
-        Directory.CreateDirectory(PrintTemplate.TemplatesDir);
-        new PrintTemplate { Name = "标准磅单-二等分", Category = "标准", PaperKey = "241x93" }
-            .Save(staleName);
-        var cfg = AppConfig.Current;
-        cfg.PrintTemplateFile = staleName;
-
-        try
-        {
-            PrintTemplate.EnsureBuiltinsOnDisk();
-
-            // 同名文件已按新映射重建（241x140），启用配置迁移到同尺寸的"标准磅单-三等分"
-            Assert.Equal("241x140", PrintTemplate.Load(staleName).PaperKey);
-            Assert.Equal("内置_标准磅单-三等分.json", cfg.PrintTemplateFile);
-            Assert.Equal("241x93", PrintTemplate.Load(cfg.PrintTemplateFile).PaperKey);
-        }
-        finally
-        {
-            cfg.PrintTemplateFile = "";
-            cfg.Save();
-        }
-    }
-
-    [Fact]
     public void EnsureBuiltinsOnDisk_版式版本升级_重建为最新版式并保持启用()
     {
-        // 2026-10-04 公平计量模板版式升级（LayoutVersion 2→3）：已装机用户的旧文件
-        // 必须被自动删除重建为新版式（含白联/红联/蓝联标注），启用配置保持指向同名文件
+        // 2026-10-04 公平计量模板版式升级（LayoutVersion 3→4）：已装机用户的旧文件
+        // 必须被自动删除重建为新版式（含白联/红联/蓝联标注、站点名称、承诺占位符），启用配置保持指向同名文件
         var builtin = PrintTemplate.CreateBuiltins().Single(t => t.Name == "公平计量磅单-三等分");
         string file = PrintTemplate.BuiltinFileName(builtin);
 
         Directory.CreateDirectory(PrintTemplate.TemplatesDir);
-        new PrintTemplate { Name = builtin.Name, Category = "通用", PaperKey = "241x93", LayoutVersion = "2" }
+        new PrintTemplate { Name = builtin.Name, Category = "通用", PaperKey = "241x93", LayoutVersion = "3" }
             .Save(file);
         var cfg = AppConfig.Current;
         cfg.PrintTemplateFile = file;
@@ -129,8 +96,10 @@ public class PaperNamingTests
             PrintTemplate.EnsureBuiltinsOnDisk();
 
             var rebuilt = PrintTemplate.Load(file);
-            Assert.Equal("3", rebuilt.LayoutVersion);
+            Assert.Equal("4", rebuilt.LayoutVersion);
             Assert.Contains(rebuilt.Elements.OfType<TextElement>(), e => e.Text == "白联:存根");
+            Assert.Contains(rebuilt.Elements.OfType<TextElement>(), e => e.Text == "{站点名称}");
+            Assert.Contains(rebuilt.Elements.OfType<TextElement>(), e => e.Text == "{承诺}");
             Assert.Equal(file, cfg.PrintTemplateFile);   // 同名重建，启用配置不变
         }
         finally

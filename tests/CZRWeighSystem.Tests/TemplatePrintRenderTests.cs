@@ -12,7 +12,6 @@ public class TemplatePrintRenderTests
 {
     [Theory]
     [InlineData("公平计量磅单-三等分")]
-    [InlineData("标准磅单-三等分")]
     public void 模板按打印路径渲染_非空白(string name)
     {
         var t = PrintTemplate.CreateBuiltins().Single(x => x.Name == name);

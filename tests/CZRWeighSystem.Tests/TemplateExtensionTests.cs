@@ -126,19 +126,14 @@ public class Code39Tests
 public class BuiltinTemplatesTests
 {
     [Fact]
-    public void 内置模板共9种_标准与金额各四种纸样且名称唯一()
+    public void 内置模板共1种_仅公平计量磅单三等分且名称唯一()
     {
         var builtins = PrintTemplate.CreateBuiltins();
-        Assert.Equal(9, builtins.Count);
+        Assert.Equal(1, builtins.Count);
         Assert.Equal(builtins.Count, builtins.Select(t => t.Name).Distinct().Count());
-        // 标准磅单/金额磅单 × 四种纸样（A4/二等分/三等分/竖联）+ 公平计量磅单（三等分）
-        Assert.Equal(4, builtins.Count(t => t.Category == "标准"));
-        Assert.Equal(4, builtins.Count(t => t.Category == "金额"));
+        // 2026-10 精简：仅保留公平计量磅单（三等分 241×93），标准/金额模板移除
         Assert.Equal(1, builtins.Count(t => t.Category == "通用"));
-        Assert.Equal(2, builtins.Count(t => t.PaperKey == "A4"));
-        Assert.Equal(2, builtins.Count(t => t.PaperKey == "241x140"));
-        Assert.Equal(3, builtins.Count(t => t.PaperKey == "241x93"));
-        Assert.Equal(2, builtins.Count(t => t.PaperKey == "120x140"));
+        Assert.Equal(1, builtins.Count(t => t.PaperKey == "241x93"));
         Assert.All(builtins, t =>
         {
             Assert.False(string.IsNullOrWhiteSpace(t.Name));
@@ -198,18 +193,10 @@ public class BuiltinTemplatesTests
     }
 
     [Fact]
-    public void 内置模板包含新元素类型()
-    {
-        var builtins = PrintTemplate.CreateBuiltins();
-        Assert.Contains(builtins, t => t.Elements.Any(e => e is TableElement));
-        Assert.Contains(builtins, t => t.Elements.Any(e => e is SignatureElement));
-        Assert.Contains(builtins, t => t.Elements.Any(e => e is QRCodeElement));
-        Assert.Contains(builtins, t => t.Elements.Any(e => e is BarcodeElement));
-    }
-
-    [Fact]
     public void 内置模板JSON往返保留全部元素类型()
     {
+        // 2026-10 精简后内置模板仅公平计量磅单（Text/Line/Rect 元素）；其他元素类型
+        // 仍可由模板设计器/用户模板承载，往返序列化逐一验证
         foreach (var t in PrintTemplate.CreateBuiltins())
         {
             var json = JsonSerializer.Serialize(t);
