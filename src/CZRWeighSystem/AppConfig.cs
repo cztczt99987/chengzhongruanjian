@@ -102,6 +102,12 @@ public class AppConfig
     /// <summary>严格禁止同车 X 分钟内二次称重（距上次结算不足该分钟数拒绝保存；0 = 不限制）</summary>
     public int ForbidReweighMinutes { get; set; } = 0;
 
+    /// <summary>
+    /// 空车去皮差值预警阈值（吨）：空车去皮确认时，若本次皮重与该车最近一次已完成记录的皮重
+    /// 相差超过该值则弹窗预警（仅提示，不阻止保存）。0 = 关闭预警。
+    /// </summary>
+    public double TareDiffWarnTon { get; set; } = 0;
+
     // ===== 收费设置（按重量分段固定金额，参考行业"代磅收费"版式，仅此一种模式）=====
     /// <summary>是否启用收费：二次磅结算时按净重自动计算应收金额</summary>
     public bool FeeEnabled { get; set; } = true;

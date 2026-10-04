@@ -85,6 +85,25 @@ public class WeighEntryDialogTests
         Assert.NotNull(Fld<WeighRecord>(dlg, "_savedRecord"));
     }
 
+    /// <summary>
+    /// 票据表格不得压住下方司磅员框：行7 加"单价"后表格底(480)与司磅员框顶曾只留 8px 间隙，
+    /// 用户高 DPI 环境缩放取整后表格底边框线盖住框顶。现间隙 24px，并要求 ≥16px 回归保护。
+    /// </summary>
+    [Fact]
+    public void 布局_表格不压住司磅员框()
+    {
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+            var grid = Fld<TableLayoutPanel>(dlg, "_grid");
+            var op = Fld<TextBox>(dlg, "_txtOperator");
+            Assert.True(op.Top - grid.Bottom >= 16,
+                $"司磅员框顶 {op.Top} 与表格底 {grid.Bottom} 间隙应 ≥16px（过小会被高 DPI 缩放取整吃掉）");
+        });
+        manager.Dispose();
+    }
+
     [Fact]
     public void 空车去皮_无待配对记录_保存为第一次称重()
     {
@@ -248,7 +267,9 @@ public class WeighEntryDialogTests
             Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
 
             Assert.Contains("未完成的二次磅", Fld<Label>(dlg, "_lblPairHint").Text);
-            Assert.Equal(AppConfig.Current.FormatWeight(10000), Fld<Label>(dlg, "_lblLastWeight").Text);
+            // 重车过磅模式不显示"上次重量/上次时间"区块（该功能仅空车去皮弹窗使用）
+            Assert.False(Fld<Label>(dlg, "_lblLastWeight").Visible);
+            Assert.False(Fld<Label>(dlg, "_lblLastTime").Visible);
 
             // 链式按钮初始：确认=当前白，保存/打印/继续=未到达灰
             var btnLocked = (Color)typeof(WeighEntryDialog)
@@ -559,5 +580,315 @@ public class WeighEntryDialogTests
             Assert.Equal("", picker.SelectedItem);
             Assert.Throws<ArgumentOutOfRangeException>(() => picker.SelectedIndex = 99);
         });
+    }
+
+    // ---------- 空车去皮：上次皮重显示 + 差值预警（仅空车去皮弹窗） ----------
+
+    /// <summary>造一条已完成记录（先皮 10000kg 后毛 30000kg → 皮重=10000kg），返回该记录。</summary>
+    private WeighRecord SeedCompletedWithTare(string vehicle, double tareKg, double grossKg)
+    {
+        UseTestScaleNo();
+        var first = _repo.InsertFirstWeigh(new WeighRecord
+        { ScaleNo = "91", VehicleNo = vehicle, GrossKg = tareKg });
+        return _repo.CompleteSecondWeigh(first.Id, grossKg, null, "管理员");
+    }
+
+    [Fact]
+    public void 空车去皮_有历史已完成皮重_显示上次重量时间_重车模式隐藏()
+    {
+        string vehicle = NewVehicle("T");
+        var done = SeedCompletedWithTare(vehicle, 10000, 30000);
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+            SilenceDialogs(dlg);
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
+
+            // 空车去皮模式：上次重量=历史皮重，上次时间=一次磅（皮重）时间
+            var lblW = Fld<Label>(dlg, "_lblLastWeight");
+            var lblT = Fld<Label>(dlg, "_lblLastTime");
+            Assert.True(lblW.Visible);
+            Assert.Equal(AppConfig.Current.FormatWeight(10000), lblW.Text);
+            Assert.Equal(done.FirstTime!.Value.ToString("yyyy-MM-dd HH:mm"), lblT.Text);
+
+            // 切到重车过磅：整组隐藏，重车表单不展示该功能
+            Call(dlg, "ToggleMode");
+            Assert.False(lblW.Visible);
+            Assert.False(lblT.Visible);
+        });
+        manager.Dispose();
+    }
+
+    [Fact]
+    public void 空车去皮_无历史皮重_上次显示横杠()
+    {
+        string vehicle = NewVehicle("U");
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+            SilenceDialogs(dlg);
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
+
+            Assert.Equal("--", Fld<Label>(dlg, "_lblLastWeight").Text);
+            Assert.Equal("--", Fld<Label>(dlg, "_lblLastTime").Text);
+        });
+        manager.Dispose();
+    }
+
+    [Fact]
+    public void 空车去皮_皮重差超阈值_确认弹预警但不阻止保存()
+    {
+        string vehicle = NewVehicle("V");
+        SeedCompletedWithTare(vehicle, 10000, 30000);   // 上次皮重 10 吨
+        var cfg = AppConfig.Current;
+        double oldThreshold = cfg.TareDiffWarnTon;
+        WeighManager manager = new();
+        try
+        {
+            cfg.TareDiffWarnTon = 0.5;   // 相差 0.5 吨以上预警
+            RunOnSta(() =>
+            {
+                using var dlg = new WeighEntryDialog(manager, isTare: true);
+                SilenceDialogs(dlg);
+                UseTestScaleNo();
+                NoPrefix(dlg);
+                Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
+                PushStable(manager, 11000);   // 本次皮重 11 吨，相差 1 吨 > 0.5
+                _lastInfo = null;
+
+                Call(dlg, "Confirm");
+
+                Assert.Contains("两次空车去皮称重的差值过大", _lastInfo);
+                Assert.Contains("相差", _lastInfo);
+                Assert.Equal(1, Fld<int>(dlg, "_step"));   // 仅预警：仍进入待保存步
+            });
+        }
+        finally
+        {
+            cfg.TareDiffWarnTon = oldThreshold;
+            manager.Dispose();
+        }
+    }
+
+    [Fact]
+    public void 空车去皮_差值未超阈值或预警关闭_确认不提示()
+    {
+        var cfg = AppConfig.Current;
+        double oldThreshold = cfg.TareDiffWarnTon;
+        WeighManager manager = new();
+        try
+        {
+            // 场景1：阈值 2 吨，实际差 1 吨 → 不预警
+            string v1 = NewVehicle("W");
+            SeedCompletedWithTare(v1, 10000, 30000);
+            cfg.TareDiffWarnTon = 2;
+            RunOnSta(() =>
+            {
+                using var dlg = new WeighEntryDialog(manager, isTare: true);
+                SilenceDialogs(dlg);
+                UseTestScaleNo();
+                NoPrefix(dlg);
+                Fld<TextBox>(dlg, "_txtVehicle").Text = v1;
+                PushStable(manager, 11000);
+                _lastInfo = null;
+
+                Call(dlg, "Confirm");
+                Assert.Null(_lastInfo);
+                Assert.Equal(1, Fld<int>(dlg, "_step"));
+            });
+
+            // 场景2：阈值 0（关闭），相差 1 吨 → 不预警
+            string v2 = NewVehicle("X");
+            SeedCompletedWithTare(v2, 10000, 30000);
+            cfg.TareDiffWarnTon = 0;
+            RunOnSta(() =>
+            {
+                using var dlg = new WeighEntryDialog(manager, isTare: true);
+                SilenceDialogs(dlg);
+                UseTestScaleNo();
+                NoPrefix(dlg);
+                Fld<TextBox>(dlg, "_txtVehicle").Text = v2;
+                PushStable(manager, 11000);
+                _lastInfo = null;
+
+                Call(dlg, "Confirm");
+                Assert.Null(_lastInfo);
+            });
+        }
+        finally
+        {
+            cfg.TareDiffWarnTon = oldThreshold;
+            manager.Dispose();
+        }
+    }
+
+    [Fact]
+    public void 重车过磅_即使有历史皮重且超差_确认也不弹去皮预警()
+    {
+        string vehicle = NewVehicle("Y");
+        SeedCompletedWithTare(vehicle, 10000, 30000);
+        var cfg = AppConfig.Current;
+        double oldThreshold = cfg.TareDiffWarnTon;
+        WeighManager manager = new();
+        try
+        {
+            cfg.TareDiffWarnTon = 0.5;
+            // 再造一条该车牌的未完成一次磅，使重车过磅可确认配对
+            _repo.InsertFirstWeigh(new WeighRecord
+            { ScaleNo = "91", VehicleNo = vehicle, GrossKg = 12000 });
+            RunOnSta(() =>
+            {
+                using var dlg = new WeighEntryDialog(manager, isTare: false);
+                SilenceDialogs(dlg);
+                UseTestScaleNo();
+                NoPrefix(dlg);
+                Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
+                PushStable(manager, 30000);
+                _lastInfo = null;
+
+                Call(dlg, "Confirm");
+                Assert.Null(_lastInfo);   // 重车表单不做去皮差值预警
+            });
+        }
+        finally
+        {
+            cfg.TareDiffWarnTon = oldThreshold;
+            manager.Dispose();
+        }
+    }
+
+    [Fact]
+    public void 仓储_取车号最近一条已完成皮重()
+    {
+        string vehicle = NewVehicle("Z");
+        var older = SeedCompletedWithTare(vehicle, 9000, 29000);
+        var newer = SeedCompletedWithTare(vehicle, 9500, 29500);
+
+        var hit = _repo.GetLastCompletedTare(vehicle);
+        Assert.NotNull(hit);
+        Assert.Equal(newer.Id, hit!.Id);              // 最近一条
+        Assert.Equal(9500, hit.TareKg);
+
+        Assert.Null(_repo.GetLastCompletedTare(NewVehicle("Q")));  // 无历史
+        Assert.NotNull(_repo.GetLastCompletedTare(vehicle)!.FirstTime);
+        _ = older;
+    }
+
+    // ---------- 车牌字母触摸面板（双击编号框弹出 A-Z + 挂头尾） ----------
+
+    /// <summary>按 Name 查找面板上的按钮（字符按钮 Name=char_字符，关闭 Name=btnClose）。</summary>
+    private static Button KeypadBtn(PlateKeypadForm keypad, string name) =>
+        keypad.Controls.OfType<Button>().Single(b => b.Name == name);
+
+    /// <summary>
+    /// 触发按钮 Click：触摸按钮设了 Selectable=false（点击不抢焦点），
+    /// PerformClick 内部的 CanSelect 检查会因此短路；直接反射调用 OnClick，
+    /// 与真实鼠标点击走同一条事件链路。
+    /// </summary>
+    private static void ClickButton(Button btn) =>
+        typeof(Button).GetMethod("OnClick", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(btn, [EventArgs.Empty]);
+
+    [Fact]
+    public void 双击车牌编号框_弹出字母面板_含26字母与挂头尾及关闭()
+    {
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: false);
+            NoPrefix(dlg);
+
+            dlg.ShowKeypad();
+            var keypad = dlg.CurrentKeypad;
+            Assert.NotNull(keypad);
+
+            // A~Z 共 26 个字符按钮
+            for (char c = 'A'; c <= 'Z'; c++)
+                Assert.Equal(c.ToString(), KeypadBtn(keypad!, "char_" + c).Text);
+
+            // 挂/头/尾特殊项 + 红 ✕ 关闭
+            foreach (string sp in new[] { "挂", "头", "尾" })
+                Assert.NotNull(keypad!.Controls.OfType<Button>()
+                    .FirstOrDefault(b => b.Name == "char_" + sp));
+            Assert.NotNull(keypad!.Controls.OfType<Button>()
+                .FirstOrDefault(b => b.Name == "btnClose"));
+
+            keypad.Close();
+            Assert.Null(dlg.CurrentKeypad);
+        });
+        manager.Dispose();
+    }
+
+    [Fact]
+    public void 点面板字符_连续追加到编号框_面板保持打开()
+    {
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: false);
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = "";
+
+            dlg.ShowKeypad();
+            var keypad = dlg.CurrentKeypad!;
+
+            ClickButton(KeypadBtn(keypad, "char_D"));
+            Assert.Equal("D", Fld<TextBox>(dlg, "_txtVehicle").Text);
+            ClickButton(KeypadBtn(keypad, "char_挂"));
+            Assert.Equal("D挂", Fld<TextBox>(dlg, "_txtVehicle").Text);
+
+            // 点选不关闭面板，可连续输入
+            Assert.Same(keypad, dlg.CurrentKeypad);
+            keypad.Close();
+        });
+        manager.Dispose();
+    }
+
+    [Fact]
+    public void 有选中段时点选字符_替换选中_否则在光标处插入()
+    {
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+            var txt = Fld<TextBox>(dlg, "_txtVehicle");
+
+            txt.Text = "ABC";
+            txt.SelectionStart = 1;
+            txt.SelectionLength = 1;   // 选中 B
+            dlg.InsertPlateChar("X");
+            Assert.Equal("AXC", txt.Text);
+            Assert.Equal(2, txt.SelectionStart);
+
+            // 无选中：在光标处插入
+            txt.SelectionStart = 2;
+            txt.SelectionLength = 0;
+            dlg.InsertPlateChar("Y");
+            Assert.Equal("AXYC", txt.Text);
+        });
+        manager.Dispose();
+    }
+
+    [Fact]
+    public void 面板已打开时再次调用_只置顶不重复开窗()
+    {
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+
+            dlg.ShowKeypad();
+            var first = dlg.CurrentKeypad!;
+            dlg.ShowKeypad();
+            Assert.Same(first, dlg.CurrentKeypad);   // 同一窗口，未重复创建
+
+            first.Close();
+            Assert.Null(dlg.CurrentKeypad);
+        });
+        manager.Dispose();
     }
 }

@@ -25,6 +25,7 @@ public class WeighEntryDialog : Form
     private double? _confirmedKg;            // 确认时锁定的稳定重量（千克）
     private WeighRecord? _confirmedFirst;    // 确认时识别出的待配对一次磅（null=第一次称重）
     private WeighRecord? _savedRecord;       // 保存成功的记录（打印用）
+    private PlateKeypadForm? _keypad;        // 车牌编号字母触摸面板（双击编号框弹出）
 
     /// <summary>当天已保存过（未作废）的记录：车牌自动补全候选 + 选中后回填上次信息。</summary>
     private List<WeighRecord> _todayRecords = [];
@@ -45,6 +46,9 @@ public class WeighEntryDialog : Form
     /// <summary>打印动作（默认直接打印磅单；测试注入空实现避免真实出纸）。</summary>
     internal Func<WeighRecord, bool> PrintAction = r => Report.PoundTicketPrinter.Print(r);
 
+    /// <summary>当前打开的字母面板（测试断言用；未打开为 null）。</summary>
+    internal PlateKeypadForm? CurrentKeypad => _keypad;
+
     // ===== 控件 =====
     private ProvincePicker _cboPrefix = null!; // 车牌省份简称（多列网格选择，默认取综合设置的"默认省份"）
     private TextBox _txtVehicle = null!;     // 车牌编号（省份简称后的手动输入部分）
@@ -55,6 +59,7 @@ public class WeighEntryDialog : Form
     private TextBox _txtCargoOwner = null!;  // 货主姓名（ext_json 固定键）
     private TextBox _txtUnitPrice = null!;   // 单价（ext_json 固定键；只允许数字与小数点）
     private TextBox _txtOperator = null!;    // 司磅员（当前登录用户，只读）
+    private TableLayoutPanel _grid = null!;  // 票据固定字段表格（测试用：验证不压住下方司磅员框）
     private Label _lblSerialNo = null!;      // No：待配对时显示一次磅流水号
     private Label _lblPairHint = null!;      // 配对/新车提示
     private Label _lblTicketType = null!;    // 票据副标题（皮重/毛重过磅单，随切换变化）
@@ -63,9 +68,12 @@ public class WeighEntryDialog : Form
     private Label _lblTareCell = null!;      // 票据右列：皮重预览
     private Label _lblNetCell = null!;       // 票据右列：净重预览
     private Label _lblCurrent = null!;       // 实时重量（右栏大屏）
-    private Label _lblLastWeight = null!;    // 上次重量（待配对一次磅）
+    private Label _lblLastWeightTitle = null!; // 上次重量标题（仅空车去皮模式显示）
+    private Label _lblLastWeight = null!;    // 上次重量（本车最近一次已完成皮重）
+    private Label _lblLastTimeTitle = null!; // 上次时间标题（仅空车去皮模式显示）
     private Label _lblLastTime = null!;      // 上次时间
-    private Label _lblNetPreview = null!;    // 预计净重（右栏）
+    private string? _lastTareKey;            // 上次皮重缓存对应的车号（避免定时器反复查库）
+    private WeighRecord? _lastTare;          // 本车最近一次已完成皮重记录（null=无历史皮重）
     private Button _btnConfirm = null!;      // 链式步骤1：确认
     private Button _btnSave = null!;         // 链式步骤2：保存
     private Button _btnPrint = null!;        // 链式步骤3：打印
@@ -78,7 +86,7 @@ public class WeighEntryDialog : Form
         _isTare = isTare;
         Text = (isTare ? "空车去皮" : "重车过磅") + $"（本次按{(isTare ? "皮" : "毛")}重保存）";
         StartPosition = FormStartPosition.CenterParent;
-        Size = new Size(970, 640);   // 右栏内容与右边缘留出边距
+        Size = new Size(970, 655);   // 右栏内容与右边缘留出边距；票据加高后窗口同步加高
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
@@ -119,7 +127,11 @@ public class WeighEntryDialog : Form
         _tick.Tick += (_, _) => UpdateWeight();   // 实时重量/净重预览随仪表数据刷新
         // 注意：定时器仅在窗体真正显示时启动（OnShown）——测试等场景下未显示的窗体
         // 不启动定时器，避免线程结束后残留未释放的 WinForms Timer
-        FormClosed += (_, _) => _tick.Dispose();
+        FormClosed += (_, _) =>
+        {
+            _tick.Dispose();
+            _keypad?.Close();   // 字母面板一并关闭（测试场景避免残留窗口）
+        };
     }
 
     /// <summary>窗体显示后启动实时刷新定时器（仪表数据约 10Hz，200ms 刷新足够）。</summary>
@@ -135,7 +147,7 @@ public class WeighEntryDialog : Form
         var ticket = new Panel
         {
             Location = new Point(15, 15),
-            Size = new Size(650, 575),
+            Size = new Size(650, 590),
             BackColor = Color.FromArgb(255, 255, 224),
             Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left,
         };
@@ -184,6 +196,7 @@ public class WeighEntryDialog : Form
             CellBorderStyle = TableLayoutPanelCellBorderStyle.Single,
             BackColor = ticket.BackColor,
         };
+        _grid = grid;
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 88));   // 字段名
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 264));  // 输入框（车牌行含省份下拉）
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 68));   // 重量名
@@ -243,6 +256,9 @@ public class WeighEntryDialog : Form
         };
         platePanel.Controls.Add(_cboPrefix);
         platePanel.Controls.Add(_txtVehicle);
+        // 老软件交互：双击编号框（字母位置）弹出 A-Z 触摸面板，选字母连续输入
+        _txtVehicle.DoubleClick += (_, _) => ShowKeypad();
+        new ToolTip().SetToolTip(_txtVehicle, "双击打开字母选择面板（可连续点选）");
         grid.Controls.Add(platePanel, 1, 0);
         grid.Controls.Add(Head("毛重"), 2, 0);
         _lblGrossCell = ValueCell();
@@ -291,17 +307,19 @@ public class WeighEntryDialog : Form
         grid.Controls.Add(_txtUnitPrice, 1, 6);
         ticket.Controls.Add(grid);
 
-        // 表格下方：司磅员（当前登录用户，自动记录）
+        // 表格下方：司磅员（当前登录用户，自动记录）。
+        // 框顶与表格底留 24px（表格底 480 → 框顶 504）：高 DPI 缩放取整会吃掉小间隙，
+        // 原 8px 间隙在用户 125%/150% 缩放下表格底边框线压住框顶
         ticket.Controls.Add(new Label
         {
             Text = "司磅员：",
             AutoSize = true,
-            Location = new Point(25, 494),
+            Location = new Point(25, 510),
             Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Bold),
         });
         _txtOperator = new TextBox
         {
-            Location = new Point(113, 488), Size = new Size(200, 36),
+            Location = new Point(113, 504), Size = new Size(200, 36),
             Font = new Font("Microsoft YaHei UI", 12F),
             ReadOnly = true, Text = AppSession.DisplayName,
         };
@@ -361,7 +379,7 @@ public class WeighEntryDialog : Form
         };
         Controls.Add(_lblCurrent);
 
-        // 待配对一次磅信息（上次重量/上次时间/预计净重）
+        // 上次空车去皮信息（仅空车去皮模式可见：本车最近一次已完成皮重与时间）
         Label Info(string t, int y) => new()
         { Text = t, AutoSize = true, Location = new Point(675, y), ForeColor = Color.White };
         Label Val(int y) => new()
@@ -371,15 +389,12 @@ public class WeighEntryDialog : Form
             ForeColor = Color.FromArgb(255, 239, 130),
             Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Bold),
         };
-        Controls.Add(Info("上次重量：", 200));
+        _lblLastWeightTitle = Info("上次重量：", 200);
         _lblLastWeight = Val(200);
-        Controls.Add(_lblLastWeight);
-        Controls.Add(Info("上次时间：", 230));
+        _lblLastTimeTitle = Info("上次时间：", 230);
         _lblLastTime = Val(230);
-        Controls.Add(_lblLastTime);
-        Controls.Add(Info("预计净重：", 260));
-        _lblNetPreview = Val(260);
-        Controls.Add(_lblNetPreview);
+        Controls.AddRange([_lblLastWeightTitle, _lblLastWeight, _lblLastTimeTitle, _lblLastTime]);
+        UpdateLastTareVisibility();   // 重车过磅模式不显示该区块
 
         // ===== 链式流程按钮（确认 ↓ 保存 ↓ 打印 ↓ 继续，仿老软件逐步解锁）=====
         Button ChainButton(string text, int y, int h) => new()
@@ -461,8 +476,35 @@ public class WeighEntryDialog : Form
         Text = (_isTare ? "空车去皮" : "重车过磅") + $"（本次按{(_isTare ? "皮" : "毛")}重保存）";
         _lblTicketType.Text = (_isTare ? "皮重" : "毛重") + _cfg.SlipHeader;
         _lblPanelTitle.Text = _isTare ? "本次皮重" : "本次毛重";
+        _lastTareKey = null;   // 模式切换后车号相同也要重取（显示/隐藏语义已变）
+        UpdateLastTareVisibility();
         ResetFlow();
         UpdateWeight();
+    }
+
+    /// <summary>上次空车去皮信息区块仅空车去皮模式可见（重车过磅模式整组隐藏）。</summary>
+    private void UpdateLastTareVisibility()
+    {
+        bool show = _isTare;
+        _lblLastWeightTitle.Visible = show;
+        _lblLastWeight.Visible = show;
+        _lblLastTimeTitle.Visible = show;
+        _lblLastTime.Visible = show;
+    }
+
+    /// <summary>
+    /// 取本车最近一次已完成皮重（按车号缓存，车号变化才重新查库）。
+    /// 空车号返回 null；仅空车去皮模式调用。
+    /// </summary>
+    private WeighRecord? GetLastTare(string no)
+    {
+        if (no.Length == 0) return null;
+        if (_lastTareKey != no)
+        {
+            _lastTareKey = no;
+            _lastTare = _plateRepo.GetLastCompletedTare(no);
+        }
+        return _lastTare;
     }
 
     /// <summary>放弃链式进度：清空确认/保存状态，回到"确认"步。</summary>
@@ -545,7 +587,8 @@ public class WeighEntryDialog : Form
     /// <summary>
     /// 刷新实时重量与配对信息：稳定绿/动态橙；票据右列按模式回填——
     /// 本次称重填入对应行（去皮填皮重行、过毛填毛重行），配对的一次磅填对侧行；
-    /// 车号匹配到未完成一次磅时显示其流水号/上次重量/上次时间与预计净重。
+    /// 车号匹配到未完成一次磅时显示其流水号。
+    /// 空车去皮模式另在右栏显示本车最近一次已完成皮重（供比对，超差在确认时预警）。
     /// </summary>
     private void UpdateWeight()
     {
@@ -577,20 +620,26 @@ public class WeighEntryDialog : Form
         if (first != null)
         {
             _lblSerialNo.Text = "No：" + first.SerialNo;
-            _lblLastWeight.Text = _cfg.FormatWeight(first.GrossKg ?? 0);
-            _lblLastTime.Text = first.FirstTime?.ToString("yyyy-MM-dd HH:mm") ?? "";
             _lblPairHint.Text = $"[{no}] 有未完成的二次磅，保存时将自动配对结算";
-            _lblNetPreview.Text = _manager.IsStable
-                ? _cfg.FormatWeight(Math.Abs((first.GrossKg ?? 0) - _manager.StableKg))
-                : "--";
         }
         else
         {
             _lblSerialNo.Text = "No：";
+            _lblPairHint.Text = no.Length > 0 ? $"[{no}] 新车辆，本次为第一次称重" : "";
+        }
+
+        // 右栏"上次重量/上次时间"：仅空车去皮模式，取本车最近一次已完成皮重
+        if (_isTare)
+        {
+            var lastTare = GetLastTare(no);
+            _lblLastWeight.Text = lastTare?.TareKg.HasValue == true
+                ? _cfg.FormatWeight(lastTare.TareKg.Value) : "--";
+            _lblLastTime.Text = lastTare?.FirstTime?.ToString("yyyy-MM-dd HH:mm") ?? "--";
+        }
+        else
+        {
             _lblLastWeight.Text = "--";
             _lblLastTime.Text = "--";
-            _lblPairHint.Text = no.Length > 0 ? $"[{no}] 新车辆，本次为第一次称重" : "";
-            _lblNetPreview.Text = "--";
         }
     }
 
@@ -634,6 +683,29 @@ public class WeighEntryDialog : Form
 
         _confirmedKg = _manager.StableKg;
         _confirmedFirst = _manager.GetUnfinishedList().FirstOrDefault(r => r.VehicleNo == no);
+
+        // 空车去皮差值预警：本次皮重与本车最近一次已完成皮重相差超过综合设置阈值（吨）时提示。
+        // 仅预警不阻止保存（用户已确认）；阈值 0 = 关闭。
+        if (_isTare && _cfg.TareDiffWarnTon > 0)
+        {
+            var lastTare = GetLastTare(no);
+            if (lastTare?.TareKg.HasValue == true)
+            {
+                double diffTon = Math.Abs(_confirmedKg.Value - lastTare.TareKg.Value) / 1000.0;
+                if (diffTon > _cfg.TareDiffWarnTon)
+                {
+                    InfoBox(
+                        $"两次空车去皮称重的差值过大！\n\n"
+                        + $"上次皮重：{_cfg.FormatWeight(lastTare.TareKg.Value)}"
+                        + $"（{lastTare.FirstTime:yyyy-MM-dd HH:mm}）\n"
+                        + $"本次皮重：{_cfg.FormatWeight(_confirmedKg.Value)}\n"
+                        + $"相差：{diffTon:0.##} 吨（预警值 {_cfg.TareDiffWarnTon:0.##} 吨）\n\n"
+                        + "请核实车辆状态（货厢残留/改装/油品水量等）后再保存。",
+                        "空车去皮差值预警", false);
+                }
+            }
+        }
+
         SetStep(1);   // 确认完成 → 解锁"保存"
     }
 
@@ -666,6 +738,7 @@ public class WeighEntryDialog : Form
             _savedRecord = newRecord;
             OnSaved?.Invoke(newRecord!.SerialNo);
         }
+        _lastTareKey = null;   // 保存后历史皮重可能变化，下次查询重新取库
         SetStep(2);   // 保存完成 → 解锁"打印"
     }
 
@@ -718,6 +791,45 @@ public class WeighEntryDialog : Form
 
         SetStep(0);
         _txtVehicle.Focus();
+    }
+
+    // ---------- 车牌字母触摸面板 ----------
+
+    /// <summary>打开（或激活）车牌字母触摸面板：双击编号框触发。</summary>
+    internal void ShowKeypad()
+    {
+        if (_keypad != null && !_keypad.IsDisposed)
+        {
+            _keypad.BringToFront();   // 已打开 → 置顶，不重复开窗
+            return;
+        }
+
+        // 双击默认会选中一段文本：首次点选不应意外替换，取消选中并改为末尾追加
+        if (_txtVehicle.SelectionLength > 0)
+        {
+            _txtVehicle.SelectionLength = 0;
+            _txtVehicle.SelectionStart = _txtVehicle.TextLength;
+        }
+
+        _keypad = new PlateKeypadForm();
+        _keypad.CharPicked += InsertPlateChar;
+        _keypad.FormClosed += (_, _) => _keypad = null;
+        _keypad.PlaceNear(_txtVehicle);
+        _keypad.Show(this);   // 非模态：编号框保持焦点，可连续点选
+    }
+
+    /// <summary>
+    /// 在编号框当前光标处插入字符（有选中则替换选中部分），光标右移。
+    /// 面板按钮设置了 ControlStyles.Selectable=false 不抢焦点，
+    /// SelectionStart 始终是编号框的真实光标；物理键盘输入同样有效。
+    /// </summary>
+    internal void InsertPlateChar(string s)
+    {
+        int start = _txtVehicle.SelectionStart;
+        int len = _txtVehicle.SelectionLength;
+        _txtVehicle.Text = _txtVehicle.Text.Remove(start, len).Insert(start, s);
+        _txtVehicle.SelectionStart = start + s.Length;
+        _txtVehicle.SelectionLength = 0;
     }
 
     /// <summary>手机号格式校验（平台归属匹配要求 1 开头 11 位数字；留空不强填视为有效）。</summary>
