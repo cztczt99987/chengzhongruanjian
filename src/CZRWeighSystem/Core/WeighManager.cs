@@ -93,13 +93,14 @@ public class WeighManager : IDisposable
     /// <returns>(是否成功, 提示消息, 保存的记录)</returns>
     public (bool Ok, string Message, WeighRecord? Record) SaveFirstWeigh(string vehicleNo, string? goods,
         string? senderCompany, string? receiverCompany, string? spec, string? batchNo, string? remark,
-        double? deductKg, string? operatorName, Dictionary<string, string>? ext = null)
+        double? deductKg, string? operatorName, Dictionary<string, string>? ext = null,
+        double? lockedWeightKg = null)
     {
         // ---- 入参校验 ----
         if (string.IsNullOrWhiteSpace(vehicleNo))
             return (false, "请选择车号", null);
 
-        var (weight, err) = ResolveWeight();
+        var (weight, err) = ResolveWeight(lockedWeightKg);
         if (weight == null) return (false, err!, null);
 
         if (IsOverload)
@@ -151,9 +152,9 @@ public class WeighManager : IDisposable
     /// <param name="first">待配对的一次磅记录</param>
     /// <returns>(是否成功, 提示消息, 结算后的记录)</returns>
     public (bool Ok, string Message, WeighRecord? Record) SaveSecondWeigh(
-        WeighRecord first, double? deductKg, string? operatorName)
+        WeighRecord first, double? deductKg, string? operatorName, double? lockedWeightKg = null)
     {
-        var (weight, err) = ResolveWeight();
+        var (weight, err) = ResolveWeight(lockedWeightKg);
         if (weight == null) return (false, err!, null);
 
         if (weight <= 0) return (false, "二次磅重量必须大于 0", null);
@@ -205,8 +206,10 @@ public class WeighManager : IDisposable
     /// 综合设置规则：
     /// 1) 数据稳定 X 秒——稳定须持续该秒数方可保存；
     /// 2) 仪表不归零不允许保存——上次保存后仪表读数须回到接近 0 才允许再次保存。
+    /// lockedKg 为链式流程"确认"锁定的读数：确认时已校验稳定/非零/超载，
+    /// 之后车辆下磅（归零）不影响保存，入库用该锁定值。
     /// </summary>
-    private (double? Weight, string? Error) ResolveWeight()
+    private (double? Weight, string? Error) ResolveWeight(double? lockedKg = null)
     {
         var cfg = AppConfig.Current;
 
@@ -219,6 +222,9 @@ public class WeighManager : IDisposable
                 return (null, "仪表未归零，不允许保存数据，防止重复称重");
             _savedNeedsZero = false;   // 已回到零位，解除拦截
         }
+
+        if (lockedKg.HasValue)
+            return (lockedKg, null);   // 确认锁定的读数：不再要求当前仍稳定/非零
 
         if (!IsStable)
             return (null, "重量未稳定，请等待稳定后再保存");

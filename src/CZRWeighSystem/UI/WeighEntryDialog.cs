@@ -636,8 +636,8 @@ public class WeighEntryDialog : Form
     /// 刷新实时重量与配对信息：稳定绿/动态橙；票据右列按模式回填——
     /// 本次称重填入对应行（去皮填皮重行、过毛填毛重行），配对的一次磅填对侧行；
     /// 车号匹配到未完成一次磅时显示其流水号。
-    /// 保存成功后票面固定展示已存结果，不再跟随实时重量（车下磅归零后仍应看到本次值，
-    /// 显示"毛重有值、皮重为空"会让操作员误读）。
+    /// 票面在"确认"锁定后固定展示锁定读数、在"保存"成功后固定展示已存结果，
+    /// 均不再跟随实时重量（车下磅归零后仍应看到本次值，被刷成 0 会让操作员误读）。
     /// 空车去皮模式另在右栏显示本车最近一次已完成皮重（供比对，超差在确认时预警）。
     /// </summary>
     private void UpdateWeight()
@@ -669,6 +669,38 @@ public class WeighEntryDialog : Form
                 _lblPairHint.Text = $"[{_savedRecord.VehicleNo}] 一次磅已保存，等待二次磅配对结算";
             }
             _lblSerialNo.Text = "No：" + _savedRecord.SerialNo;
+        }
+        else if (_confirmedKg != null)
+        {
+            // 确认已锁定读数：票面固定展示锁定值，不再跟随实时重量（车下磅归零也不变）；
+            // 保存时按该锁定值入库（见 DoSave）
+            string locked = _cfg.FormatWeight(_confirmedKg.Value);
+            string paired = _confirmedFirst != null
+                ? _cfg.FormatWeight(_confirmedFirst.GrossKg ?? 0) : "--";
+            if (_isTare)
+            {
+                _lblTareCell.Text = locked;
+                _lblGrossCell.Text = paired;
+            }
+            else
+            {
+                _lblGrossCell.Text = locked;
+                _lblTareCell.Text = paired;
+            }
+            _lblNetCell.Text = _confirmedFirst != null
+                ? _cfg.FormatWeight(Math.Abs((_confirmedFirst.GrossKg ?? 0) - _confirmedKg.Value))
+                : "--";
+
+            if (_confirmedFirst != null)
+            {
+                _lblSerialNo.Text = "No：" + _confirmedFirst.SerialNo;
+                _lblPairHint.Text = $"[{no}] 有未完成的二次磅，保存时将自动配对结算";
+            }
+            else
+            {
+                _lblSerialNo.Text = "No：";
+                _lblPairHint.Text = no.Length > 0 ? $"[{no}] 新车辆，本次为第一次称重" : "";
+            }
         }
         else
         {
@@ -723,7 +755,8 @@ public class WeighEntryDialog : Form
     // 链式流程：确认 → 保存 → 打印 → 继续
     // ================================================================
 
-    /// <summary>步骤1【确认】：校验车号/稳定/超载，锁定当前稳定读数并识别是否二次磅。</summary>
+    /// <summary>步骤1【确认】：校验车号/稳定/超载，锁定当前稳定读数并识别是否二次磅；
+    /// 之后票面展示与保存均用锁定值，车辆下磅（归零）不影响。</summary>
     private void Confirm()
     {
         if (_step != 0) return;
@@ -795,8 +828,9 @@ public class WeighEntryDialog : Form
 
         if (_confirmedFirst != null)
         {
-            // 二次磅结算（manager 内部校验当前仍稳定，并按大小分配毛/皮）
-            var (ok, msg, record) = _manager.SaveSecondWeigh(_confirmedFirst, null, _txtOperator.Text);
+            // 二次磅结算（按确认锁定的读数结算，并按大小分配毛/皮）
+            var (ok, msg, record) = _manager.SaveSecondWeigh(
+                _confirmedFirst, null, _txtOperator.Text, _confirmedKg);
             if (!ok) { InfoBox(msg, "提示", false); return; }
 
             _savedRecord = record;
@@ -808,7 +842,7 @@ public class WeighEntryDialog : Form
             var (ok, msg, newRecord) = _manager.SaveFirstWeigh(
                 no, _txtVariety.Text, null, null,
                 null, null, null,
-                null, _txtOperator.Text, ext);
+                null, _txtOperator.Text, ext, _confirmedKg);
             if (!ok) { InfoBox(msg, "提示", false); return; }
 
             _savedRecord = newRecord;

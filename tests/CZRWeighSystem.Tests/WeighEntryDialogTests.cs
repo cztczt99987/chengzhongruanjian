@@ -300,6 +300,96 @@ public class WeighEntryDialogTests
         manager.Dispose();
     }
 
+    /// <summary>
+    /// 用户反馈：确认锁定 0.2 吨后车辆下磅归零，票面皮重跟着变成 0。
+    /// "确认"即锁定读数：票面应固定展示锁定值，直到保存（切换为已存结果）或切换/继续。
+    /// </summary>
+    [Fact]
+    public void 确认锁定读数后_票面固定显示锁定值_不随归零变化()
+    {
+        string vehicle = NewVehicle("I");
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+            SilenceDialogs(dlg);
+            UseTestScaleNo();
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
+            PushStable(manager, 200);   // 0.2 吨
+            Call(dlg, "Confirm");
+            Assert.Equal(1, Fld<int>(dlg, "_step"));
+
+            // 车下磅归零后刷新票面：应保持确认时的锁定值
+            PushStable(manager, 0);
+            Call(dlg, "UpdateWeight");
+
+            Assert.Equal(AppConfig.Current.FormatWeight(200), Fld<Label>(dlg, "_lblTareCell").Text);
+            Assert.Equal("--", Fld<Label>(dlg, "_lblGrossCell").Text);
+            Assert.Equal("--", Fld<Label>(dlg, "_lblNetCell").Text);
+        });
+        manager.Dispose();
+    }
+
+    /// <summary>
+    /// 确认后车辆下磅归零再点保存：仍应按确认时锁定的读数入库
+    /// （旧实现保存时取实时稳定重量，归零后被"当前重量为 0"拦截，无法保存）。
+    /// </summary>
+    [Fact]
+    public void 空车去皮_确认后归零再保存_按锁定值入库()
+    {
+        string vehicle = NewVehicle("J");
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+            SilenceDialogs(dlg);
+            UseTestScaleNo();
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
+            PushStable(manager, 200);
+            Call(dlg, "Confirm");
+            PushStable(manager, 0);   // 车下磅归零
+            Call(dlg, "DoSave");
+
+            Assert.Equal(2, Fld<int>(dlg, "_step"));
+        });
+        manager.Dispose();
+
+        var record = _repo.Query(null, null, vehicle, "", "", "").Single();
+        Assert.Equal("未完成", record.Status);
+        Assert.Equal(200, record.GrossKg);   // 入库为确认锁定的 0.2 吨，而非归零后的 0
+    }
+
+    /// <summary>二次磅同样按确认锁定值结算：确认后归零再保存仍得出正确毛/皮/净。</summary>
+    [Fact]
+    public void 二次磅_确认后归零再保存_按锁定值结算()
+    {
+        string vehicle = NewVehicle("K");
+        _repo.InsertFirstWeigh(new WeighRecord { ScaleNo = "94", VehicleNo = vehicle, GrossKg = 30000 });
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: false);
+            SilenceDialogs(dlg);
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
+            PushStable(manager, 50000);
+            Call(dlg, "Confirm");
+            PushStable(manager, 0);   // 车下磅归零
+            Call(dlg, "DoSave");
+
+            Assert.Equal(2, Fld<int>(dlg, "_step"));
+        });
+        manager.Dispose();
+
+        var record = _repo.Query(null, null, vehicle, "", "", "").Single();
+        Assert.Equal("已完成", record.Status);
+        Assert.Equal(50000, record.GrossKg);
+        Assert.Equal(30000, record.TareKg);
+        Assert.Equal(20000, record.NetKg);
+    }
+
     [Fact]
     public void 未录车号时确认_提示请选择车号且不保存()
     {
