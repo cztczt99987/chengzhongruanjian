@@ -117,10 +117,30 @@ public class WeighRecordRepository
     }
 
     /// <summary>
-    /// 首页统计：全部记录数、今日磅单数、今日毛/皮/净各测了多少车（对应重量非空的今日记录数）
-    /// 与今日应收金额合计（元，仅已完成记录）。CASE WHEN 为 SQLite / SQL Server 双方言通用。
+    /// 查询指定车号最近一次"空车去皮"皮重：取全部历史中最近一条已完成且有皮重的记录
+    /// （空车去皮弹窗显示上次重量/时间，并据其与本次皮重的差值做超差预警）。
+    /// 本站为先皮后毛流程，皮重即一次磅重量，皮重时间取 FirstTime。无记录返回 null。
     /// </summary>
-    public (int TotalCount, int TodayCount, int GrossCars, int TareCars, int NetCars, decimal TodayAmountYuan)
+    public WeighRecord? GetLastCompletedTare(string vehicleNo)
+    {
+        using var conn = Db.CreateConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = Db.TopSql(
+            "SELECT {TOP} * FROM t_weigh_record " +
+            "WHERE status='已完成' AND tare_kg IS NOT NULL AND vehicle_no=@vehicle_no ",
+            "ORDER BY id DESC", 1);
+        cmd.Add("@vehicle_no", vehicleNo);
+        using var reader = cmd.ExecuteReader();
+        return reader.Read() ? Map(reader) : null;
+    }
+
+    /// <summary>
+    /// 首页统计：全部记录数、今日磅单数、今日毛/皮/净各测了多少车（对应重量非空的今日记录数）、
+    /// 今日付称车数（只称了重车、尚未回空车，即 gross 有值而 tare 为空）与
+    /// 今日应收金额合计（元，仅已完成记录）。CASE WHEN 为 SQLite / SQL Server 双方言通用。
+    /// </summary>
+    public (int TotalCount, int TodayCount, int GrossCars, int TareCars, int NetCars,
+             int OnlyGrossCars, decimal TodayAmountYuan)
         GetHomeStats()
     {
         using var conn = Db.CreateConnection();
@@ -131,6 +151,7 @@ public class WeighRecordRepository
                    COALESCE(SUM(CASE WHEN first_time >= @from AND gross_kg IS NOT NULL THEN 1 ELSE 0 END), 0),
                    COALESCE(SUM(CASE WHEN first_time >= @from AND tare_kg IS NOT NULL THEN 1 ELSE 0 END), 0),
                    COALESCE(SUM(CASE WHEN first_time >= @from AND net_kg IS NOT NULL THEN 1 ELSE 0 END), 0),
+                   COALESCE(SUM(CASE WHEN first_time >= @from AND gross_kg IS NOT NULL AND tare_kg IS NULL THEN 1 ELSE 0 END), 0),
                    COALESCE(SUM(CASE WHEN first_time >= @from AND status = '已完成' THEN amount_yuan ELSE 0 END), 0)
             FROM t_weigh_record
             """;
@@ -143,7 +164,8 @@ public class WeighRecordRepository
             Convert.ToInt32(reader.GetValue(2)),
             Convert.ToInt32(reader.GetValue(3)),
             Convert.ToInt32(reader.GetValue(4)),
-            Convert.ToDecimal(reader.GetValue(5)));
+            Convert.ToInt32(reader.GetValue(5)),
+            Convert.ToDecimal(reader.GetValue(6)));
     }
 
     /// <summary>

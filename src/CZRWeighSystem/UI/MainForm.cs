@@ -42,12 +42,12 @@ public class MainForm : Form
 
     // ===== 今日称重统计（悬浮于摄像头画面上，自绘卡片，点击可竖直收起/展开）=====
     private const int StatsW = 252;           // 展开宽度
-    private const int StatsH = 290;           // 展开高度（悬浮卡片，6 行统计）
+    private const int StatsH = 282;           // 展开高度（悬浮卡片，7 行统计）
     private const int StatsCollapsedH = 32;   // 收起后仅剩标题条（竖直伸缩）
     private const int StatsHeaderH = 34;      // 标题条高度（标题居中）
     private const int StatsFirstRowY = 42;    // 首行数值 y
-    private const int StatsRowGap = 40;       // 行间距
-    private const int StatsRowH = 30;         // 行高
+    private const int StatsRowGap = 34;       // 行间距
+    private const int StatsRowH = 26;         // 行高
     private const int StatsGap = 10;          // 名目与数值间距
     private static readonly Color StatsHeaderColor = Color.FromArgb(202, 224, 246);     // 标题条底色
     private static readonly Color StatsBodyTopColor = Color.FromArgb(240, 247, 254);    // 内容区渐变（上）
@@ -67,6 +67,7 @@ public class MainForm : Form
     private string _statGross = "-";          // 今日毛重（车数）
     private string _statTare = "-";           // 今日皮重（车数）
     private string _statNet = "-";            // 今日净重（车数）
+    private string _statFake = "-";           // 今日付称（只称了重车未回空车的车数）
     private string _statAmount = "-";         // 今日金额（元，合计）
     private Label _lblTodaySummary = null!;   // 视频区下方今日汇总行
 
@@ -635,8 +636,8 @@ public class MainForm : Form
         if (!_statsExpanded) return;
 
         // 先量出名目/数值的最大宽度，再整体水平居中（各行左右对齐、成组居中）
-        string[] names = ["全部记录：", "今日磅单：", "今日毛重：", "今日皮重：", "今日净重：", "今日金额："];
-        string[] values = [_statTotal, _statToday, _statGross, _statTare, _statNet, _statAmount];
+        string[] names = ["全部记录：", "今日磅单：", "今日毛重：", "今日皮重：", "今日净重：", "今日付称：", "今日金额："];
+        string[] values = [_statTotal, _statToday, _statGross, _statTare, _statNet, _statFake, _statAmount];
         int nameW = 0, valueW = 0;
         foreach (var n in names) nameW = Math.Max(nameW, MeasureText(n, _statsNameFont));
         foreach (var v in values) valueW = Math.Max(valueW, MeasureText(v, _statsValueFont));
@@ -672,15 +673,16 @@ public class MainForm : Form
         _statsPanel.Invalidate();   // 卡片自绘：内容区随展开状态重绘
     }
 
-    /// <summary>刷新右侧统计面板与今日汇总行（全部记录数、今日磅单数、毛/皮/净车数与金额合计）。</summary>
+    /// <summary>刷新右侧统计面板与今日汇总行（全部记录数、今日磅单数、毛/皮/净车数、付称车数与金额合计）。</summary>
     private void RefreshStats()
     {
-        var (total, todayCount, grossCars, tareCars, netCars, amountYuan) = _recordRepo.GetHomeStats();
+        var (total, todayCount, grossCars, tareCars, netCars, onlyGrossCars, amountYuan) = _recordRepo.GetHomeStats();
         _statTotal = $"{total} 条";
         _statToday = $"{todayCount} 张";
         _statGross = $"{grossCars} 车";
         _statTare = $"{tareCars} 车";
         _statNet = $"{netCars} 车";
+        _statFake = $"{onlyGrossCars} 车";
         _statAmount = $"{amountYuan:0.##} 元";
         _statsPanel.Invalidate();   // 卡片自绘：数值变化后重绘
         _lblTodaySummary.Text = $"今日称重：磅单 {todayCount} 张    金额合计 {amountYuan:0.##} 元";
