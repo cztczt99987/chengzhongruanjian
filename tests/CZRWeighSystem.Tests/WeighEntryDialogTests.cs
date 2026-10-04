@@ -268,6 +268,7 @@ public class WeighEntryDialogTests
 
             Assert.Contains("未完成的二次磅", Fld<Label>(dlg, "_lblPairHint").Text);
             // 重车过磅模式不显示"上次重量/上次时间"区块（该功能仅空车去皮弹窗使用）
+            Assert.False(dlg.LastTareInfoVisible);
             Assert.False(Fld<Label>(dlg, "_lblLastWeight").Visible);
             Assert.False(Fld<Label>(dlg, "_lblLastTime").Visible);
 
@@ -582,6 +583,51 @@ public class WeighEntryDialogTests
         });
     }
 
+    [Fact]
+    public void 省份选择器_反复开关_弹窗复用不被释放()
+    {
+        RunOnSta(() =>
+        {
+            // 回归 ObjectDisposedException：旧实现 Closed 即 Dispose，
+            // 下拉自动关闭与按钮手动关闭重入时访问已释放对象
+            using var host = new Form();
+            var picker = new ProvincePicker();
+            host.Controls.Add(picker);
+            host.CreateControl();   // 建句柄但不显示窗口
+
+            var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+            var toggle = typeof(ProvincePicker).GetMethod("ToggleDropDown", flags)!;
+            ToolStripDropDown Drop() =>
+                (ToolStripDropDown)typeof(ProvincePicker)
+                    .GetField("_drop", flags)!.GetValue(picker)!;
+
+            toggle.Invoke(picker, null);                 // 开
+            var d1 = Drop();
+            Assert.True(d1.Visible);
+            Assert.False(d1.IsDisposed);
+
+            toggle.Invoke(picker, null);                 // 再按一次 → 关
+            Assert.False(d1.Visible);
+            Assert.False(d1.IsDisposed);
+
+            d1.Close();                                  // 模拟 AppClicked 自动关闭
+            toggle.Invoke(picker, null);                 // 再开 → 复用同一实例
+            Assert.Same(d1, Drop());
+            Assert.False(Drop().IsDisposed);
+
+            // 点省份单元格：选中变化、弹窗关闭但仍未释放，可继续再开
+            var grid = (Panel)typeof(ProvincePicker)
+                .GetField("_grid", flags)!.GetValue(picker)!;
+            int ji = ProvincePicker.Items.IndexOf("冀");
+            ((Button)grid.Controls[ji]).PerformClick();
+            Assert.Equal("冀", picker.SelectedItem);
+            Assert.False(Drop().IsDisposed);
+
+            toggle.Invoke(picker, null);
+            Assert.True(Drop().Visible);
+        });
+    }
+
     // ---------- 空车去皮：上次皮重显示 + 差值预警（仅空车去皮弹窗） ----------
 
     /// <summary>造一条已完成记录（先皮 10000kg 后毛 30000kg → 皮重=10000kg），返回该记录。</summary>
@@ -609,12 +655,13 @@ public class WeighEntryDialogTests
             // 空车去皮模式：上次重量=历史皮重，上次时间=一次磅（皮重）时间
             var lblW = Fld<Label>(dlg, "_lblLastWeight");
             var lblT = Fld<Label>(dlg, "_lblLastTime");
-            Assert.True(lblW.Visible);
+            Assert.True(dlg.LastTareInfoVisible);
             Assert.Equal(AppConfig.Current.FormatWeight(10000), lblW.Text);
             Assert.Equal(done.FirstTime!.Value.ToString("yyyy-MM-dd HH:mm"), lblT.Text);
 
             // 切到重车过磅：整组隐藏，重车表单不展示该功能
             Call(dlg, "ToggleMode");
+            Assert.False(dlg.LastTareInfoVisible);
             Assert.False(lblW.Visible);
             Assert.False(lblT.Visible);
         });

@@ -196,7 +196,7 @@ public class WeighEntryDialog : Form
             CellBorderStyle = TableLayoutPanelCellBorderStyle.Single,
             BackColor = ticket.BackColor,
         };
-        _grid = grid;
+        _grid = grid;   // 提为字段供布局测试断言（不压住下方司磅员框）
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 88));   // 字段名
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 264));  // 输入框（车牌行含省份下拉）
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 68));   // 重量名
@@ -491,6 +491,10 @@ public class WeighEntryDialog : Form
         _lblLastTimeTitle.Visible = show;
         _lblLastTime.Visible = show;
     }
+
+    /// <summary>上次空车去皮信息区块是否应显示（仅空车去皮模式）。
+    /// 测试在不 Show 窗体时无法读取控件真实 Visible（父窗体未显示时恒为 false），故暴露此状态。</summary>
+    internal bool LastTareInfoVisible => _isTare;
 
     /// <summary>
     /// 取本车最近一次已完成皮重（按车号缓存，车号变化才重新查库）。
