@@ -89,6 +89,8 @@ public class AppConfig
     public bool PrintCountEnabled { get; set; } = true;
     /// <summary>每个磅单最多允许打印次数（PrintCountEnabled 开启时生效）</summary>
     public int MaxPrintCount { get; set; } = 5;
+    /// <summary>打印纸张与模板不符时弹窗提示（关闭后自动缩放、不弹窗）</summary>
+    public bool ShowPaperSizeWarn { get; set; } = true;
     /// <summary>默认省份简称（车牌录入预填，如"黑"）</summary>
     public string DefaultProvince { get; set; } = "黑";
     /// <summary>默认发牌机关代号字母（车牌录入预填，如"D"）</summary>

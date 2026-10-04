@@ -18,6 +18,7 @@ public class ComprehensiveSettingsDialog : Form
     internal TextBox TxtFooter = null!;
     internal CheckBox ChkPrintCount = null!;
     internal NumericUpDown NumMaxPrint = null!;
+    internal CheckBox ChkPaperWarn = null!;
     internal ComboBox CboProvince = null!;
     internal ComboBox CboLetter = null!;
     internal CheckBox ChkUseProvinceLetter = null!;
@@ -54,7 +55,7 @@ public class ComprehensiveSettingsDialog : Form
         MaximizeBox = false;
         MinimizeBox = false;
         ShowInTaskbar = false;
-        ClientSize = new Size(900, 720);   // 容纳基本设置页 7 个区块（末块底 628 + 页签头/工具条 + 底部留白）
+        ClientSize = new Size(900, 760);   // 容纳基本设置页 7 个区块（末块底 668 + 页签头/工具条 + 底部留白）
         Font = new Font("Microsoft YaHei UI", 10F);
 
         BuildToolbar();
@@ -172,8 +173,8 @@ public class ComprehensiveSettingsDialog : Form
         TxtHeader = AddRow(grpInfo, "磅单抬头：", cfg.SlipHeader, 60);
         TxtFooter = AddRow(grpInfo, "磅单底部：", cfg.SlipFooter, 105);
 
-        // ---- 区块 2：磅单打印次数累计 ----
-        var grpPrint = NewGroup(page, 202, 56);
+        // ---- 区块 2：磅单打印次数累计 / 纸张不符提示 ----
+        var grpPrint = NewGroup(page, 202, 96);
         ChkPrintCount = new CheckBox
         {
             Text = "启用磅单\"打印次数\"累计，同时设置每个磅单最多允许打印",
@@ -190,13 +191,21 @@ public class ComprehensiveSettingsDialog : Form
             TextAlign = HorizontalAlignment.Center,
         };
         var lblCi = new Label { Text = "次", AutoSize = true, Location = new Point(528, 20) };
+        ChkPaperWarn = new CheckBox
+        {
+            Text = "打印纸张与模板不符时弹窗提示（关闭后仅自动缩放、不弹窗）",
+            AutoSize = true,
+            Location = new Point(18, 62),
+            Checked = cfg.ShowPaperSizeWarn,
+        };
         grpPrint.Controls.Add(ChkPrintCount);
         grpPrint.Controls.Add(NumMaxPrint);
         grpPrint.Controls.Add(lblCi);
+        grpPrint.Controls.Add(ChkPaperWarn);
         FlowRow(ChkPrintCount, NumMaxPrint, lblCi);
 
         // ---- 区块 3：默认省份 / 数据稳定 ----
-        var grpProvince = NewGroup(page, 272, 56);
+        var grpProvince = NewGroup(page, 312, 56);
         var lblProvince = new Label
         { Text = "默认省份", AutoSize = true, Location = new Point(18, 21) };
         CboProvince = new ComboBox
@@ -259,7 +268,7 @@ public class ComprehensiveSettingsDialog : Form
             ChkStableSeconds, CboStableSeconds, lblStableTail);
 
         // ---- 区块 4：闲置锁屏 / 归零拦截 ----
-        var grpIdle = NewGroup(page, 342, 56);
+        var grpIdle = NewGroup(page, 382, 56);
         var lblIdle = new Label
         { Text = "电脑闲置", AutoSize = true, Location = new Point(18, 21) };
         NumIdleLock = new NumericUpDown
@@ -282,7 +291,7 @@ public class ComprehensiveSettingsDialog : Form
         FlowRow(lblIdle, NumIdleLock, lblIdleTail);   // 第二列 ChkBlockZero 固定 420 与区块 5 对齐
 
         // ---- 区块 5：自动清除 / 严格禁止二次称重 ----
-        var grpClear = NewGroup(page, 412, 56);
+        var grpClear = NewGroup(page, 452, 56);
         var lblClear = new Label
         { Text = "自动清除", AutoSize = true, Location = new Point(18, 21) };
         CboExpireDays = new ComboBox
@@ -315,7 +324,7 @@ public class ComprehensiveSettingsDialog : Form
 
         // ---- 区块 6：黑匣子（自原「称重设置」迁入：稳定持续设定秒数后自动记录 + 抓拍） ----
         // 两行布局：复选框独占首行，数值输入放第二行，避免长文案在不同 DPI 下遮挡输入框
-        var grpBlackBox = NewGroup(page, 482, 90);
+        var grpBlackBox = NewGroup(page, 522, 90);
         ChkBlackBox = new CheckBox
         {
             Text = "启用黑匣子（稳定达到触发重量并持续秒数后自动记录 + 抓拍）",
@@ -347,7 +356,7 @@ public class ComprehensiveSettingsDialog : Form
         FlowRow(lblMinKg, NumBlackBoxMinKg, lblSeconds, NumBlackBoxSeconds);
 
         // ---- 区块 7：空车去皮差值预警（本次皮重与本车上次已完成皮重相差超阈值时仅弹窗预警） ----
-        var grpTareDiff = NewGroup(page, 578, 50);
+        var grpTareDiff = NewGroup(page, 618, 50);
         var lblTareDiff = new Label
         { Text = "空车去皮差值预警：本次皮重与上次相差超过", AutoSize = true, Location = new Point(18, 21) };
         NumTareDiffWarnTon = new NumericUpDown
@@ -411,6 +420,7 @@ public class ComprehensiveSettingsDialog : Form
         cfg.SlipFooter = TxtFooter.Text.Trim();
         cfg.PrintCountEnabled = ChkPrintCount.Checked;
         cfg.MaxPrintCount = (int)NumMaxPrint.Value;
+        cfg.ShowPaperSizeWarn = ChkPaperWarn.Checked;
         cfg.DefaultProvince = CboProvince.SelectedItem?.ToString() ?? "";
         cfg.DefaultLetter = CboLetter.SelectedItem?.ToString() ?? "";
         cfg.UseProvinceLetter = ChkUseProvinceLetter.Checked;

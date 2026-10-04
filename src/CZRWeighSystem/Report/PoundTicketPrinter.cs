@@ -412,6 +412,7 @@ public static class PoundTicketPrinter
     {
         if (_paperWarned) return;
         _paperWarned = true;
+        if (!AppConfig.Current.ShowPaperSizeWarn) return;   // 综合设置关闭后仅自动缩放、不弹窗
         MessageBox.Show(
             $"打印机当前纸张与模板「{tpl.Name}」不符：\n"
             + $"　模板纸张：{designW:F0}×{designH:F0} mm\n"

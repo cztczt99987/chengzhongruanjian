@@ -50,6 +50,7 @@ public class ComprehensiveSettingsDialogTests
         f.ChkBlackBox.Checked = false;
         f.NumBlackBoxMinKg.Value = 150;
         f.NumBlackBoxSeconds.Value = 20;
+        f.ChkPaperWarn.Checked = false;
 
         f.SaveBasic();
 
@@ -59,6 +60,7 @@ public class ComprehensiveSettingsDialogTests
         Assert.Equal("谢谢惠顾", cfg.SlipFooter);
         Assert.True(cfg.PrintCountEnabled);
         Assert.Equal(3, cfg.MaxPrintCount);
+        Assert.False(cfg.ShowPaperSizeWarn);
         Assert.Equal("吉", cfg.DefaultProvince);
         Assert.Equal("A", cfg.DefaultLetter);
         Assert.False(cfg.UseProvinceLetter);
@@ -76,6 +78,7 @@ public class ComprehensiveSettingsDialogTests
         cfg.StableSeconds = 0;
         cfg.BlockSaveUntilZero = false;
         cfg.ForbidReweighMinutes = 0;
+        cfg.ShowPaperSizeWarn = true;
         cfg.Save();
     }
 
