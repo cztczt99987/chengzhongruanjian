@@ -97,7 +97,13 @@ public static class PoundTicketPrinter
     private sealed record FieldDef(string Key, string Label, Func<WeighRecord, AppConfig, string?> Get);
 
     /// <summary>
-    /// 弹出系统打印对话框打印磅单（返回 false=用户取消、超限或失败）。
+    /// 磅单实际输出动作：默认直接打印到系统默认打印机，不弹打印机选择框
+    /// （换打印机请在 Windows 中修改默认打印机）。internal 静态可替换，测试用于拦截真实出纸。
+    /// </summary>
+    internal static Action<PrintDocument> OutputAction = doc => doc.Print();
+
+    /// <summary>
+    /// 直接打印磅单到系统默认打印机（点"打印"即出单，不再弹打印机选择框；返回 false=超限或失败）。
     /// 综合设置开启"打印次数"累计时：达到上限拒绝打印，打印成功后次数 +1。
     /// </summary>
     public static bool Print(WeighRecord r)
@@ -113,13 +119,7 @@ public static class PoundTicketPrinter
         try
         {
             using var doc = BuildRecordDocument(r, copies: 0);
-            using var dialog = new PrintDialog
-            {
-                Document = doc,
-                UseEXDialog = true,
-            };
-            if (dialog.ShowDialog() != DialogResult.OK) return false;
-            doc.Print();
+            OutputAction(doc);
             CountPrint(r);
             Log.Info($"磅单已打印：{r.SerialNo}（车号 {r.VehicleNo}）");
             return true;
@@ -134,11 +134,11 @@ public static class PoundTicketPrinter
     }
 
     /// <summary>
-    /// 打印预览（不占用纸张，便于调试磅单版式）。
+    /// 打印预览（不占用纸张，便于调试磅单版式）。预览不弹纸张不符指引（仅真实打印提示）。
     /// </summary>
     public static void PrintPreview(WeighRecord r)
     {
-        using var doc = BuildRecordDocument(r, copies: 0);
+        using var doc = BuildRecordDocument(r, copies: 0, showPaperWarning: false);
         using var preview = new PrintPreviewDialog
         {
             Document = doc,
@@ -182,10 +182,14 @@ public static class PoundTicketPrinter
         var paper = idx >= 0 ? Papers[idx] : Papers[0];
 
         var doc = new PrintDocument { DocumentName = "磅单模板预览" };
-        doc.OriginAtMargins = true;               // 原点=可打印区起点，模板坐标即所见即所得
-        doc.DefaultPageSettings.Margins = new Margins(0, 0, 0, 0);   // 留白由模板坐标自带（对称）
+        // 原点锚定物理纸边（false），RenderPage 再按打印机硬边距平移到可打印区——
+        // 不能用 OriginAtMargins=true+0边距：那会让原点=物理纸边且裁剪区从硬边距开始，
+        // 模板顶部 Y=2mm 的标题落在不可打印区被裁（2026-10-04 反馈预览顶部裁切）
+        doc.OriginAtMargins = false;
+        doc.DefaultPageSettings.Margins = new Margins(0, 0, 0, 0);
         ApplyPaperSize(doc, paper);
-        doc.PrintPage += (_, e) => RenderPage(e, t, r);
+        // 模板库/设计器的打印预览：只渲染不打印，纸张不符不弹指引（避免预览与自动化测试被模态框阻塞）
+        doc.PrintPage += (_, e) => RenderPage(e, t, r, showPaperWarning: false);
         return doc;
     }
 
@@ -193,8 +197,9 @@ public static class PoundTicketPrinter
     /// 构建单张磅单打印文档：启用模板时按模板纸张与版式渲染，否则走内置版式；
     /// 联数逐页输出（对应 F5-03 一式 N 联）。
     /// copies：联数；传 0 表示取全局打印设置的联数（批量导出 PDF 等场景可传 1）。
+    /// showPaperWarning：纸张与模板不符时是否弹指引（实际打印=true，打印预览=false）。
     /// </summary>
-    public static PrintDocument BuildRecordDocument(WeighRecord r, int copies)
+    public static PrintDocument BuildRecordDocument(WeighRecord r, int copies, bool showPaperWarning = true)
     {
         var cfg = AppConfig.Current;
         var tpl = LoadActiveTemplate();
@@ -203,14 +208,14 @@ public static class PoundTicketPrinter
         int pages = copies > 0 ? copies : Math.Max(1, cfg.PrintCopies);
 
         var doc = new PrintDocument { DocumentName = $"磅单_{r.SerialNo}" };
-        doc.OriginAtMargins = true;               // 原点=可打印区起点，模板坐标即所见即所得
-        doc.DefaultPageSettings.Margins = new Margins(0, 0, 0, 0);   // 留白由模板坐标自带（对称）
+        doc.OriginAtMargins = false;              // 原点=物理纸边；RenderPage 平移到可打印区（防顶部裁切）
+        doc.DefaultPageSettings.Margins = new Margins(0, 0, 0, 0);
         ApplyPaperSize(doc, paper);
 
         int printed = 0;
         doc.PrintPage += (_, e) =>
         {
-            RenderPage(e, tpl, r);
+            RenderPage(e, tpl, r, showPaperWarning);
             printed++;
             e.HasMorePages = printed < pages;
         };
@@ -230,14 +235,14 @@ public static class PoundTicketPrinter
         int copies = Math.Max(1, cfg.PrintCopies);
 
         var doc = new PrintDocument { DocumentName = $"磅单批量打印_{records.Count}张" };
-        doc.OriginAtMargins = true;               // 原点=可打印区起点，模板坐标即所见即所得
-        doc.DefaultPageSettings.Margins = new Margins(0, 0, 0, 0);   // 留白由模板坐标自带（对称）
+        doc.OriginAtMargins = false;              // 原点=物理纸边；RenderPage 平移到可打印区（防顶部裁切）
+        doc.DefaultPageSettings.Margins = new Margins(0, 0, 0, 0);
         ApplyPaperSize(doc, paper);
 
         int recordIdx = 0, pageInRecord = 0;
         doc.PrintPage += (_, e) =>
         {
-            RenderPage(e, tpl, records[recordIdx]);
+            RenderPage(e, tpl, records[recordIdx]);   // 实际批量打印：保留纸张不符指引
             pageInRecord++;
             if (pageInRecord >= copies)
             {
@@ -250,7 +255,8 @@ public static class PoundTicketPrinter
     }
 
     /// <summary>
-    /// 批量打印：一次打印对话框，多张磅单合并为单个打印任务（返回 false=用户取消、全部超限或失败）。
+    /// 批量打印：多张磅单合并为单个打印任务直接打印到系统默认打印机
+    /// （不再弹打印机选择框；返回 false=全部超限或失败）。
     /// 综合设置开启"打印次数"累计时：达到上限的磅单自动跳过并提示。
     /// </summary>
     public static bool PrintBatch(IReadOnlyList<WeighRecord> records)
@@ -274,9 +280,7 @@ public static class PoundTicketPrinter
         try
         {
             using var doc = BuildBatchDocument(list);
-            using var dialog = new PrintDialog { Document = doc, UseEXDialog = true };
-            if (dialog.ShowDialog() != DialogResult.OK) return false;
-            doc.Print();
+            OutputAction(doc);
             foreach (var r in list) CountPrint(r);
             if (skipped > 0)
                 MessageBox.Show($"已跳过 {skipped} 张达到打印次数上限的磅单。",
@@ -307,12 +311,11 @@ public static class PoundTicketPrinter
     internal static bool ExceedsPrintLimit(WeighRecord r, AppConfig cfg)
         => cfg.PrintCountEnabled && r.PrintCount >= cfg.MaxPrintCount;
 
-    /// <summary>按模板（或内置版式）渲染单张磅单页面。</summary>
+    /// <summary>按模板（或内置版式）渲染单张磅单页面。调用前 RenderPage 已完成硬边距平移与缩放。</summary>
     private static void RenderRecord(PrintTemplate? tpl, Graphics g, Rectangle bounds, WeighRecord r)
     {
         if (tpl != null)
         {
-            // 模板模式：OriginAtMargins 已把原点放在可打印区起点，模板坐标（毫米）直接渲染。
             // 打印 Graphics 固定 PageUnit=Display（1 逻辑单位 = 1/100 英寸），与打印机物理 DPI
             // 无关 → 毫米换算系数固定 100/25.4。若用 g.DpiX/25.4：600dpi 打印机会按设备像素
             // 解释（23.6 vs 3.94），内容整体放大 6 倍移出纸面，预览/打印整页空白
@@ -326,17 +329,28 @@ public static class PoundTicketPrinter
     }
 
     /// <summary>
-    /// PrintPage 共用入口：模板模式先按打印机实际纸张自适应缩放，再渲染。
-    /// 背景：驱动常忽略程序自定义纸张（PaperKind.Custom），回退到驱动当前表单
-    /// （如 120×140mm 竖联纸），导致右半栏被裁、走纸超过一联（2026-10-02 用户反馈）。
-    /// 纸张不符时不裁切：整体等比缩小放入实际纸张，并记日志 + 弹一次指引。
+    /// PrintPage 共用入口：
+    /// ① 原点锚定物理纸边，再平移到打印机硬边距（可打印区起点）——模板 Y=2mm 的标题不再
+    ///    落入打印机不可打印区被裁，且各电脑/打印机行为一致（硬边距仅造成整体物理位移，
+    ///    布局与缩放不变）；
+    /// ② 模板模式按"物理纸张减去硬边距后的可打印区"自适应缩放：驱动忽略自定义纸张时
+    ///    整体等比缩小放入，不裁切（2026-10-02 走纸/右半栏被裁问题）。
     /// </summary>
-    private static void RenderPage(PrintPageEventArgs e, PrintTemplate? tpl, WeighRecord r)
+    private static void RenderPage(PrintPageEventArgs e, PrintTemplate? tpl, WeighRecord r,
+        bool showPaperWarning = true)
     {
+        var g = e.Graphics!;
+        // 打印机硬边距（物理纸边到可打印区，单位 1/100 英寸）；虚拟打印机通常为 0
+        float hardX = Math.Max(0, e.PageSettings.HardMarginX);
+        float hardY = Math.Max(0, e.PageSettings.HardMarginY);
+        g.ResetTransform();
+
         if (tpl != null)
         {
             var (designW, designH) = PaperSizeMm(tpl.PaperKey);
-            var (availW, availH) = ActualPageMm(e, designW, designH);
+            // 可打印区 = 物理纸张减去上下左右硬边距
+            float availW = Math.Max(50, e.PageBounds.Width - 2 * hardX) * 25.4f / 100f;
+            float availH = Math.Max(50, e.PageBounds.Height - 2 * hardY) * 25.4f / 100f;
             float scale = ComputeFitScale(tpl, availW, availH);
             bool narrow = availW < designW - 2f;     // 实际纸张比模板窄 → 需缩放防裁切
             bool tooTall = availH > designH + 2f;    // 实际纸张比模板高 → 走纸超过一联
@@ -345,11 +359,22 @@ public static class PoundTicketPrinter
                 Log.Warn($"打印纸张与模板「{tpl.Name}」不符：模板纸 {designW:F0}×{designH:F0}mm，"
                     + $"打印机实际 {availW:F0}×{availH:F0}mm"
                     + (narrow ? $"（内容已按 {scale:P0} 缩放完整打印）" : "（走纸可能超过一联）"));
-                WarnPaperMismatchOnce(tpl, designW, designH, availW, availH, narrow);
+                // 指引弹窗仅实际打印时弹；打印预览/自动化渲染不弹（模态框会阻塞）
+                if (showPaperWarning) WarnPaperMismatchOnce(tpl, designW, designH, availW, availH, narrow);
             }
-            if (scale < 1f) e.Graphics!.ScaleTransform(scale, scale);
+            // 变换顺序：物理位置 = 硬边距 + 缩放×模板坐标（GDI+ 先缩放后平移）
+            g.ScaleTransform(scale, scale);
+            g.TranslateTransform(hardX, hardY);
+            RenderRecord(tpl, g, Rectangle.Empty, r);
         }
-        RenderRecord(tpl, e.Graphics!, e.MarginBounds, r);
+        else
+        {
+            g.TranslateTransform(hardX, hardY);
+            var printable = new Rectangle(0, 0,
+                (int)Math.Max(50, e.PageBounds.Width - 2 * hardX),
+                (int)Math.Max(50, e.PageBounds.Height - 2 * hardY));
+            RenderRecord(null, g, printable, r);
+        }
     }
 
     /// <summary>
@@ -392,8 +417,8 @@ public static class PoundTicketPrinter
             + $"　模板纸张：{designW:F0}×{designH:F0} mm\n"
             + $"　打印机实际：{availW:F0}×{availH:F0} mm\n\n"
             + (narrow ? "内容已自动缩放以完整打印。\n" : "走纸长度可能超过一联纸。\n")
-            + "如需标准效果，请在打印对话框中选择「241×93mm（三等分）」纸张；"
-            + "若打印机没有该纸张，请在打印机属性 → 首选项/自定义表单中新建 241×93mm 纸张。",
+            + $"如需标准效果，请在打印机属性 → 首选项/自定义表单中新建并选用 "
+            + $"{designW:F0}×{designH:F0}mm 纸张（程序自动匹配驱动中同尺寸纸张）。",
             "打印纸张提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
     }
 
