@@ -187,14 +187,17 @@ public class WeighEntryDialog : Form
         ticket.Controls.Add(_lblSerialNo);
 
         // ---- 固定字段表格：左列录入字段，右列毛/皮/净实时预览，网格线仿老过磅单 ----
+        // 高度由行内容自适应（AutoSize）：固定高度在高 DPI 缩放下与行高总和产生取整误差，
+        // 空间不足时 TLP 会压缩靠后的行（用户实机"单价行下方显示不全"即第 7 行被压）
         var grid = new TableLayoutPanel
         {
             Location = new Point(25, 124),
-            Size = new Size(600, 356),
             ColumnCount = 4,
             RowCount = 7,
             CellBorderStyle = TableLayoutPanelCellBorderStyle.Single,
             BackColor = ticket.BackColor,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
         };
         _grid = grid;   // 提为字段供布局测试断言（不压住下方司磅员框）
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 88));   // 字段名

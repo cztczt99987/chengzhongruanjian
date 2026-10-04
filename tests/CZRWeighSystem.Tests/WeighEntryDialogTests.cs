@@ -104,6 +104,29 @@ public class WeighEntryDialogTests
         manager.Dispose();
     }
 
+    /// <summary>
+    /// 票据表格 7 行必须等高且完整渲染：表格高 356 扣除单元格边框后若容不下 7×50=350，
+    /// TableLayoutPanel 会压缩靠后的行（用户反馈"单价行下方显示不全"）。行高取自 TLP 实际布局。
+    /// </summary>
+    [Fact]
+    public void 布局_表格七行等高完整渲染()
+    {
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+            var grid = Fld<TableLayoutPanel>(dlg, "_grid");
+            dlg.Show();   // 触发布局，GetRowHeights 才有值
+            var heights = grid.GetRowHeights();
+            Assert.Equal(7, heights.Length);
+            // 每行实际高度不得低于设计行高 50 的 98%（TLP 空间不足时会压缩行）
+            for (int i = 0; i < heights.Length; i++)
+                Assert.True(heights[i] >= 49,
+                    $"表格第 {i + 1} 行实际高度 {heights[i]}px 低于设计 50px（表格高度不足，行被压缩）");
+        });
+        manager.Dispose();
+    }
+
     [Fact]
     public void 空车去皮_无待配对记录_保存为第一次称重()
     {
