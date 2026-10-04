@@ -154,9 +154,9 @@ public class RecordQueryForm : Form
         _grid.Columns.Add("OwnerPhone", "地主电话");
         _grid.Columns.Add("DriverPhone", "司机电话");
         _grid.Columns.Add("CargoOwner", "货主姓名");
-        _grid.Columns.Add("Gross", $"毛重({_cfg.Unit})");
-        _grid.Columns.Add("Tare", $"皮重({_cfg.Unit})");
-        _grid.Columns.Add("Net", $"净重({_cfg.Unit})");
+        _grid.Columns.Add("Gross", $"毛重({_cfg.UnitDisplay})");
+        _grid.Columns.Add("Tare", $"皮重({_cfg.UnitDisplay})");
+        _grid.Columns.Add("Net", $"净重({_cfg.UnitDisplay})");
         _grid.Columns.Add("AmountYuan", "金额(元)");
         _grid.Columns.Add("FirstTime", "一次磅时间");
         _grid.Columns.Add("SecondTime", "二次磅时间");
@@ -523,8 +523,8 @@ public class RecordQueryForm : Form
                            $"净重合计：{_cfg.FormatWeight(netSum)}";
     }
 
-    /// <summary>重量显示（null 显示空）。</summary>
-    private string Fmt(double? kg) => kg.HasValue ? _cfg.FormatWeight(kg.Value).Replace(" " + _cfg.Unit, "") : "";
+    /// <summary>重量显示（null 显示空）；单位在表头，单元格只显示数字。</summary>
+    private string Fmt(double? kg) => kg.HasValue ? _cfg.FormatWeightNumber(kg.Value) : "";
 
     /// <summary>重置查询条件。</summary>
     private void ResetCondition()

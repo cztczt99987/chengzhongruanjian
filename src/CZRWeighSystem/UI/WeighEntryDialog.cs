@@ -4,10 +4,12 @@ using CZRWeighSystem.Core;
 namespace CZRWeighSystem.UI;
 
 /// <summary>
-/// 称重录入弹窗（2026-09-30 三次改版：票据区仿老软件过磅单表格样式）。
+/// 称重录入弹窗（仿老软件链式流程：确认 → 保存 → 打印 → 继续）。
 /// 点首页「空车去皮 / 重车过磅」弹出，左侧米黄票据按网格两列布局：
 /// 左列固定字段（车牌号码/地主姓名/地主电话/司机电话/货主姓名/品种），
-/// 右列实时毛/皮/净预览；右栏保留实时重量、上次重量/时间、预计净重与保存按钮。
+/// 右列实时毛/皮/净预览；右栏为四步链式按钮，按顺序逐步解锁：
+/// 确认（校验车号/稳定并锁定读数）→ 保存（第一次称重或二次磅结算）→
+/// 打印（直接出单，不再弹"是否打印"）→ 继续（清空表单连续录入下一辆，窗口不关闭）。
 /// 地主姓名等固定字段以固定键写入记录 ext_json（无需改表，磅单模板可直接引用），
 /// 品种存 Goods 列；保存走统一皮/毛流程（车号有待配对记录时自动二次磅结算）。
 /// </summary>
@@ -18,6 +20,12 @@ public class WeighEntryDialog : Form
     private bool _isTare;                    // 可经"切换"按钮在皮/毛模式间转换
     private readonly AppConfig _cfg = AppConfig.Current;
 
+    // ===== 链式流程状态（0=待确认 1=待保存 2=待打印 3=待继续）=====
+    private int _step;
+    private double? _confirmedKg;            // 确认时锁定的稳定重量（千克）
+    private WeighRecord? _confirmedFirst;    // 确认时识别出的待配对一次磅（null=第一次称重）
+    private WeighRecord? _savedRecord;       // 保存成功的记录（打印用）
+
     /// <summary>当天已保存过（未作废）的记录：车牌自动补全候选 + 选中后回填上次信息。</summary>
     private List<WeighRecord> _todayRecords = [];
 
@@ -26,16 +34,16 @@ public class WeighEntryDialog : Form
     private static readonly Color GrossBack = Color.FromArgb(0, 145, 60);
 
     // ===== 对话框出口（internal 供测试注入静默实现；正常流程用 MessageBox）=====
-    /// <summary>确认框：返回 true=确认。测试注入后可静默自动确认。</summary>
-    internal Func<string, string, bool> ConfirmBox = (msg, title) =>
-        MessageBox.Show(msg, title, MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
-    /// <summary>结果提示框。测试注入后记录消息不弹窗。</summary>
+    /// <summary>错误/警告提示框。测试注入后记录消息不弹窗。</summary>
     internal Action<string, string, bool> InfoBox = (msg, title, ok) =>
         MessageBox.Show(msg, title, MessageBoxButtons.OK,
             ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
 
     /// <summary>保存成功后回调（参数=流水号；主界面用于抓拍留证）。</summary>
     internal Action<string>? OnSaved;
+
+    /// <summary>打印动作（默认直接打印磅单；测试注入空实现避免真实出纸）。</summary>
+    internal Func<WeighRecord, bool> PrintAction = r => Report.PoundTicketPrinter.Print(r);
 
     // ===== 控件 =====
     private ComboBox _cboPrefix = null!;     // 车牌省份简称（默认取综合设置的"默认省份"）
@@ -45,6 +53,7 @@ public class WeighEntryDialog : Form
     private TextBox _txtOwnerPhone = null!;  // 地主电话（ext_json 固定键）
     private TextBox _txtDriverPhone = null!; // 司机电话（ext_json 固定键）
     private TextBox _txtCargoOwner = null!;  // 货主姓名（ext_json 固定键）
+    private TextBox _txtUnitPrice = null!;   // 单价（ext_json 固定键；只允许数字与小数点）
     private TextBox _txtOperator = null!;    // 司磅员（当前登录用户，只读）
     private Label _lblSerialNo = null!;      // No：待配对时显示一次磅流水号
     private Label _lblPairHint = null!;      // 配对/新车提示
@@ -57,7 +66,10 @@ public class WeighEntryDialog : Form
     private Label _lblLastWeight = null!;    // 上次重量（待配对一次磅）
     private Label _lblLastTime = null!;      // 上次时间
     private Label _lblNetPreview = null!;    // 预计净重（右栏）
-    private Button _btnSave = null!;         // 保存（待配对时文字为"保存并结算"）
+    private Button _btnConfirm = null!;      // 链式步骤1：确认
+    private Button _btnSave = null!;         // 链式步骤2：保存
+    private Button _btnPrint = null!;        // 链式步骤3：打印
+    private Button _btnContinue = null!;     // 链式步骤4：继续
     private readonly System.Windows.Forms.Timer _tick = new() { Interval = 200 };
 
     public WeighEntryDialog(WeighManager manager, bool isTare, string? prefillVehicle = null)
@@ -102,6 +114,7 @@ public class WeighEntryDialog : Form
         }
         _txtVehicle.SelectionStart = _txtVehicle.TextLength;   // 光标到末尾，直接续输
         UpdateWeight();
+        SetStep(0);   // 链式流程初始：仅"确认"可点
 
         _tick.Tick += (_, _) => UpdateWeight();   // 实时重量/净重预览随仪表数据刷新
         // 注意：定时器仅在窗体真正显示时启动（OnShown）——测试等场景下未显示的窗体
@@ -165,9 +178,9 @@ public class WeighEntryDialog : Form
         var grid = new TableLayoutPanel
         {
             Location = new Point(25, 124),
-            Size = new Size(600, 306),
+            Size = new Size(600, 356),
             ColumnCount = 4,
-            RowCount = 6,
+            RowCount = 7,
             CellBorderStyle = TableLayoutPanelCellBorderStyle.Single,
             BackColor = ticket.BackColor,
         };
@@ -175,7 +188,7 @@ public class WeighEntryDialog : Form
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 264));  // 输入框（车牌行含省份下拉）
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 68));   // 重量名
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 176));  // 重量值
-        for (int i = 0; i < 6; i++)
+        for (int i = 0; i < 7; i++)
             grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
 
         // 单元格控件统一留 1px 内边距：避免控件盖住 TableLayoutPanel 的网格线
@@ -268,6 +281,17 @@ public class WeighEntryDialog : Form
         grid.Controls.Add(Head("品种"), 0, 5);
         _txtVariety = Input();
         grid.Controls.Add(_txtVariety, 1, 5);
+
+        // 行7：单价（ext_json 固定键；右列留空）——只允许输入数字与小数点
+        grid.Controls.Add(Head("单价"), 0, 6);
+        _txtUnitPrice = Input();
+        _txtUnitPrice.KeyPress += (_, e) =>
+        {
+            // 拦截数字/小数点/控制键（退格）之外的字符，避免录成文字后无法参与金额计算
+            if (!char.IsControl(e.KeyChar) && !char.IsDigit(e.KeyChar) && e.KeyChar != '.')
+                e.Handled = true;
+        };
+        grid.Controls.Add(_txtUnitPrice, 1, 6);
         ticket.Controls.Add(grid);
 
         // 表格下方：司磅员（当前登录用户，自动记录）
@@ -275,12 +299,12 @@ public class WeighEntryDialog : Form
         {
             Text = "司磅员：",
             AutoSize = true,
-            Location = new Point(25, 446),
+            Location = new Point(25, 494),
             Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Bold),
         });
         _txtOperator = new TextBox
         {
-            Location = new Point(113, 440), Size = new Size(200, 36),
+            Location = new Point(113, 488), Size = new Size(200, 36),
             Font = new Font("Microsoft YaHei UI", 12F),
             ReadOnly = true, Text = AppSession.DisplayName,
         };
@@ -329,7 +353,7 @@ public class WeighEntryDialog : Form
 
         _lblCurrent = new Label
         {
-            Text = "0 " + _cfg.Unit,
+            Text = "0 " + _cfg.UnitDisplay,
             Font = new Font("Consolas", 26F, FontStyle.Bold),
             ForeColor = Color.OrangeRed,
             BackColor = Color.Black,
@@ -360,29 +384,76 @@ public class WeighEntryDialog : Form
         _lblNetPreview = Val(260);
         Controls.Add(_lblNetPreview);
 
-        _btnSave = new Button
+        // ===== 链式流程按钮（确认 ↓ 保存 ↓ 打印 ↓ 继续，仿老软件逐步解锁）=====
+        Button ChainButton(string text, int y, int h) => new()
         {
-            Text = "保存",
-            Location = new Point(685, 325),
-            Size = new Size(250, 56),
+            Text = text,
+            Location = new Point(685, y),
+            Size = new Size(250, h),
             FlatStyle = FlatStyle.Flat,
-            BackColor = Color.FromArgb(235, 235, 235),
-            Font = new Font("Microsoft YaHei UI", 14F, FontStyle.Bold),
+            Font = new Font("Microsoft YaHei UI", 13F, FontStyle.Bold),
+            FlatAppearance.BorderSize = 1,
         };
-        _btnSave.Click += (_, _) => Save();
-        Controls.Add(_btnSave);
-
-        var btnCancel = new Button
+        Label Arrow(int y) => new()
         {
-            Text = "取消",
-            Location = new Point(685, 395),
-            Size = new Size(250, 44),
-            FlatStyle = FlatStyle.Flat,
-            BackColor = Color.FromArgb(235, 235, 235),
+            Text = "↓",
+            TextAlign = ContentAlignment.MiddleCenter,
+            Location = new Point(685, y),
+            Size = new Size(250, 22),
+            ForeColor = Color.Lime,
             Font = new Font("Microsoft YaHei UI", 12F, FontStyle.Bold),
         };
-        btnCancel.Click += (_, _) => Close();
-        Controls.Add(btnCancel);
+
+        _btnConfirm = ChainButton("确 认", 300, 48);
+        _btnSave = ChainButton("保 存", 370, 48);
+        _btnPrint = ChainButton("打 印", 440, 48);
+        _btnContinue = ChainButton("继 续", 510, 42);
+        _btnConfirm.Click += (_, _) => Confirm();
+        _btnSave.Click += (_, _) => DoSave();
+        _btnPrint.Click += (_, _) => DoPrint();
+        _btnContinue.Click += (_, _) => DoContinue();
+
+        // 退出：返回主界面（DialogResult.OK 触发主界面刷新记录/统计）
+        var btnExit = new Button
+        {
+            Text = "退 出",
+            Location = new Point(685, 556),
+            Size = new Size(250, 34),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Color.FromArgb(235, 235, 235),
+            Font = new Font("Microsoft YaHei UI", 11F, FontStyle.Bold),
+        };
+        btnExit.Click += (_, _) => { DialogResult = DialogResult.OK; Close(); };
+
+        Controls.Add(_btnConfirm);
+        Controls.Add(Arrow(348));
+        Controls.Add(_btnSave);
+        Controls.Add(Arrow(418));
+        Controls.Add(_btnPrint);
+        Controls.Add(Arrow(488));
+        Controls.Add(_btnContinue);
+        Controls.Add(btnExit);
+    }
+
+    // ---------- 链式步骤状态与按钮外观 ----------
+    // 未到达=灰 / 当前可点=白 / 已完成=浅绿
+    private static readonly Color BtnLocked = Color.FromArgb(195, 195, 195);
+    private static readonly Color BtnCurrent = Color.White;
+    private static readonly Color BtnDone = Color.FromArgb(172, 226, 172);
+
+    /// <summary>切换流程阶段并刷新四个按钮的颜色（灰=未到达，白=当前步，绿=已完成）。</summary>
+    private void SetStep(int step)
+    {
+        _step = step;
+        static void Style(Button b, int state)
+        {
+            b.BackColor = state < 0 ? BtnLocked : state == 0 ? BtnCurrent : BtnDone;
+            b.ForeColor = state < 0 ? Color.DimGray : Color.Black;
+        }
+        Style(_btnConfirm, step);
+        Style(_btnSave, step - 1);
+        Style(_btnPrint, step - 2);
+        Style(_btnContinue, step - 3);
     }
 
     /// <summary>"切换"按钮：皮重/毛重模式互换，同步刷新标题、背景色、票据副标题与右列预览。</summary>
@@ -446,7 +517,7 @@ public class WeighEntryDialog : Form
 
     /// <summary>
     /// 完整车号命中当天已保存记录时，自动回填上次填写的信息
-    /// （品种 + 地主姓名/地主电话/司机电话/货主姓名，取该车牌最新一条）。
+    /// （品种 + 地主姓名/地主电话/司机电话/货主姓名/单价，取该车牌最新一条）。
     /// </summary>
     private void TryAutoFill()
     {
@@ -461,6 +532,7 @@ public class WeighEntryDialog : Form
         _txtOwnerPhone.Text = ext.GetValueOrDefault("地主电话", "");
         _txtDriverPhone.Text = ext.GetValueOrDefault("司机电话", "");
         _txtCargoOwner.Text = ext.GetValueOrDefault("货主姓名", "");
+        _txtUnitPrice.Text = ext.GetValueOrDefault("单价", "");
     }
 
     /// <summary>
@@ -600,6 +672,7 @@ public class WeighEntryDialog : Form
         Add("地主电话", _txtOwnerPhone);
         Add("司机电话", _txtDriverPhone);
         Add("货主姓名", _txtCargoOwner);
+        Add("单价", _txtUnitPrice);
         return ext;
     }
 }

@@ -336,7 +336,8 @@ public class MainFormLayoutTests
             }
             finally
             {
-                cfg.Unit = old;   // 还原全局配置，避免影响其他测试
+                // 强制还原默认单位 kg 并落盘：测试环境固定 kg，避免单位残留影响其他硬编码 "kg" 的测试
+                cfg.Unit = "kg";
                 cfg.Save();
             }
         });

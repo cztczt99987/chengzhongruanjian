@@ -35,8 +35,8 @@ public class AppConfig
     public double StableToleranceKg { get; set; } = 5;
     /// <summary>最大量程（千克），超过判定超载</summary>
     public double MaxCapacityKg { get; set; } = 100000;
-    /// <summary>显示单位：t=吨 / kg=千克</summary>
-    public string Unit { get; set; } = "kg";
+    /// <summary>显示单位：t=吨 / kg=千克（默认吨）</summary>
+    public string Unit { get; set; } = "t";
     /// <summary>磅号（一机双磅时区分两台磅，骨架暂用单磅）</summary>
     public string ScaleNo { get; set; } = "01";
 
@@ -200,11 +200,21 @@ public class AppConfig
         }
     }
 
-    /// <summary>重量显示文本（自动换算单位并保留 2 位小数）</summary>
+    /// <summary>单位的界面显示文本（内部仍用 t/kg，界面不显示字母 t）</summary>
+    public string UnitDisplay => Unit == "t" ? "吨" : "kg";
+
+    /// <summary>重量显示文本（自动换算单位并保留 2 位小数，带汉字单位，如"34.6 吨"）</summary>
     public string FormatWeight(double kg)
     {
         double value = Unit == "t" ? kg / 1000.0 : kg;
-        return $"{value:0.##} {Unit}";
+        return $"{value:0.##} {UnitDisplay}";
+    }
+
+    /// <summary>重量数值文本（自动换算单位、不带单位），供表格单元格使用（单位在表头显示）</summary>
+    public string FormatWeightNumber(double kg)
+    {
+        double value = Unit == "t" ? kg / 1000.0 : kg;
+        return value.ToString("0.##");
     }
 }
 

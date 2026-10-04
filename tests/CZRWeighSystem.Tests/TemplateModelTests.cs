@@ -30,14 +30,14 @@ public class TemplateModelTests
     [Fact]
     public void BuildPlaceholders_关键字段取值正确()
     {
-        var ph = PrintTemplate.BuildPlaceholders(SampleRecord(), new AppConfig());
+        var ph = PrintTemplate.BuildPlaceholders(SampleRecord(), new AppConfig { Unit = "kg" });
 
         Assert.Equal("冀A12345", ph["车号"]);
         Assert.Equal("煤炭", ph["货物"]);
         Assert.Equal("发货商A", ph["发货单位"]);
         Assert.Equal("收货商B", ph["收货单位"]);
         Assert.Equal("已完成", ph["状态"]);
-        Assert.Equal("23000", ph["净重"]);   // 默认单位 kg
+        Assert.Equal("23000", ph["净重"]);   // 指定 kg 单位不换算
     }
 
     [Fact]

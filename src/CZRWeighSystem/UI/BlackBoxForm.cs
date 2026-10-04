@@ -154,7 +154,7 @@ public class BlackBoxForm : Form
         };
 
         _grid.Columns.Add("Time", "记录时间");
-        _grid.Columns.Add("Weight", $"重量({_cfg.Unit})");
+        _grid.Columns.Add("Weight", $"重量({_cfg.UnitDisplay})");
         _grid.Columns.Add("Images", "抓拍图片");
 
         Controls.Add(_grid);
@@ -245,7 +245,7 @@ public class BlackBoxForm : Form
         {
             int i = _grid.Rows.Add(
                 r.Time.ToString("yyyy-MM-dd HH:mm:ss"),
-                _cfg.FormatWeight(r.WeightKg).Replace(" " + _cfg.Unit, ""),
+                _cfg.FormatWeightNumber(r.WeightKg),
                 r.ParseImages().Count);
             _grid.Rows[i].Tag = r;   // 行 Tag 保存完整记录，供查看图片使用
         }

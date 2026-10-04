@@ -132,9 +132,9 @@ public class ReportForm : Form
         };
         _grid.Columns.Add("Key", "");
         _grid.Columns.Add("Count", "车数");
-        _grid.Columns.Add("Gross", $"毛重合计({_cfg.Unit})");
-        _grid.Columns.Add("Tare", $"皮重合计({_cfg.Unit})");
-        _grid.Columns.Add("Net", $"净重合计({_cfg.Unit})");
+        _grid.Columns.Add("Gross", $"毛重合计({_cfg.UnitDisplay})");
+        _grid.Columns.Add("Tare", $"皮重合计({_cfg.UnitDisplay})");
+        _grid.Columns.Add("Net", $"净重合计({_cfg.UnitDisplay})");
         Controls.Add(_grid);
     }
 
