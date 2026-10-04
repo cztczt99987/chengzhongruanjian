@@ -54,7 +54,7 @@ public class ComprehensiveSettingsDialog : Form
         MaximizeBox = false;
         MinimizeBox = false;
         ShowInTaskbar = false;
-        ClientSize = new Size(900, 700);
+        ClientSize = new Size(900, 720);   // 容纳基本设置页 7 个区块（末块底 628 + 页签头/工具条 + 底部留白）
         Font = new Font("Microsoft YaHei UI", 10F);
 
         BuildToolbar();
