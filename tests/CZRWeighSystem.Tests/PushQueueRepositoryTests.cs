@@ -14,7 +14,17 @@ public class PushQueueRepositoryTests
 {
     private readonly PushQueueRepository _repo = new();
 
-    public PushQueueRepositoryTests() => Db.Initialize();   // 幂等建表（含 t_push_queue）
+    public PushQueueRepositoryTests()
+    {
+        Db.Initialize();   // 幂等建表（含 t_push_queue）
+        // 共享测试库跨轮次累积 pending 记录会淹没 GetDue 的前 100 条窗口：新入队项被历史积压挤出后
+        // First(i => i.ClientRef == @ref) 查不到自己（2026-10-04 全量失败：库中积压 114 条）。
+        // 队列表仅本类用例使用，逐用例清空保证各用例独立、结果确定。
+        using var conn = Db.CreateConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "DELETE FROM t_push_queue";
+        cmd.ExecuteNonQuery();
+    }
 
     /// <summary>每条测试用独立引用号，避免互相影响。</summary>
     private static string Ref() => "T" + Guid.NewGuid().ToString("N")[..20];
