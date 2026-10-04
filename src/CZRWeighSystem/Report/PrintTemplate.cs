@@ -319,15 +319,15 @@ public class PrintTemplate
     /// </summary>
     private static PrintTemplate BuildFairnessTemplate(string name, string paperKey)
     {
-        var t = new PrintTemplate { Name = name, Category = "通用", PaperKey = paperKey, LayoutVersion = "4" };
-        const float x0 = 10f, right = 230f;   // 页宽 241，左右各留 10mm 对称白边（内容右缘 230）
-        const float gridW = 200f;             // 网格宽：右侧余 20mm 放联次标注（仿实物表格右侧留白）
+        var t = new PrintTemplate { Name = name, Category = "通用", PaperKey = paperKey, LayoutVersion = "5" };
+        const float x0 = 8f, right = 226f;    // 页宽 241：针式机左右硬边距可达 ~7mm，内容右缘收到 226 防右侧被裁
+        const float gridW = 196f;             // 网格宽：右侧余 22mm 放联次标注（仿实物表格右侧留白）
 
         t.Elements.Add(new TextElement { Text = "{公司名称}", X = x0, Y = 2, W = right - x0, H = 7, FontPt = 15, Bold = true, Align = TextAlign.Center });
         t.Elements.Add(new TextElement { Text = "{磅单抬头}", X = x0, Y = 10, W = right - x0, H = 5.5f, FontPt = 10.5f, Bold = true, Align = TextAlign.Center });
-        t.Elements.Add(new TextElement { Text = "第{打印次数}次打印", X = x0 + 160, Y = 10.8f, W = 60, H = 4.5f, FontPt = 7.5f, Align = TextAlign.Right });
+        t.Elements.Add(new TextElement { Text = "第{打印次数}次打印", X = x0 + 158, Y = 10.8f, W = 58, H = 4.5f, FontPt = 7.5f, Align = TextAlign.Right });
         t.Elements.Add(new TextElement { Text = "日期：{打印时间:yyyy年MM月dd日 HH:mm:ss}", X = x0, Y = 16, W = 120, H = 4.5f, FontPt = 8.5f });
-        t.Elements.Add(new TextElement { Text = "编号：{流水号}", X = x0 + 140, Y = 16, W = 80, H = 4.5f, FontPt = 8.5f, Align = TextAlign.Right });
+        t.Elements.Add(new TextElement { Text = "编号：{流水号}", X = x0 + 138, Y = 16, W = 78, H = 4.5f, FontPt = 8.5f, Align = TextAlign.Right });
 
         // 五行字段网格：[标签 20 | 值 82 | 标签 24 | 值 74]
         const float gy = 21.5f, rowH = 8f, c1 = 20f, c2 = 102f, c3 = 126f;

@@ -173,8 +173,8 @@ public class BuiltinTemplatesTests
             .Where(e => e.Text is "白联:存根" or "红联:客户" or "蓝联:司机").ToList();
 
         Assert.Equal(3, marks.Count);
-        // 网格右缘 = 10 + 200 = 210：三行标注须位于网格右侧空白区且不超内容右缘 230
-        Assert.All(marks, e => Assert.True(e.X >= 210f && e.X + e.W <= 230f,
+        // 网格右缘 = 8 + 196 = 204：三行标注须位于网格右侧空白区且不超内容右缘 226（防硬边距右侧裁切）
+        Assert.All(marks, e => Assert.True(e.X >= 204f && e.X + e.W <= 226f,
             $"联次标注「{e.Text}」不在网格右侧空白区（X={e.X}，右缘={e.X + e.W}）"));
         // 竖直方向按网格高度（5 行 × 8mm）三等分：行距相等（13.33mm）
         var ys = marks.OrderBy(e => e.Y).Select(e => e.Y).ToList();

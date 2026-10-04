@@ -79,9 +79,9 @@ public class PrintPaperFitTests
     [Fact]
     public void 纸张偏窄时按宽度比例缩小()
     {
-        // 模板内容约 230×74mm（2026-10-04 加品种/单价行后）；实际纸张 120×140（竖联纸）→ 按宽度 120/230 缩放
+        // 模板内容约 226mm 宽（内容右缘收到 226 防针式机硬边距右侧裁切）；实际纸张 120×140（竖联纸）→ 按宽度 120/226 缩放
         float scale = PoundTicketPrinter.ComputeFitScale(Fairness, 120, 140);
-        Assert.InRange(scale, 120f / 230f - 0.01f, 120f / 230f + 0.01f);
+        Assert.InRange(scale, 120f / 226f - 0.01f, 120f / 226f + 0.01f);
         Assert.True(scale < 1f);
     }
 
@@ -105,4 +105,25 @@ public class PrintPaperFitTests
     [Fact]
     public void 纸张均大时不缩放()
         => Assert.Equal(1f, PoundTicketPrinter.ComputeFitScale(Fairness, 400, 300));
+
+    [Fact]
+    public void 模板内容右缘不超过安全余量()
+    {
+        // 2026-10-04 用户反馈：EPSON LQ-80KFII 设 241×93 纸仍右侧打印不全且误报纸张不符。
+        // 根因一：内容右缘 230mm，扣针式机左右硬边距（各约 7mm）后可打印区约 227mm → 右侧被裁。
+        // 故内容右缘必须 ≤ 226mm；超过即回归，会重新引发右侧裁切。
+        float contentW = Fairness.Elements.Max(e => e.X + e.W);
+        Assert.True(contentW <= 226f, $"模板内容右缘 {contentW:F1}mm 超出安全余量 226mm，右侧将被硬边距裁切");
+    }
+
+    [Fact]
+    public void 针式机硬边距下内容完整不缩放()
+    {
+        // 根因二：narrow 判定原本按模板纸宽 241 比较，针式机扣硬边距后可用宽必然 < 241 → 每打印必误报。
+        // 修复后按内容宽 226 判定。EPSON 典型场景（可打印区约 227.6×92mm）内容放得下 → 不缩放、不弹提示。
+        float scale = PoundTicketPrinter.ComputeFitScale(Fairness, 227.6f, 92f);
+        Assert.Equal(1f, scale);
+        // 内容右缘 226 + 左硬边距 7mm = 233 < 可打印区右边界 234（241-7）→ 完整打印
+        Assert.True(226f + 7f <= 241f - 7f + 0.5f);
+    }
 }

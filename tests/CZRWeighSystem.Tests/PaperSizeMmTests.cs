@@ -80,8 +80,8 @@ public class PaperNamingTests
     [Fact]
     public void EnsureBuiltinsOnDisk_版式版本升级_重建为最新版式并保持启用()
     {
-        // 2026-10-04 公平计量模板版式升级（LayoutVersion 3→4）：已装机用户的旧文件
-        // 必须被自动删除重建为新版式（含白联/红联/蓝联标注、站点名称、承诺占位符），启用配置保持指向同名文件
+        // 2026-10-04 公平计量模板版式升级：已装机用户的旧文件必须被自动删除重建为新版式
+        // （含白联/红联/蓝联标注、站点名称、承诺占位符、防右侧裁切的内容收窄），启用配置保持指向同名文件
         var builtin = PrintTemplate.CreateBuiltins().Single(t => t.Name == "公平计量磅单-三等分");
         string file = PrintTemplate.BuiltinFileName(builtin);
 
@@ -96,7 +96,7 @@ public class PaperNamingTests
             PrintTemplate.EnsureBuiltinsOnDisk();
 
             var rebuilt = PrintTemplate.Load(file);
-            Assert.Equal("4", rebuilt.LayoutVersion);
+            Assert.Equal("5", rebuilt.LayoutVersion);
             Assert.Contains(rebuilt.Elements.OfType<TextElement>(), e => e.Text == "白联:存根");
             Assert.Contains(rebuilt.Elements.OfType<TextElement>(), e => e.Text == "{站点名称}");
             Assert.Contains(rebuilt.Elements.OfType<TextElement>(), e => e.Text == "{承诺}");

@@ -352,7 +352,10 @@ public static class PoundTicketPrinter
             float availW = Math.Max(50, e.PageBounds.Width - 2 * hardX) * 25.4f / 100f;
             float availH = Math.Max(50, e.PageBounds.Height - 2 * hardY) * 25.4f / 100f;
             float scale = ComputeFitScale(tpl, availW, availH);
-            bool narrow = availW < designW - 2f;     // 实际纸张比模板窄 → 需缩放防裁切
+            // 判定依据：模板内容实际所需宽度（元素最大右缘），而非模板纸宽——针式机 241 纸扣掉
+            // 左右硬边距后可用宽必然 < 241，若按纸宽判定会每一次都误报"纸张不符"。
+            float contentW = tpl.Elements.Count == 0 ? designW : tpl.Elements.Max(e => e.X + e.W);
+            bool narrow = availW < contentW - 1f;    // 内容超出可打印区 → 需缩放防裁切
             bool tooTall = availH > designH + 2f;    // 实际纸张比模板高 → 走纸超过一联
             if (narrow || tooTall)
             {
