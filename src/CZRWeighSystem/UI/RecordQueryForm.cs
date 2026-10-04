@@ -388,7 +388,11 @@ public class RecordQueryForm : Form
                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
-        Report.PoundTicketPrinter.Print(r);
+        using (var pi = new PrintingIndicator())
+        {
+            pi.Show(this);
+            Report.PoundTicketPrinter.Print(r);
+        }
     }
 
     // ---------- 业务动作 ----------

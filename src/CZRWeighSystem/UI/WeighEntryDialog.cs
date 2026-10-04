@@ -636,6 +636,8 @@ public class WeighEntryDialog : Form
     /// 刷新实时重量与配对信息：稳定绿/动态橙；票据右列按模式回填——
     /// 本次称重填入对应行（去皮填皮重行、过毛填毛重行），配对的一次磅填对侧行；
     /// 车号匹配到未完成一次磅时显示其流水号。
+    /// 保存成功后票面固定展示已存结果，不再跟随实时重量（车下磅归零后仍应看到本次值，
+    /// 显示"毛重有值、皮重为空"会让操作员误读）。
     /// 空车去皮模式另在右栏显示本车最近一次已完成皮重（供比对，超差在确认时预警）。
     /// </summary>
     private void UpdateWeight()
@@ -645,35 +647,61 @@ public class WeighEntryDialog : Form
         _lblCurrent.ForeColor = _manager.IsStableForSave ? Color.LimeGreen : Color.OrangeRed;
 
         string no = ComposeVehicleNo();
-        var first = no.Length == 0 ? null
-            : _manager.GetUnfinishedList().FirstOrDefault(r => r.VehicleNo == no);
 
-        // 票据右列毛/皮/净：实时值进本次行，已存一次磅进对侧行，配对且稳定时预览净重
-        string live = _cfg.FormatWeight(_manager.CurrentKg);
-        string saved = first != null ? _cfg.FormatWeight(first.GrossKg ?? 0) : "--";
-        if (_isTare)
+        if (_savedRecord != null)
         {
-            _lblTareCell.Text = live;
-            _lblGrossCell.Text = saved;
+            // 保存后票面固定展示已存结果，不跟随实时重量变化（车下磅归零后仍应看到本次值）
+            if (_savedRecord.NetKg.HasValue)
+            {
+                // 二次磅结算完成：毛/皮/净均为结算后的最终值（按大小自动分配）
+                _lblGrossCell.Text = _cfg.FormatWeight(_savedRecord.GrossKg ?? 0);
+                _lblTareCell.Text = _cfg.FormatWeight(_savedRecord.TareKg ?? 0);
+                _lblNetCell.Text = _cfg.FormatWeight(_savedRecord.NetKg.Value);
+                _lblPairHint.Text = $"[{_savedRecord.VehicleNo}] 已结算完成";
+            }
+            else
+            {
+                // 一次磅：重量暂存于 gross 列（配对时按大小归入毛或皮），展示在称重模式对应的行
+                string saved = _cfg.FormatWeight(_savedRecord.GrossKg ?? 0);
+                _lblGrossCell.Text = _isTare ? "--" : saved;
+                _lblTareCell.Text = _isTare ? saved : "--";
+                _lblNetCell.Text = "--";
+                _lblPairHint.Text = $"[{_savedRecord.VehicleNo}] 一次磅已保存，等待二次磅配对结算";
+            }
+            _lblSerialNo.Text = "No：" + _savedRecord.SerialNo;
         }
         else
         {
-            _lblGrossCell.Text = live;
-            _lblTareCell.Text = saved;
-        }
-        _lblNetCell.Text = first != null && _manager.IsStable
-            ? _cfg.FormatWeight(Math.Abs((first.GrossKg ?? 0) - _manager.StableKg))
-            : "--";
+            var first = no.Length == 0 ? null
+                : _manager.GetUnfinishedList().FirstOrDefault(r => r.VehicleNo == no);
 
-        if (first != null)
-        {
-            _lblSerialNo.Text = "No：" + first.SerialNo;
-            _lblPairHint.Text = $"[{no}] 有未完成的二次磅，保存时将自动配对结算";
-        }
-        else
-        {
-            _lblSerialNo.Text = "No：";
-            _lblPairHint.Text = no.Length > 0 ? $"[{no}] 新车辆，本次为第一次称重" : "";
+            // 票据右列毛/皮/净：实时值进本次行，已存一次磅进对侧行，配对且稳定时预览净重
+            string live = _cfg.FormatWeight(_manager.CurrentKg);
+            string saved = first != null ? _cfg.FormatWeight(first.GrossKg ?? 0) : "--";
+            if (_isTare)
+            {
+                _lblTareCell.Text = live;
+                _lblGrossCell.Text = saved;
+            }
+            else
+            {
+                _lblGrossCell.Text = live;
+                _lblTareCell.Text = saved;
+            }
+            _lblNetCell.Text = first != null && _manager.IsStable
+                ? _cfg.FormatWeight(Math.Abs((first.GrossKg ?? 0) - _manager.StableKg))
+                : "--";
+
+            if (first != null)
+            {
+                _lblSerialNo.Text = "No：" + first.SerialNo;
+                _lblPairHint.Text = $"[{no}] 有未完成的二次磅，保存时将自动配对结算";
+            }
+            else
+            {
+                _lblSerialNo.Text = "No：";
+                _lblPairHint.Text = no.Length > 0 ? $"[{no}] 新车辆，本次为第一次称重" : "";
+            }
         }
 
         // 右栏"上次重量/上次时间"：仅空车去皮模式，取本车最近一次已完成皮重
@@ -796,14 +824,18 @@ public class WeighEntryDialog : Form
         if (_step != 2 || _savedRecord == null) return;
 
         bool printed;
-        try
+        using (var pi = new PrintingIndicator())
         {
-            printed = PrintAction(_savedRecord);
-        }
-        catch (Exception ex)
-        {
-            Log.Error("磅单打印失败", ex);
-            printed = false;
+            pi.Show(this);
+            try
+            {
+                printed = PrintAction(_savedRecord);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("磅单打印失败", ex);
+                printed = false;
+            }
         }
 
         if (!printed)

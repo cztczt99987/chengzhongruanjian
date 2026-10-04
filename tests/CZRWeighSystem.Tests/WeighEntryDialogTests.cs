@@ -52,6 +52,7 @@ public class WeighEntryDialogTests
     {
         dlg.InfoBox = (msg, title, ok) => _lastInfo = msg;
         dlg.PrintAction = _ => true;
+        PrintingIndicator.Suppressed = true;   // 打印时提示小窗不弹（测试环境）
     }
 
     /// <summary>
@@ -231,6 +232,72 @@ public class WeighEntryDialogTests
         Assert.Equal(50000, record.GrossKg);
         Assert.Equal(30000, record.TareKg);
         Assert.Equal(20000, record.NetKg);
+    }
+
+    /// <summary>
+    /// 用户反馈：空车去皮"确认→保存"后车下磅归零，票面却显示"毛重=120、皮重=0、净重=120"——
+    /// 实时值（归零）填进皮重行、暂存 gross 列的一次磅值填进对侧毛重行，造成误读。
+    /// 修复后保存成功即固定展示已存结果：本次皮重进皮重行，毛重/净重为 "--"。
+    /// </summary>
+    [Fact]
+    public void 空车去皮_保存后票面固定显示本次皮重_不跟随实时重量()
+    {
+        string vehicle = NewVehicle("G");
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+            SilenceDialogs(dlg);
+            UseTestScaleNo();
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
+            PushStable(manager, 120);
+            ConfirmAndSave(dlg);
+
+            // 车辆下磅（实时/稳定归零）后刷新票面
+            PushStable(manager, 0);
+            Call(dlg, "UpdateWeight");
+
+            Assert.Equal(AppConfig.Current.FormatWeight(120), Fld<Label>(dlg, "_lblTareCell").Text);
+            Assert.Equal("--", Fld<Label>(dlg, "_lblGrossCell").Text);
+            Assert.Equal("--", Fld<Label>(dlg, "_lblNetCell").Text);
+            Assert.Contains("一次磅已保存", Fld<Label>(dlg, "_lblPairHint").Text);
+            Assert.Contains(Fld<WeighRecord>(dlg, "_savedRecord").SerialNo,
+                Fld<Label>(dlg, "_lblSerialNo").Text);
+        });
+        manager.Dispose();
+    }
+
+    /// <summary>
+    /// 二次磅结算完成后票面固定展示结算结果（毛/皮/净为最终值）：
+    /// 配对记录已变为"已完成"，若仍走实时预览会清空票面并误显"新车辆"提示。
+    /// </summary>
+    [Fact]
+    public void 二次磅结算后_票面固定显示结算毛皮净()
+    {
+        string vehicle = NewVehicle("H");
+        _repo.InsertFirstWeigh(new WeighRecord { ScaleNo = "93", VehicleNo = vehicle, GrossKg = 30000 });
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: false);
+            SilenceDialogs(dlg);
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
+            PushStable(manager, 50000);
+            ConfirmAndSave(dlg);
+
+            PushStable(manager, 0);
+            Call(dlg, "UpdateWeight");
+
+            Assert.Equal(AppConfig.Current.FormatWeight(50000), Fld<Label>(dlg, "_lblGrossCell").Text);
+            Assert.Equal(AppConfig.Current.FormatWeight(30000), Fld<Label>(dlg, "_lblTareCell").Text);
+            Assert.Equal(AppConfig.Current.FormatWeight(20000), Fld<Label>(dlg, "_lblNetCell").Text);
+            Assert.Contains("已结算完成", Fld<Label>(dlg, "_lblPairHint").Text);
+            Assert.Contains(Fld<WeighRecord>(dlg, "_savedRecord").SerialNo,
+                Fld<Label>(dlg, "_lblSerialNo").Text);
+        });
+        manager.Dispose();
     }
 
     [Fact]
