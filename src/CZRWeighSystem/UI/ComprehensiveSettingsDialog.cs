@@ -349,17 +349,17 @@ public class ComprehensiveSettingsDialog : Form
         // ---- 区块 7：空车去皮差值预警（本次皮重与本车上次已完成皮重相差超阈值时仅弹窗预警） ----
         var grpTareDiff = NewGroup(page, 578, 50);
         var lblTareDiff = new Label
-        { Text = "空车去皮差值预警：本次皮重与上次相差超过", AutoSize = true, Location = new Point(18, 16) };
+        { Text = "空车去皮差值预警：本次皮重与上次相差超过", AutoSize = true, Location = new Point(18, 21) };
         NumTareDiffWarnTon = new NumericUpDown
         {
             DecimalPlaces = 2,
             Minimum = 0, Maximum = 100,
             Value = (decimal)cfg.TareDiffWarnTon,
-            Width = 70,
+            Location = new Point(0, 16), Width = 70,   // y=16 与标签文字基线对齐（x 由 FlowRow 重排）
             TextAlign = HorizontalAlignment.Center,
         };
         var lblTareDiffTail = new Label
-        { Text = "吨时提示（0=关闭，仅预警不阻止保存）", AutoSize = true, Location = new Point(330, 16) };
+        { Text = "吨时提示（0=关闭，仅预警不阻止保存）", AutoSize = true, Location = new Point(0, 21) };
         grpTareDiff.Controls.AddRange([lblTareDiff, NumTareDiffWarnTon, lblTareDiffTail]);
         FlowRow(lblTareDiff, NumTareDiffWarnTon, lblTareDiffTail);
     }

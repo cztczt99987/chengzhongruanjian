@@ -103,6 +103,37 @@ public class ComprehensiveSettingsDialogTests
     }
 
     [Fact]
+    public void 空车去皮差值预警_输入框与两段文字同一行对齐()
+    {
+        // 回归：NumericUpDown 漏设 Location 时默认 (0,0)，会跑到分组框顶部、与文字不在同一行
+        using var f = new ComprehensiveSettingsDialog();
+        Label? head = null, tail = null;
+        void Walk(Control c)
+        {
+            foreach (Control child in c.Controls)
+            {
+                if (child is Label l)
+                {
+                    if (l.Text.Contains("相差超过")) head = l;
+                    if (l.Text.Contains("吨时提示")) tail = l;
+                }
+                Walk(child);
+            }
+        }
+        Walk(f);
+
+        Assert.NotNull(head);
+        Assert.NotNull(tail);
+        var num = f.NumTareDiffWarnTon;
+        Assert.True(num.Top > 0, "差值输入框不能停在分组框顶部（默认 y=0）");
+        // 输入框高约 23、标签高约 15：同行基线对齐时两者垂直中线相差数像素（字体度量差异）；
+        // 回归前输入框默认 y=0，与标签中线相差约 17px，用 8px 上限可稳定识别"跑到上一行"
+        double numMiddle = num.Top + num.Height / 2.0;
+        Assert.InRange(Math.Abs(numMiddle - (head!.Top + head.Height / 2.0)), 0, 8);
+        Assert.InRange(Math.Abs(numMiddle - (tail!.Top + tail.Height / 2.0)), 0, 8);
+    }
+
+    [Fact]
     public void StableSecondsCombo_DisabledWhenUnchecked()
     {
         using var f = new ComprehensiveSettingsDialog();
