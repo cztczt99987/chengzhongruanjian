@@ -46,7 +46,7 @@ public class WeighEntryDialog : Form
     internal Func<WeighRecord, bool> PrintAction = r => Report.PoundTicketPrinter.Print(r);
 
     // ===== 控件 =====
-    private ComboBox _cboPrefix = null!;     // 车牌省份简称（默认取综合设置的"默认省份"）
+    private ProvincePicker _cboPrefix = null!; // 车牌省份简称（多列网格选择，默认取综合设置的"默认省份"）
     private TextBox _txtVehicle = null!;     // 车牌编号（省份简称后的手动输入部分）
     private TextBox _txtVariety = null!;     // 品种（存记录 Goods 列）
     private TextBox _txtOwner = null!;       // 地主姓名（ext_json 固定键）
@@ -222,18 +222,15 @@ public class WeighEntryDialog : Form
         // 行1：车牌号码（省份简称下拉 + 编号手输，带当天历史自动补全）｜ 毛重
         grid.Controls.Add(Head("车牌号码"), 0, 0);
         var platePanel = new Panel { Dock = DockStyle.Fill, BackColor = Color.White, Margin = new Padding(2, 7, 2, 7) };
-        _cboPrefix = new ComboBox
+        // 省份选择器：点击弹出 8 列×4 行网格，避免 31 个省份拉成超长单列下拉
+        _cboPrefix = new ProvincePicker
         {
-            DropDownStyle = ComboBoxStyle.DropDownList,
             Font = new Font("Microsoft YaHei UI", 12F),
             Location = new Point(1, 1),
             Size = new Size(54, 34),
-            FlatStyle = FlatStyle.Flat,
         };
-        // 省份简称列表（首项为空 = 无省份），默认选中综合设置的"默认省份"
-        _cboPrefix.Items.Add("");
-        foreach (var p in VehiclePadDialog.Provinces) _cboPrefix.Items.Add(p.ToString());
-        int idx = _cboPrefix.Items.IndexOf(_cfg.DefaultProvince);
+        // 首项为"无省份"，默认选中综合设置的"默认省份"
+        int idx = ProvincePicker.Items.IndexOf(_cfg.DefaultProvince);
         _cboPrefix.SelectedIndex = idx > 0 ? idx : 0;
         _txtVehicle = new TextBox
         {
@@ -392,7 +389,6 @@ public class WeighEntryDialog : Form
             Size = new Size(250, h),
             FlatStyle = FlatStyle.Flat,
             Font = new Font("Microsoft YaHei UI", 13F, FontStyle.Bold),
-            FlatAppearance.BorderSize = 1,
         };
         Label Arrow(int y) => new()
         {
@@ -456,7 +452,8 @@ public class WeighEntryDialog : Form
         Style(_btnContinue, step - 3);
     }
 
-    /// <summary>"切换"按钮：皮重/毛重模式互换，同步刷新标题、背景色、票据副标题与右列预览。</summary>
+    /// <summary>"切换"按钮：皮重/毛重模式互换，同步刷新标题、背景色、票据副标题与右列预览，
+    /// 并放弃当前链式进度回到"确认"（确认后再切换模式没有意义）。</summary>
     private void ToggleMode()
     {
         _isTare = !_isTare;
@@ -464,7 +461,17 @@ public class WeighEntryDialog : Form
         Text = (_isTare ? "空车去皮" : "重车过磅") + $"（本次按{(_isTare ? "皮" : "毛")}重保存）";
         _lblTicketType.Text = (_isTare ? "皮重" : "毛重") + _cfg.SlipHeader;
         _lblPanelTitle.Text = _isTare ? "本次皮重" : "本次毛重";
+        ResetFlow();
         UpdateWeight();
+    }
+
+    /// <summary>放弃链式进度：清空确认/保存状态，回到"确认"步。</summary>
+    private void ResetFlow()
+    {
+        _confirmedKg = null;
+        _confirmedFirst = null;
+        _savedRecord = null;
+        SetStep(0);
     }
 
     /// <summary>
@@ -487,7 +494,7 @@ public class WeighEntryDialog : Form
         if (string.IsNullOrEmpty(plate)) return;
         if (VehiclePadDialog.Provinces.Contains(plate[0]))
         {
-            int idx = _cboPrefix.Items.IndexOf(plate[0].ToString());
+            int idx = ProvincePicker.Items.IndexOf(plate[0].ToString());
             if (idx > 0) _cboPrefix.SelectedIndex = idx;   // 与输入车牌一致的省份
             _txtVehicle.Text = plate[1..];
         }
@@ -538,8 +545,7 @@ public class WeighEntryDialog : Form
     /// <summary>
     /// 刷新实时重量与配对信息：稳定绿/动态橙；票据右列按模式回填——
     /// 本次称重填入对应行（去皮填皮重行、过毛填毛重行），配对的一次磅填对侧行；
-    /// 车号匹配到未完成一次磅时显示其流水号/上次重量/上次时间与预计净重，
-    /// 保存按钮切换为"保存并结算"。
+    /// 车号匹配到未完成一次磅时显示其流水号/上次重量/上次时间与预计净重。
     /// </summary>
     private void UpdateWeight()
     {
@@ -574,7 +580,6 @@ public class WeighEntryDialog : Form
             _lblLastWeight.Text = _cfg.FormatWeight(first.GrossKg ?? 0);
             _lblLastTime.Text = first.FirstTime?.ToString("yyyy-MM-dd HH:mm") ?? "";
             _lblPairHint.Text = $"[{no}] 有未完成的二次磅，保存时将自动配对结算";
-            _btnSave.Text = "保存并结算";
             _lblNetPreview.Text = _manager.IsStable
                 ? _cfg.FormatWeight(Math.Abs((first.GrossKg ?? 0) - _manager.StableKg))
                 : "--";
@@ -585,18 +590,19 @@ public class WeighEntryDialog : Form
             _lblLastWeight.Text = "--";
             _lblLastTime.Text = "--";
             _lblPairHint.Text = no.Length > 0 ? $"[{no}] 新车辆，本次为第一次称重" : "";
-            _btnSave.Text = "保存";
             _lblNetPreview.Text = "--";
         }
     }
 
     // ================================================================
-    // 保存（与首页按钮一致的皮/毛手动流程）
+    // 链式流程：确认 → 保存 → 打印 → 继续
     // ================================================================
 
-    /// <summary>统一保存：按车号查找待配对记录——有则二次磅结算，无则第一次称重。</summary>
-    private void Save()
+    /// <summary>步骤1【确认】：校验车号/稳定/超载，锁定当前稳定读数并识别是否二次磅。</summary>
+    private void Confirm()
     {
+        if (_step != 0) return;
+
         // 地主电话是平台归属匹配的必填依据（格式非法平台整条拒收），录入时即校验
         if (!ValidPhone(_txtOwnerPhone.Text.Trim()))
         {
@@ -604,55 +610,114 @@ public class WeighEntryDialog : Form
             return;
         }
 
-        string action = _isTare ? "空车去皮" : "重车过磅";
         string no = ComposeVehicleNo();
+        if (no.Length == 0)
+        {
+            InfoBox("请选择车号", "提示", false);
+            return;
+        }
+        if (!_manager.IsStableForSave)
+        {
+            InfoBox("重量未稳定，请等待稳定后再确认", "提示", false);
+            return;
+        }
+        if (_manager.StableKg <= 0)
+        {
+            InfoBox("当前重量为 0，请确认车辆已上磅", "提示", false);
+            return;
+        }
+        if (_manager.IsOverload)
+        {
+            InfoBox("重量超出最大量程，禁止保存", "提示", false);
+            return;
+        }
 
+        _confirmedKg = _manager.StableKg;
+        _confirmedFirst = _manager.GetUnfinishedList().FirstOrDefault(r => r.VehicleNo == no);
+        SetStep(1);   // 确认完成 → 解锁"保存"
+    }
+
+    /// <summary>步骤2【保存】：有确认的待配对记录则二次磅结算，否则第一次称重（无弹窗）。</summary>
+    private void DoSave()
+    {
+        if (_step != 1 || _confirmedKg == null) return;
+
+        string no = ComposeVehicleNo();
         var ext = CollectExt();
 
-        var first = no.Length == 0 ? null
-            : _manager.GetUnfinishedList().FirstOrDefault(r => r.VehicleNo == no);
-        string weightText = _cfg.FormatWeight(_manager.StableKg);
-
-        if (first != null)
+        if (_confirmedFirst != null)
         {
-            // 二次磅结算
-            if (!ConfirmBox($"{action}（第二次称重·结算）\n车号：{first.VehicleNo}  " +
-                $"一次磅：{_cfg.FormatWeight(first.GrossKg ?? 0)}  本次：{weightText}", "确认操作"))
-                return;
+            // 二次磅结算（manager 内部校验当前仍稳定，并按大小分配毛/皮）
+            var (ok, msg, record) = _manager.SaveSecondWeigh(_confirmedFirst, null, _txtOperator.Text);
+            if (!ok) { InfoBox(msg, "提示", false); return; }
 
-            var (ok, msg, record) = _manager.SaveSecondWeigh(first, null, _txtOperator.Text);
-            InfoBox(msg, ok ? "结算成功" : "提示", ok);
-            if (!ok) return;
-
+            _savedRecord = record;
             OnSaved?.Invoke(record!.SerialNo);
-            TryPrint(record!);
-            DialogResult = DialogResult.OK;
         }
         else
         {
             // 第一次称重（品种存 Goods 列；扣重/备注已从表单移除，存 null）
-            if (!ConfirmBox($"{action}（第一次称重）\n车号：{no}  重量：{weightText}", "确认操作"))
-                return;
-
             var (ok, msg, newRecord) = _manager.SaveFirstWeigh(
                 no, _txtVariety.Text, null, null,
                 null, null, null,
                 null, _txtOperator.Text, ext);
-            InfoBox(msg, ok ? "成功" : "提示", ok);
-            if (!ok) return;
+            if (!ok) { InfoBox(msg, "提示", false); return; }
 
+            _savedRecord = newRecord;
             OnSaved?.Invoke(newRecord!.SerialNo);
-            DialogResult = DialogResult.OK;
         }
+        SetStep(2);   // 保存完成 → 解锁"打印"
     }
 
-    /// <summary>结算完成后打印磅单：开启自动打印直接出单，否则询问（对应 PRD F5-01 / F9-04）。</summary>
-    private void TryPrint(Core.WeighRecord record)
+    /// <summary>步骤3【打印】：直接打印磅单，不再弹"是否打印"；失败可原地重试。</summary>
+    private void DoPrint()
     {
-        if (AppConfig.Current.AutoPrintEnabled || ConfirmBox("是否打印磅单？", "打印磅单"))
+        if (_step != 2 || _savedRecord == null) return;
+
+        bool printed;
+        try
         {
-            Report.PoundTicketPrinter.Print(record);
+            printed = PrintAction(_savedRecord);
         }
+        catch (Exception ex)
+        {
+            Log.Error("磅单打印失败", ex);
+            printed = false;
+        }
+
+        if (!printed)
+        {
+            InfoBox("打印未完成：请检查打印机是否开机/有纸，然后再次点击\"打印\"重试。",
+                "提示", false);
+            return;   // 停在打印步，允许重试
+        }
+        SetStep(3);   // 打印完成 → 解锁"继续"
+    }
+
+    /// <summary>步骤4【继续】：清空表单与流程状态，窗口不关闭，连续录入下一辆。</summary>
+    private void DoContinue()
+    {
+        if (_step != 3) return;
+
+        _txtVehicle.Clear();
+        _txtVariety.Clear();
+        _txtOwner.Clear();
+        _txtOwnerPhone.Clear();
+        _txtDriverPhone.Clear();
+        _txtCargoOwner.Clear();
+        _txtUnitPrice.Clear();
+
+        _confirmedKg = null;
+        _confirmedFirst = null;
+        _savedRecord = null;
+
+        // 当天记录加入刚保存的车号（下一辆车输入时自动补全/回填候选）
+        _todayRecords = _plateRepo.Query(DateTime.Today, null, "", "", "", "")
+            .Where(r => r.Status != "已作废").ToList();
+        RefreshPlateSuggest();
+
+        SetStep(0);
+        _txtVehicle.Focus();
     }
 
     /// <summary>手机号格式校验（平台归属匹配要求 1 开头 11 位数字；留空不强填视为有效）。</summary>

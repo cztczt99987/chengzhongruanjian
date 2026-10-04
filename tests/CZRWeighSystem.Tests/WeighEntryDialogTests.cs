@@ -7,11 +7,11 @@ using System.Reflection;
 namespace CZRWeighSystem.Tests;
 
 /// <summary>
-/// 称重录入弹窗回归测试（2026-09-30 首页二次改版：信息录入区移入弹窗）：
-/// 空车去皮/重车过磅弹出窗中保存——车号待配对时自动二次磅结算（毛/皮按大小分配，
-/// 兼容先皮后毛与先毛后皮）；未录车号/重量未稳定时不保存；
-/// 录入待配对车号显示配对提示并切换"保存并结算"按钮。
-/// 对话框通过 internal ConfirmBox/InfoBox 注入静默实现，避免测试阻塞。
+/// 称重录入弹窗回归测试（仿老软件链式流程：确认 → 保存 → 打印 → 继续）：
+/// 四步按顺序逐步解锁，确认时校验车号/稳定/超载并锁定读数；
+/// 保存时车号待配对则自动二次磅结算（毛/皮按大小分配，兼容先皮后毛与先毛后皮）；
+/// 打印直接出单、不再弹"是否打印"，失败原地重试；继续后清空表单连续录入下一辆。
+/// 对话框通过 internal InfoBox/PrintAction 注入静默实现，避免测试阻塞。
 /// 与 FirstWeighExpireTests 同集合串行执行，避免共享 SQLite 库互相干扰。
 /// </summary>
 [Collection("数据库顺序")]
@@ -47,11 +47,11 @@ public class WeighEntryDialogTests
         if (error != null) throw error;
     }
 
-    /// <summary>注入静默对话框：「确认操作」标题自动确认（打印询问返回 false），提示记录到 _lastInfo。</summary>
+    /// <summary>注入静默对话框：提示记录到 _lastInfo，打印直接返回成功（不真实出纸）。</summary>
     private static void SilenceDialogs(WeighEntryDialog dlg)
     {
-        dlg.ConfirmBox = (msg, title) => title == "确认操作";
         dlg.InfoBox = (msg, title, ok) => _lastInfo = msg;
+        dlg.PrintAction = _ => true;
     }
 
     /// <summary>
@@ -65,7 +65,7 @@ public class WeighEntryDialogTests
     {
         var filter = (StabilityFilter)typeof(WeighManager)
             .GetField("_filter", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(manager)!;
-        for (int i = 0; i < 3; i++) filter.Push(kg);   // 默认 StableCount=3
+        for (int i = 0;i < 3; i++) filter.Push(kg);   // 默认 StableCount=3
     }
 
     /// <summary>每次运行唯一车号：共享库会残留上次运行的记录，断言 Single 时不能重名。</summary>
@@ -73,7 +73,17 @@ public class WeighEntryDialogTests
 
     /// <summary>清空省份简称（选中首项"无省份"）：测试车号不带前缀，ComposeVehicleNo 原样返回。</summary>
     private static void NoPrefix(WeighEntryDialog dlg) =>
-        Fld<ComboBox>(dlg, "_cboPrefix").SelectedIndex = 0;
+        Fld<ProvincePicker>(dlg, "_cboPrefix").SelectedIndex = 0;
+
+    /// <summary>执行"确认 → 保存"两步（保存成功后停在打印步）。</summary>
+    private static void ConfirmAndSave(WeighEntryDialog dlg)
+    {
+        Call(dlg, "Confirm");
+        Assert.Equal(1, Fld<int>(dlg, "_step"));   // 确认成功 → 待保存
+        Call(dlg, "DoSave");
+        Assert.Equal(2, Fld<int>(dlg, "_step"));   // 保存成功 → 待打印
+        Assert.NotNull(Fld<WeighRecord>(dlg, "_savedRecord"));
+    }
 
     [Fact]
     public void 空车去皮_无待配对记录_保存为第一次称重()
@@ -90,9 +100,7 @@ public class WeighEntryDialogTests
             NoPrefix(dlg);
             Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
             PushStable(manager, 10000);
-            Call(dlg, "Save");
-
-            Assert.Equal(DialogResult.OK, dlg.DialogResult);
+            ConfirmAndSave(dlg);
         });
         manager.Dispose();
 
@@ -119,22 +127,18 @@ public class WeighEntryDialogTests
             Fld<TextBox>(dlg, "_txtOwnerPhone").Text = "13800000000";
             Fld<TextBox>(dlg, "_txtDriverPhone").Text = "13911111111";
             Fld<TextBox>(dlg, "_txtCargoOwner").Text = "李四";
-            Fld<TextBox>(dlg, "_txtUnitPrice").Text = " 235.5 ";
             PushStable(manager, 10000);
-            Call(dlg, "Save");
-
-            Assert.Equal(DialogResult.OK, dlg.DialogResult);
+            ConfirmAndSave(dlg);
         });
         manager.Dispose();
 
         var record = _repo.Query(null, null, vehicle, "", "", "").Single();
         Assert.Equal("玉米", record.Goods);              // 品种 → Goods 列
-        var ext = record.ParseExt();                     // 人名/电话/单价 → ext_json 固定键
+        var ext = record.ParseExt();                     // 人名/电话 → ext_json 固定键
         Assert.Equal("张三", ext["地主姓名"]);
         Assert.Equal("13800000000", ext["地主电话"]);
         Assert.Equal("13911111111", ext["司机电话"]);
         Assert.Equal("李四", ext["货主姓名"]);
-        Assert.Equal("235.5", ext["单价"]);              // 保存时去除首尾空白
     }
 
     [Fact]
@@ -150,9 +154,7 @@ public class WeighEntryDialogTests
             NoPrefix(dlg);
             Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
             PushStable(manager, 50000);
-            Call(dlg, "Save");
-
-            Assert.Equal(DialogResult.OK, dlg.DialogResult);
+            ConfirmAndSave(dlg);
         });
         manager.Dispose();
 
@@ -176,9 +178,7 @@ public class WeighEntryDialogTests
             NoPrefix(dlg);
             Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
             PushStable(manager, 30000);
-            Call(dlg, "Save");
-
-            Assert.Equal(DialogResult.OK, dlg.DialogResult);
+            ConfirmAndSave(dlg);
         });
         manager.Dispose();
 
@@ -190,7 +190,7 @@ public class WeighEntryDialogTests
     }
 
     [Fact]
-    public void 未录车号时保存_提示请选择车号且不保存()
+    public void 未录车号时确认_提示请选择车号且不保存()
     {
         _lastInfo = null;
         WeighManager manager = new();
@@ -201,9 +201,9 @@ public class WeighEntryDialogTests
             NoPrefix(dlg);
             Fld<TextBox>(dlg, "_txtVehicle").Text = "";   // 清空"默认字母"预填，模拟未录车号
             PushStable(manager, 10000);
-            Call(dlg, "Save");
+            Call(dlg, "Confirm");
 
-            Assert.NotEqual(DialogResult.OK, dlg.DialogResult);
+            Assert.Equal(0, Fld<int>(dlg, "_step"));       // 校验失败，停在确认步
         });
         manager.Dispose();
 
@@ -211,7 +211,7 @@ public class WeighEntryDialogTests
     }
 
     [Fact]
-    public void 重量未稳定时保存_提示未稳定且不保存()
+    public void 重量未稳定时确认_提示未稳定且不保存()
     {
         string vehicle = NewVehicle("N");
         _lastInfo = null;
@@ -222,9 +222,9 @@ public class WeighEntryDialogTests
             SilenceDialogs(dlg);
             NoPrefix(dlg);
             Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
-            Call(dlg, "Save");   // 未推送稳定采样 → IsStable=false
+            Call(dlg, "Confirm");   // 未推送稳定采样 → IsStableForSave=false
 
-            Assert.NotEqual(DialogResult.OK, dlg.DialogResult);
+            Assert.Equal(0, Fld<int>(dlg, "_step"));
         });
         manager.Dispose();
 
@@ -233,7 +233,7 @@ public class WeighEntryDialogTests
     }
 
     [Fact]
-    public void 录入待配对车号_显示配对提示并切换保存并结算()
+    public void 录入待配对车号_显示配对提示且链式按钮初始仅确认可用()
     {
         string vehicle = NewVehicle("O");
         _repo.InsertFirstWeigh(new WeighRecord { ScaleNo = "04", VehicleNo = vehicle, GrossKg = 10000 });
@@ -246,8 +246,17 @@ public class WeighEntryDialogTests
             Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
 
             Assert.Contains("未完成的二次磅", Fld<Label>(dlg, "_lblPairHint").Text);
-            Assert.Equal("保存并结算", Fld<Button>(dlg, "_btnSave").Text);
             Assert.Equal(AppConfig.Current.FormatWeight(10000), Fld<Label>(dlg, "_lblLastWeight").Text);
+
+            // 链式按钮初始：确认=当前白，保存/打印/继续=未到达灰
+            var btnLocked = (Color)typeof(WeighEntryDialog)
+                .GetField("BtnLocked", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!;
+            var btnCurrent = (Color)typeof(WeighEntryDialog)
+                .GetField("BtnCurrent", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!;
+            Assert.Equal(btnCurrent, Fld<Button>(dlg, "_btnConfirm").BackColor);
+            Assert.Equal(btnLocked, Fld<Button>(dlg, "_btnSave").BackColor);
+            Assert.Equal(btnLocked, Fld<Button>(dlg, "_btnPrint").BackColor);
+            Assert.Equal(btnLocked, Fld<Button>(dlg, "_btnContinue").BackColor);
         });
         manager.Dispose();
     }
@@ -301,7 +310,6 @@ public class WeighEntryDialogTests
                 ["地主姓名"] = "张三",
                 ["地主电话"] = "13800000000",
                 ["货主姓名"] = "李四",
-                ["单价"] = "235.5",
             }),
         });
 
@@ -309,8 +317,8 @@ public class WeighEntryDialogTests
         RunOnSta(() =>
         {
             using var dlg = new WeighEntryDialog(manager, isTare: true);
-            var cbo = Fld<ComboBox>(dlg, "_cboPrefix");
-            cbo.SelectedIndex = cbo.Items.IndexOf("黑");            // 前缀与已存车牌一致
+            var cbo = Fld<ProvincePicker>(dlg, "_cboPrefix");
+            cbo.SelectedIndex = ProvincePicker.Items.IndexOf("黑");   // 前缀与已存车牌一致
 
             // 编号输入一半时：建议列表应包含该编号（去掉省份部分）
             Fld<TextBox>(dlg, "_txtVehicle").Text = plate[1..3];    // 输入前 2 位
@@ -396,7 +404,7 @@ public class WeighEntryDialogTests
             // 默认省份 = 综合设置 DefaultProvince（默认"黑"），下拉应选中它
             using var dlg = new WeighEntryDialog(manager, isTare: true);
             Assert.Equal(AppConfig.Current.DefaultProvince,
-                Fld<ComboBox>(dlg, "_cboPrefix").SelectedItem);
+                Fld<ProvincePicker>(dlg, "_cboPrefix").SelectedItem);
 
             // 完整车号 = 省份 + 手输编号
             Fld<TextBox>(dlg, "_txtVehicle").Text = "A12345";
@@ -409,10 +417,143 @@ public class WeighEntryDialogTests
 
             // 预填完整车牌：省份拆进下拉、编号进输入框
             using var dlg2 = new WeighEntryDialog(manager, isTare: false, prefillVehicle: "冀A12345");
-            Assert.Equal("冀", Fld<ComboBox>(dlg2, "_cboPrefix").SelectedItem);
+            Assert.Equal("冀", Fld<ProvincePicker>(dlg2, "_cboPrefix").SelectedItem);
             Assert.Equal("A12345", Fld<TextBox>(dlg2, "_txtVehicle").Text);
             Assert.Equal("冀A12345", dlg2.ComposeVehicleNo());
         });
         manager.Dispose();
+    }
+
+    // ---------- 链式流程专项 ----------
+
+    [Fact]
+    public void 未到当前步_点击后续按钮均无效()
+    {
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+            SilenceDialogs(dlg);
+            NoPrefix(dlg);
+
+            // 初始阶段：保存/打印/继续都不是当前步，点击后阶段不变
+            Call(dlg, "DoSave");
+            Call(dlg, "DoPrint");
+            Call(dlg, "DoContinue");
+            Assert.Equal(0, Fld<int>(dlg, "_step"));
+        });
+        manager.Dispose();
+    }
+
+    [Fact]
+    public void 完整链路_确认保存打印继续_表单清空且窗口不关闭()
+    {
+        string vehicle = NewVehicle("P");
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: false);
+            SilenceDialogs(dlg);
+            UseTestScaleNo();
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
+            Fld<TextBox>(dlg, "_txtVariety").Text = "大豆";
+            PushStable(manager, 40000);
+
+            ConfirmAndSave(dlg);
+
+            // 打印成功 → 待继续
+            Call(dlg, "DoPrint");
+            Assert.Equal(3, Fld<int>(dlg, "_step"));
+
+            // 继续 → 表单清空、回到确认步（窗口仍开着，DialogResult 未设置）
+            Call(dlg, "DoContinue");
+            Assert.Equal(0, Fld<int>(dlg, "_step"));
+            Assert.Equal("", Fld<TextBox>(dlg, "_txtVehicle").Text);
+            Assert.Equal("", Fld<TextBox>(dlg, "_txtVariety").Text);
+            Assert.Null(Fld<WeighRecord?>(dlg, "_savedRecord"));
+            Assert.NotEqual(DialogResult.OK, dlg.DialogResult);
+        });
+        manager.Dispose();
+    }
+
+    [Fact]
+    public void 打印失败_停在打印步可重试_成功后解锁继续()
+    {
+        string vehicle = NewVehicle("Q");
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: false);
+            SilenceDialogs(dlg);
+            UseTestScaleNo();
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
+            PushStable(manager, 40000);
+            ConfirmAndSave(dlg);
+
+            // 打印失败 → 停留打印步
+            dlg.PrintAction = _ => false;
+            Call(dlg, "DoPrint");
+            Assert.Equal(2, Fld<int>(dlg, "_step"));
+
+            // 排除故障后重试 → 解锁继续
+            dlg.PrintAction = _ => true;
+            Call(dlg, "DoPrint");
+            Assert.Equal(3, Fld<int>(dlg, "_step"));
+        });
+        manager.Dispose();
+    }
+
+    [Fact]
+    public void 地主电话格式非法_确认被拦截()
+    {
+        string vehicle = NewVehicle("R");
+        _lastInfo = null;
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+            SilenceDialogs(dlg);
+            UseTestScaleNo();
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
+            Fld<TextBox>(dlg, "_txtOwnerPhone").Text = "12345";   // 非法手机号
+            PushStable(manager, 10000);
+
+            Call(dlg, "Confirm");
+            Assert.Equal(0, Fld<int>(dlg, "_step"));
+        });
+        manager.Dispose();
+
+        Assert.Contains("地主电话格式不正确", _lastInfo);
+    }
+
+    // ---------- 省份选择器（多列紧凑网格，替代超长单列下拉） ----------
+
+    [Fact]
+    public void 省份选择器_选项数_选中项与事件语义()
+    {
+        RunOnSta(() =>
+        {
+            using var picker = new ProvincePicker();
+            Assert.Equal(32, ProvincePicker.Items.Count);   // 无省份 + 31 省
+            Assert.Equal(0, picker.SelectedIndex);
+            Assert.Equal("", picker.SelectedItem);
+
+            int fired = 0;
+            picker.SelectedIndexChanged += (_, _) => fired++;
+            picker.SelectedIndex = ProvincePicker.Items.IndexOf("黑");
+            Assert.Equal("黑", picker.SelectedItem);
+            Assert.Equal("黑", picker.Text);
+            Assert.Equal(1, fired);
+
+            picker.SelectedIndex = picker.SelectedIndex;    // 重复赋值不重复触发
+            Assert.Equal(1, fired);
+
+            picker.SelectedIndex = 0;                       // 回到"无省份"
+            Assert.Equal("", picker.SelectedItem);
+            Assert.Throws<ArgumentOutOfRangeException>(() => picker.SelectedIndex = 99);
+        });
     }
 }
