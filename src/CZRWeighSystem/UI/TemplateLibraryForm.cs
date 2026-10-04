@@ -99,10 +99,15 @@ public class TemplateLibraryForm : Form
         };
         void AddBtn(string text, Action onClick, bool primary = false)
         {
+            // 宽度按文字自适应：固定 118px 时 9 个按钮共需约 1134px，
+            // 窗口缩窄（如 1024）会把最后一个"关闭"挤出可视区（用户实机复现）
             var b = new Button
             {
                 Text = text,
-                Size = new Size(118, 32),
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                MinimumSize = new Size(84, 32),
+                Padding = new Padding(12, 0, 12, 0),
                 Margin = new Padding(0, 0, 8, 0),
             };
             if (primary)

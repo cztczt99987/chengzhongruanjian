@@ -65,4 +65,34 @@ public class BottomButtonLayoutTests
                 $"登录按钮底边({btn.Bottom})超出窗体客户区({f.ClientSize.Height})");
         });
     }
+
+    [Fact]
+    public void 模板管理_最窄宽度下底部按钮栏九键完整可见()
+    {
+        RunOnSta(() =>
+        {
+            using var f = new TemplateLibraryForm();
+            f.Size = f.MinimumSize;    // 最窄场景：窗口缩到允许的最小宽度
+            f.Show();
+            Application.DoEvents();    // 触发布局
+
+            static IEnumerable<Control> Descendants(Control c)
+            {
+                foreach (Control child in c.Controls)
+                {
+                    yield return child;
+                    foreach (var d in Descendants(child)) yield return d;
+                }
+            }
+
+            var flow = Descendants(f).OfType<FlowLayoutPanel>().Single();
+            var buttons = Descendants(flow).OfType<Button>().OrderBy(b => b.Left).ToList();
+
+            Assert.Equal(9, buttons.Count);
+            Assert.Equal("关闭", buttons[^1].Text);   // 最后一个按钮
+            foreach (var b in buttons)
+                Assert.True(b.Right <= flow.ClientSize.Width,
+                    $"底部按钮“{b.Text}”右侧({b.Right})超出按钮栏宽度({flow.ClientSize.Width})，会被窗口裁切");
+        });
+    }
 }
