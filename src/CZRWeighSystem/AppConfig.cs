@@ -58,7 +58,9 @@ public class AppConfig
     /// <summary>结算完成后自动打印磅单（false = 每次询问，对应 F5-01）</summary>
     public bool AutoPrintEnabled { get; set; } = false;
     /// <summary>启用的磅单模板文件名（templates/ 目录下；空 = 不用模板，按字段勾选的内置版式）</summary>
-    public string PrintTemplateFile { get; set; } = "";
+    /// <remarks>默认启用"公平计量磅单-三等分"（2026-10-04 用户指定）；模板文件由
+    /// PrintTemplate.EnsureBuiltinsOnDisk() 在程序启动时自动生成</remarks>
+    public string PrintTemplateFile { get; set; } = "内置_公平计量磅单-三等分.json";
 
     // ===== 使用细节（对应 PRD 7.2 交互要点 / 4.1 规则 3）=====
     /// <summary>保存操作前是否二次确认（true 更稳妥，熟练后可改 false）</summary>

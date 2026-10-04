@@ -70,6 +70,17 @@ public class PaperNamingTests
     }
 
     [Fact]
+    public void 默认打印模板_为公平计量磅单三等分()
+    {
+        // 2026-10-04 用户指定：新装机/未单独设置时默认打印"公平计量磅单-三等分"（241×93 三等分连单）；
+        // 模板文件由 EnsureBuiltinsOnDisk 在程序启动时生成（Program.Main 已调用）
+        string expected = PrintTemplate.BuiltinFileName(
+            PrintTemplate.CreateBuiltins().Single(t => t.Name == "公平计量磅单-三等分"));
+
+        Assert.Equal(expected, new AppConfig().PrintTemplateFile);
+    }
+
+    [Fact]
     public void EnsureBuiltinsOnDisk_旧映射内置文件_删除重建并迁移启用配置()
     {
         var builtins = PrintTemplate.CreateBuiltins();

@@ -30,6 +30,10 @@ internal static class Program
         AppConfig.Load();
         Log.Info("程序启动");
 
+        // 确保内置磅单模板文件存在：默认打印模板"公平计量磅单-三等分"依赖 templates/ 下的文件，
+        // 首次运行或文件被删时自动生成；此前仅在打开"模板库"时才创建，导致默认模板静默回退旧版式
+        Report.PrintTemplate.EnsureBuiltinsOnDisk();
+
         // 初始化数据库（首次运行自动建库建表并创建默认账号）
         Database.Db.Initialize();
 
