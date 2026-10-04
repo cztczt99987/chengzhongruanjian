@@ -226,31 +226,6 @@ public class RecordQueryForm : Form
         };
         btnCaptures.Click += (_, _) => ShowCaptures();
 
-        // 批量打印 / 批量导出 PDF（多选"已完成"记录，对应过磅单格式设计模块需求）
-        var btnBatchPrint = new Button
-        {
-            Text = "批量打印",
-            Location = new Point(500, 608),
-            Size = new Size(100, 36),
-            BackColor = Color.FromArgb(0, 122, 204),
-            ForeColor = Color.White,
-            FlatStyle = FlatStyle.Flat,
-            Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
-        };
-        btnBatchPrint.Click += (_, _) => BatchPrint();
-
-        var btnExportPdf = new Button
-        {
-            Text = "导出PDF",
-            Location = new Point(610, 608),
-            Size = new Size(100, 36),
-            BackColor = Color.FromArgb(0, 153, 0),
-            ForeColor = Color.White,
-            FlatStyle = FlatStyle.Flat,
-            Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
-        };
-        btnExportPdf.Click += (_, _) => ExportPdf();
-
         // 磅单打印预览（打印前确认版式，不耗纸）
         var btnPreview = new Button
         {
@@ -278,8 +253,6 @@ public class RecordQueryForm : Form
         Controls.Add(btnReprint);
         Controls.Add(btnPreview);
         Controls.Add(btnCaptures);   // 原先遗漏未加入，导致按钮从未显示
-        Controls.Add(btnBatchPrint);
-        Controls.Add(btnExportPdf);
 
         // 管理员专属：作废 / 留痕（对应 PRD F3-04）。
         // 记录不可修改：称重数据一经保存即固化，错误记录通过"作废 + 重新过磅"修正
@@ -312,68 +285,6 @@ public class RecordQueryForm : Form
 
     /// <summary>获取选中行对应的记录（未选中返回 null）。</summary>
     private WeighRecord? SelectedRecord => _grid.CurrentRow?.Tag as WeighRecord;
-
-    /// <summary>多选行对应的记录列表（行 Tag 存 WeighRecord，支持按住 Ctrl/Shift 多选）。</summary>
-    private List<WeighRecord> SelectedRecords
-        => _grid.SelectedRows.Cast<DataGridViewRow>()
-              .Select(row => row.Tag as WeighRecord)
-              .Where(r => r != null)
-              .Cast<WeighRecord>()
-              .ToList();
-
-    /// <summary>批量打印：多选"已完成"记录合并为一个打印任务。</summary>
-    private void BatchPrint()
-    {
-        var all = SelectedRecords;
-        var list = all.Where(r => r.Status == "已完成").ToList();
-        if (list.Count == 0)
-        {
-            MessageBox.Show("请先勾选要打印的\"已完成\"记录（按住 Ctrl 或 Shift 可多选行）。",
-                "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
-        }
-        string skip = list.Count < all.Count
-            ? $"\n（已自动跳过 {all.Count - list.Count} 条非\"已完成\"记录）" : "";
-        if (MessageBox.Show($"将合并打印 {list.Count} 张磅单（一个打印任务），是否继续？{skip}",
-                "确认", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
-            return;
-        Report.PoundTicketPrinter.PrintBatch(list);
-    }
-
-    /// <summary>批量导出 PDF：多选"已完成"记录导出到指定文件夹（Microsoft Print to PDF）。</summary>
-    private void ExportPdf()
-    {
-        if (!Report.TicketPdfExporter.IsAvailable())
-        {
-            MessageBox.Show(
-                "本机未安装 \"Microsoft Print to PDF\" 虚拟打印机。\n该打印机为 Windows 10/11 自带，可在\"设置 → 打印机和扫描仪\"中检查是否被禁用。",
-                "无法导出 PDF", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
-        }
-        var all = SelectedRecords;
-        var list = all.Where(r => r.Status == "已完成").ToList();
-        if (list.Count == 0)
-        {
-            MessageBox.Show("请先勾选要导出的\"已完成\"记录（按住 Ctrl 或 Shift 可多选行）。",
-                "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
-        }
-        using var dlg = new FolderBrowserDialog { Description = $"选择 PDF 导出目录（共 {list.Count} 张）" };
-        if (dlg.ShowDialog(this) != DialogResult.OK) return;
-
-        UseWaitCursor = true;
-        var (ok, errors) = Report.TicketPdfExporter.ExportBatch(list, dlg.SelectedPath);
-        UseWaitCursor = false;
-
-        string msg = ok > 0
-            ? $"成功导出 {ok} 张 PDF →\n{dlg.SelectedPath}"
-            : "未成功导出任何 PDF。";
-        if (errors.Count > 0)
-            msg += $"\n\n失败 {errors.Count} 张：\n" + string.Join("\n", errors.Take(5))
-                 + (errors.Count > 5 ? "\n……" : "");
-        MessageBox.Show(msg, "导出完成", MessageBoxButtons.OK,
-            errors.Count > 0 ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
-    }
 
     /// <summary>作废选中记录（管理员，原因留痕，对应 PRD F3-04）。</summary>
     private void VoidRecord()
