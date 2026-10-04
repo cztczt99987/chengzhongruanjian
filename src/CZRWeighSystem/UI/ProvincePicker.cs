@@ -106,12 +106,19 @@ internal sealed class ProvincePicker : Button
     {
         if (disposing)
         {
-            // 选择器释放时连带关掉弹窗（弹窗内部项会随它一并释放）
+            // 选择器释放时连带关掉弹窗（弹窗内部项会随它一并释放）。
+            // 宿主窗体关闭时框架可能已销毁弹层窗口（句柄消失），此时再 Close 会经
+            // SetVisibleCore → Handle → CreateHandle 抛 ObjectDisposedException:
+            // 'System.Windows.Forms.ToolStripDropDown'（2026-10-04 实机复现）；
+            // 窗口已销毁则无需再关，直接 Dispose 做托管清理
             var drop = _drop;
             _drop = null;
             _grid = null;
-            drop?.Close();
-            drop?.Dispose();
+            if (drop is { IsDisposed: false })
+            {
+                if (drop.IsHandleCreated) drop.Close();
+                drop.Dispose();
+            }
         }
         base.Dispose(disposing);
     }
@@ -142,6 +149,16 @@ internal sealed class ProvincePicker : Button
         };
         drop.Items.Add(host);
         drop.Closed += OnDropClosed;
+        // 弹层可能被框架绕过 Closed 直接释放（宿主窗体关闭时菜单系统先回收活动弹层）：
+        // 释放即摘除陈旧引用，否则 _drop != null 会一直挡住重开、Dispose 还会访问已释放对象
+        drop.Disposed += (_, _) =>
+        {
+            if (ReferenceEquals(_drop, drop))
+            {
+                _drop = null;
+                _grid = null;
+            }
+        };
         _drop = drop;
         drop.Show(this, new Point(0, Height));
     }
