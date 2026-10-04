@@ -61,7 +61,7 @@ public class LoginForm : Form
 
         _lblError = new Label
         {
-            Text = "默认账号 admin，初始密码 123456",
+            Text = "",   // 初始不显示提示（默认账号密码已预填）；运行时用于显示验证中/错误消息
             ForeColor = Color.Gray,
             AutoSize = true,
             Location = new Point(120, 182),
