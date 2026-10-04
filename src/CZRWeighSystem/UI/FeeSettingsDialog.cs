@@ -20,7 +20,7 @@ public class FeeSettingsDialog : Form
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
-        ClientSize = new Size(580, 425);
+        ClientSize = new Size(580, 460);   // 底部预留说明文字（三行）与按钮的完整空间
         Font = new Font("Microsoft YaHei UI", 10F);
 
         BuildUi();
@@ -47,15 +47,17 @@ public class FeeSettingsDialog : Form
         Controls.Add(_chkEnabled);
 
         // ---- 其余收费每 X 元/吨 ----
-        Controls.Add(new Label { Text = "其余收费每", AutoSize = true, Location = new Point(25, 86) });
+        // 行 y=92：与上方"启用收费"复选框（AutoSize，高 DPI 下更高）拉开 10px 间距
+        Controls.Add(new Label { Text = "其余收费每", AutoSize = true, Location = new Point(25, 96) });
         _numFallback = Num(0, 9999, 2);
-        _numFallback.Location = new Point(112, 82);
+        _numFallback.Location = new Point(112, 92);
+        _numFallback.Size = new Size(88, 30);   // 两位小数值（如 10.00）在高 DPI 下也需要完整显示
         Controls.Add(_numFallback);
         Controls.Add(new Label
         {
             Text = "元/吨　（分段之外的重量都按此标准收费）",
             AutoSize = true,
-            Location = new Point(200, 86),
+            Location = new Point(208, 96),
         });
 
         // ---- 重量分段（5 行：起点 至 终点 吨 固定 X 元）----
@@ -63,19 +65,19 @@ public class FeeSettingsDialog : Form
         {
             Text = "重量分段（吨）",
             AutoSize = true,
-            Location = new Point(112, 118),
+            Location = new Point(112, 130),
             ForeColor = Color.Gray,
         });
         Controls.Add(new Label
         {
             Text = "固定金额（元）",
             AutoSize = true,
-            Location = new Point(388, 118),
+            Location = new Point(388, 130),
             ForeColor = Color.Gray,
         });
         for (int i = 0; i < BracketRowCount; i++)
         {
-            int y = 144 + i * 36;
+            int y = 160 + i * 36;
 
             var from = Num(0, 999);
             from.Location = new Point(112, y);
@@ -87,8 +89,9 @@ public class FeeSettingsDialog : Form
             Controls.Add(new Label { Text = "吨　固定", AutoSize = true, Location = new Point(312, y + 4) });
             var amount = Num(0, 99999, 2);
             amount.Location = new Point(388, y);
+            amount.Size = new Size(94, 30);   // 两位小数值（如 10.00）在高 DPI 下也需要完整显示
             Controls.Add(amount);
-            Controls.Add(new Label { Text = "元", AutoSize = true, Location = new Point(490, y + 4) });
+            Controls.Add(new Label { Text = "元", AutoSize = true, Location = new Point(488, y + 4) });
 
             _rows.Add((from, to, amount));
         }
@@ -100,7 +103,7 @@ public class FeeSettingsDialog : Form
                    "固定金额填 0 表示该段按上方「其余每吨」标准计费；\r\n" +
                    "如仅想按每吨收费，可把各段「固定金额」都改为 0。",
             AutoSize = true,
-            Location = new Point(25, 330),
+            Location = new Point(25, 344),
             ForeColor = Color.Gray,
         };
         Controls.Add(lblTip);
@@ -109,7 +112,7 @@ public class FeeSettingsDialog : Form
         var btnSave = new Button
         {
             Text = "保 存",
-            Location = new Point(330, 385),
+            Location = new Point(330, 415),
             Size = new Size(110, 34),
             BackColor = Color.FromArgb(0, 122, 204),
             ForeColor = Color.White,
@@ -118,7 +121,7 @@ public class FeeSettingsDialog : Form
         var btnCancel = new Button
         {
             Text = "退 出",
-            Location = new Point(455, 385),
+            Location = new Point(455, 415),
             Size = new Size(100, 34),
             FlatStyle = FlatStyle.Flat,
         };

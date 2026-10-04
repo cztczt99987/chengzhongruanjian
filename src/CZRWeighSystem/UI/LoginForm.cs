@@ -25,7 +25,7 @@ public class LoginForm : Form
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
-        ClientSize = new Size(400, 300);
+        ClientSize = new Size(400, 320);   // 底部预留错误提示（可换行至两三行）与按钮的完整空间
         Font = new Font("Microsoft YaHei UI", 10F);
 
         BuildUi();
@@ -73,7 +73,7 @@ public class LoginForm : Form
         _btnLogin = new Button
         {
             Text = "登  录",
-            Location = new Point(120, 215),
+            Location = new Point(120, 245),
             Size = new Size(100, 36),
             BackColor = Color.FromArgb(0, 122, 204),
             ForeColor = Color.White,
@@ -82,7 +82,7 @@ public class LoginForm : Form
         var btnExit = new Button
         {
             Text = "退  出",
-            Location = new Point(230, 215),
+            Location = new Point(230, 245),
             Size = new Size(100, 36),
             FlatStyle = FlatStyle.Flat,
         };

@@ -159,6 +159,7 @@ internal static class Program
         new DatabaseSettingsDialog(),
         new CameraSettingsDialog(),
         new BlackBoxForm(),
+        new FeeSettingsDialog(),
         new PrintSettingsDialog(),
         new TemplateDesignerForm(),
         new VoidReasonDialog("TEST-01-0001"),
