@@ -80,6 +80,29 @@ public class ComprehensiveSettingsDialogTests
     }
 
     [Fact]
+    public void 空车去皮差值预警_回显当前值_保存后写入配置()
+    {
+        var cfg = CZRWeighSystem.AppConfig.Current;
+        double old = cfg.TareDiffWarnTon;
+        try
+        {
+            cfg.TareDiffWarnTon = 0.5;
+            using var f = new ComprehensiveSettingsDialog();
+            Assert.Equal(0.5m, f.NumTareDiffWarnTon.Value);   // 打开即回显配置值
+            Assert.Equal(0, f.NumTareDiffWarnTon.Minimum);   // 允许 0=关闭
+
+            f.NumTareDiffWarnTon.Value = 1.25m;
+            f.SaveBasic();
+            Assert.Equal(1.25, cfg.TareDiffWarnTon, 2);
+        }
+        finally
+        {
+            cfg.TareDiffWarnTon = old;
+            cfg.Save();
+        }
+    }
+
+    [Fact]
     public void StableSecondsCombo_DisabledWhenUnchecked()
     {
         using var f = new ComprehensiveSettingsDialog();

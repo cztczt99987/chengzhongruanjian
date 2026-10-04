@@ -30,6 +30,7 @@ public class ComprehensiveSettingsDialog : Form
     internal CheckBox ChkBlackBox = null!;          // 黑匣子启用（原称重设置迁入）
     internal NumericUpDown NumBlackBoxMinKg = null!; // 黑匣子触发重量 kg
     internal NumericUpDown NumBlackBoxSeconds = null!; // 黑匣子持续稳定秒数
+    internal NumericUpDown NumTareDiffWarnTon = null!;  // 空车去皮差值预警（吨，0=关闭）
     internal TabControl Tabs = null!;
 
     /// <summary>结果提示框（测试注入后记录消息不弹窗，同 WeighEntryDialog 模式）。</summary>
@@ -344,6 +345,23 @@ public class ComprehensiveSettingsDialog : Form
         grpBlackBox.Controls.AddRange([ChkBlackBox, lblMinKg, NumBlackBoxMinKg,
             lblSeconds, NumBlackBoxSeconds]);
         FlowRow(lblMinKg, NumBlackBoxMinKg, lblSeconds, NumBlackBoxSeconds);
+
+        // ---- 区块 7：空车去皮差值预警（本次皮重与本车上次已完成皮重相差超阈值时仅弹窗预警） ----
+        var grpTareDiff = NewGroup(page, 578, 50);
+        var lblTareDiff = new Label
+        { Text = "空车去皮差值预警：本次皮重与上次相差超过", AutoSize = true, Location = new Point(18, 16) };
+        NumTareDiffWarnTon = new NumericUpDown
+        {
+            DecimalPlaces = 2,
+            Minimum = 0, Maximum = 100,
+            Value = (decimal)cfg.TareDiffWarnTon,
+            Width = 70,
+            TextAlign = HorizontalAlignment.Center,
+        };
+        var lblTareDiffTail = new Label
+        { Text = "吨时提示（0=关闭，仅预警不阻止保存）", AutoSize = true, Location = new Point(330, 16) };
+        grpTareDiff.Controls.AddRange([lblTareDiff, NumTareDiffWarnTon, lblTareDiffTail]);
+        FlowRow(lblTareDiff, NumTareDiffWarnTon, lblTareDiffTail);
     }
 
     /// <summary>在页签上创建一个分组区块（仿目标软件的边框分节）。</summary>
@@ -404,6 +422,7 @@ public class ComprehensiveSettingsDialog : Form
         cfg.BlackBoxEnabled = ChkBlackBox.Checked;
         cfg.BlackBoxMinKg = (double)NumBlackBoxMinKg.Value;
         cfg.BlackBoxSeconds = (int)NumBlackBoxSeconds.Value;
+        cfg.TareDiffWarnTon = (double)NumTareDiffWarnTon.Value;
         cfg.Save();
         Log.Info($"综合设置已保存（基本设置页）");
         InfoBox("设置已保存。", "成功", true);
