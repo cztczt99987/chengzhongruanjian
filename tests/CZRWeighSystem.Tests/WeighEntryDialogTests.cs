@@ -607,47 +607,86 @@ public class WeighEntryDialogTests
     }
 
     [Fact]
-    public void 省份选择器_反复开关_弹窗复用不被释放()
+    public void 省份选择器_关闭后可再次打开_不重入已释放对象()
     {
         RunOnSta(() =>
         {
-            // 回归 ObjectDisposedException：旧实现 Closed 即 Dispose，
-            // 下拉自动关闭与按钮手动关闭重入时访问已释放对象
+            // 回归两类线上故障：
+            // 1) ObjectDisposedException：Closed 中立即 Dispose，与菜单内部消息链路重入
+            // 2) 选完省份后再次点击不弹：同一实例/同一消息周期内重开被菜单过滤器抑制
             using var host = new Form();
             var picker = new ProvincePicker();
             host.Controls.Add(picker);
-            host.CreateControl();   // 建句柄但不显示窗口
+            host.CreateControl();   // 建句柄但不显示窗口（不泵消息：延迟释放回调不执行，便于断言"不立即释放"）
 
             var flags = BindingFlags.NonPublic | BindingFlags.Instance;
-            var toggle = typeof(ProvincePicker).GetMethod("ToggleDropDown", flags)!;
-            ToolStripDropDown Drop() =>
-                (ToolStripDropDown)typeof(ProvincePicker)
-                    .GetField("_drop", flags)!.GetValue(picker)!;
+            ToolStripDropDown? Drop() =>
+                (ToolStripDropDown?)typeof(ProvincePicker)
+                    .GetField("_drop", flags)!.GetValue(picker);
 
-            toggle.Invoke(picker, null);                 // 开
+            picker.CreateDropDown();                     // 第一次打开（新建实例）
             var d1 = Drop();
-            Assert.True(d1.Visible);
+            Assert.NotNull(d1);
+            Assert.True(d1!.Visible);
             Assert.False(d1.IsDisposed);
 
-            toggle.Invoke(picker, null);                 // 再按一次 → 关
-            Assert.False(d1.Visible);
-            Assert.False(d1.IsDisposed);
+            d1.Close();                                  // 模拟选省/外部点击关闭
+            Assert.Null(Drop());                         // Closed 同步摘引用
+            Assert.False(d1.IsDisposed);                 // 但不立即释放（重入保护）
 
-            d1.Close();                                  // 模拟 AppClicked 自动关闭
-            toggle.Invoke(picker, null);                 // 再开 → 复用同一实例
-            Assert.Same(d1, Drop());
-            Assert.False(Drop().IsDisposed);
+            picker.CreateDropDown();                     // 再次打开：新建实例、正常显示
+            var d2 = Drop();
+            Assert.NotNull(d2);
+            Assert.NotSame(d1, d2);
+            Assert.True(d2!.Visible);
+            Assert.False(d2.IsDisposed);
 
-            // 点省份单元格：选中变化、弹窗关闭但仍未释放，可继续再开
+            // 点省份单元格：选中变化、弹窗关闭摘引用，之后仍可第三次打开
             var grid = (Panel)typeof(ProvincePicker)
                 .GetField("_grid", flags)!.GetValue(picker)!;
             int ji = ProvincePicker.Items.IndexOf("冀");
             ((Button)grid.Controls[ji]).PerformClick();
             Assert.Equal("冀", picker.SelectedItem);
-            Assert.False(Drop().IsDisposed);
+            Assert.Null(Drop());
 
-            toggle.Invoke(picker, null);
-            Assert.True(Drop().Visible);
+            picker.CreateDropDown();
+            Assert.True(Drop()!.Visible);
+        });
+    }
+
+    [Fact]
+    public void 省份选择器_鼠标按下时延迟到消息周期外打开()
+    {
+        RunOnSta(() =>
+        {
+            // 真实点击路径：在 MouseDown 处理中同步 Show 会被同笔 MouseUp
+            // 判为"外部点击"立即关闭（第二次点击起弹不出）；修复后排队到消息周期外才建窗
+            using var host = new Form { ShowInTaskbar = false };
+            var picker = new ProvincePicker();
+            host.Controls.Add(picker);
+            host.Show();
+            picker.Focus();
+            try
+            {
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                ToolStripDropDown? Drop() =>
+                    (ToolStripDropDown?)typeof(ProvincePicker)
+                        .GetField("_drop", flags)!.GetValue(picker);
+
+                var onMouseDown = typeof(Control)
+                    .GetMethod("OnMouseDown", BindingFlags.NonPublic | BindingFlags.Instance)!;
+                onMouseDown.Invoke(picker, new object[]
+                {
+                    new MouseEventArgs(MouseButtons.Left, 1, 0, 0, 0),
+                });
+                Assert.Null(Drop());                     // 当前点击消息周期内尚未开窗
+                Application.DoEvents();
+                Assert.True(Drop()!.Visible);            // 泵出排队回调后稳定显示
+            }
+            finally
+            {
+                host.Close();
+            }
         });
     }
 
