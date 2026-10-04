@@ -162,6 +162,29 @@ public class BuiltinTemplatesTests
         Assert.Contains("毛重司磅", text);
         Assert.Contains("皮重司磅", text);
         Assert.Contains("承诺", text);
+        // 弹窗固定字段补齐（2026-10-04）：品种（记录 Goods 列）与单价（ext_json 固定键）
+        Assert.Contains("品种", text);
+        Assert.Contains("{货物}", text);
+        Assert.Contains("单价", text);
+        Assert.Contains("{单价}", text);
+    }
+
+    [Fact]
+    public void 公平计量磅单_联次标注位于网格右外侧且三行均匀分布()
+    {
+        // 2026-10-04 用户要求仿实物：表格右侧竖排"白联:存根/红联:客户/蓝联:司机"
+        var t = PrintTemplate.CreateBuiltins().Single(x => x.Name == "公平计量磅单-三等分");
+        var marks = t.Elements.OfType<TextElement>()
+            .Where(e => e.Text is "白联:存根" or "红联:客户" or "蓝联:司机").ToList();
+
+        Assert.Equal(3, marks.Count);
+        // 网格右缘 = 10 + 200 = 210：三行标注须位于网格右侧空白区且不超内容右缘 230
+        Assert.All(marks, e => Assert.True(e.X >= 210f && e.X + e.W <= 230f,
+            $"联次标注「{e.Text}」不在网格右侧空白区（X={e.X}，右缘={e.X + e.W}）"));
+        // 竖直方向按网格高度（5 行 × 8mm）三等分：行距相等（13.33mm）
+        var ys = marks.OrderBy(e => e.Y).Select(e => e.Y).ToList();
+        Assert.InRange(ys[1] - ys[0], 13.2f, 13.5f);
+        Assert.InRange(ys[2] - ys[1], 13.2f, 13.5f);
     }
 
     [Fact]

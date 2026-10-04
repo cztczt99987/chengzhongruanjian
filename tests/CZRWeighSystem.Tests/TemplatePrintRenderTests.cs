@@ -80,7 +80,7 @@ public class PrintPaperFitTests
     [Fact]
     public void 纸张偏窄时按宽度比例缩小()
     {
-        // 模板内容约 230×66mm；实际纸张 120×140（竖联纸）→ 按宽度 120/230 缩放
+        // 模板内容约 230×74mm（2026-10-04 加品种/单价行后）；实际纸张 120×140（竖联纸）→ 按宽度 120/230 缩放
         float scale = PoundTicketPrinter.ComputeFitScale(Fairness, 120, 140);
         Assert.InRange(scale, 120f / 230f - 0.01f, 120f / 230f + 0.01f);
         Assert.True(scale < 1f);

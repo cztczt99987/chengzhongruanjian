@@ -69,6 +69,8 @@ public class PrintTemplate
         "公司名称", "磅单抬头", "流水号", "磅号", "车号", "货物", "发货单位", "收货单位", "规格", "批次",
         "毛重", "皮重", "净重", "扣重", "实收", "金额", "单位",
         "一次磅时间", "二次磅时间", "打印时间", "司磅员", "备注", "状态", "打印次数",
+        // 称重弹窗固定录入字段（ext_json 固定键；BuildPlaceholders 对未填记录补空值兜底）
+        "地主姓名", "地主电话", "司机电话", "货主姓名", "单价",
     ];
 
     /// <summary>按称重记录与配置生成占位符取值表（含自定义字段）。</summary>
@@ -94,7 +96,8 @@ public class PrintTemplate
             ["实收"] = FmtKg(r.ReceivedKg, cfg),
             // 应收金额（元）：按收费分段自动计算；未启用收费/未结算为 "-"
             ["金额"] = r.AmountYuan.HasValue ? r.AmountYuan.Value.ToString("0.##") : "-",
-            ["单位"] = cfg.Unit,
+            // 单位显示汉字"吨"（用户要求界面与磅单统一汉字单位，不显示字母 t）
+            ["单位"] = cfg.UnitDisplay,
             ["一次磅时间"] = r.FirstTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-",
             ["二次磅时间"] = r.SecondTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-",
             ["打印时间"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
@@ -107,6 +110,10 @@ public class PrintTemplate
         // 自定义字段名即占位符（如模板中写 {合同号}）
         foreach (var (name, val) in r.ParseExt())
             ph.TryAdd(name, val);
+        // 称重弹窗固定录入字段（ext_json 固定键）：记录未填时兜底空串，
+        // 避免模板中的 {地主姓名}/{单价} 等因键缺失把"{字段名}"字面打印到磅单（须在 ext 之后兜底）
+        foreach (var key in new[] { "地主姓名", "地主电话", "司机电话", "货主姓名", "单价" })
+            ph.TryAdd(key, "");
         return ph;
     }
 
@@ -281,7 +288,8 @@ public class PrintTemplate
         {
             AppConfig.Current.PrintTemplateFile = migrateTo;
             AppConfig.Current.Save();
-            Log.Info($"纸样命名已修正（二等分=241×140、三等分=241×93），启用模板自动切换为：{migrateTo}");
+            // 触发场景：纸样命名修正（2026-10-02）或内置版式升级（LayoutVersion 递增）
+            Log.Info($"内置模板已按新定义重建（纸样映射/版式版本变化），启用模板保持为：{migrateTo}");
         }
 
         // 旧版内置模板（2026-10 按老软件版式重做前）：文件删除，启用中则迁移
@@ -433,33 +441,36 @@ public class PrintTemplate
     /// <summary>
     /// 生成"公平计量磅单-三等分"模板（仿公平计量站老软件三等分连单版式，241×93mm）：
     /// 公司名抬头 + 磅单抬头行（右上"第 N 次打印"）+ 日期/编号 +
-    /// 四行字段网格（地主姓名/地主电话/车号/司机电话 × 毛重/皮重/净重/货主姓名）+
+    /// 五行字段网格（地主姓名/地主电话/车号/司机电话/品种 × 毛重/皮重/净重/货主姓名/单价）+
+    /// 表格右外侧联次标注（白联:存根 / 红联:客户 / 蓝联:司机，按网格高度三等分竖排）+
     /// 毛重/皮重司磅时间行 + 承诺行。
     /// 注：毛重司磅取二次磅时间、皮重司磅取一次磅时间（公平计量站为先皮后毛流程）。
     /// </summary>
     private static PrintTemplate BuildFairnessTemplate(string name, string paperKey)
     {
-        var t = new PrintTemplate { Name = name, Category = "通用", PaperKey = paperKey, LayoutVersion = "2" };
-        const float x0 = 10f, w = 220f;   // 页宽 241，左右各留 10mm 对称白边
+        var t = new PrintTemplate { Name = name, Category = "通用", PaperKey = paperKey, LayoutVersion = "3" };
+        const float x0 = 10f, right = 230f;   // 页宽 241，左右各留 10mm 对称白边（内容右缘 230）
+        const float gridW = 200f;             // 网格宽：右侧余 20mm 放联次标注（仿实物表格右侧留白）
 
-        t.Elements.Add(new TextElement { Text = "{公司名称}", X = x0, Y = 2, W = w, H = 7, FontPt = 15, Bold = true, Align = TextAlign.Center });
-        t.Elements.Add(new TextElement { Text = "{磅单抬头}", X = x0, Y = 10, W = w, H = 5.5f, FontPt = 10.5f, Bold = true, Align = TextAlign.Center });
+        t.Elements.Add(new TextElement { Text = "{公司名称}", X = x0, Y = 2, W = right - x0, H = 7, FontPt = 15, Bold = true, Align = TextAlign.Center });
+        t.Elements.Add(new TextElement { Text = "{磅单抬头}", X = x0, Y = 10, W = right - x0, H = 5.5f, FontPt = 10.5f, Bold = true, Align = TextAlign.Center });
         t.Elements.Add(new TextElement { Text = "第{打印次数}次打印", X = x0 + 160, Y = 10.8f, W = 60, H = 4.5f, FontPt = 7.5f, Align = TextAlign.Right });
         t.Elements.Add(new TextElement { Text = "日期：{打印时间:yyyy年MM月dd日 HH:mm:ss}", X = x0, Y = 16, W = 120, H = 4.5f, FontPt = 8.5f });
         t.Elements.Add(new TextElement { Text = "编号：{流水号}", X = x0 + 140, Y = 16, W = 80, H = 4.5f, FontPt = 8.5f, Align = TextAlign.Right });
 
-        // 四行字段网格：[标签 20 | 值 92 | 标签 24 | 值 84]
-        const float gy = 21.5f, rowH = 8f, c1 = 20f, c2 = 112f, c3 = 136f;
+        // 五行字段网格：[标签 20 | 值 82 | 标签 24 | 值 74]
+        const float gy = 21.5f, rowH = 8f, c1 = 20f, c2 = 102f, c3 = 126f;
         var rows = new[]
         {
-            ("地主姓名", "{地主姓名}", "毛重", "{毛重} {单位}"),
-            ("地主电话", "{地主电话}", "皮重", "{皮重} {单位}"),
-            ("车号", "{车号}", "净重", "{净重} {单位}"),
+            ("地主姓名", "{地主姓名}", "毛重", "{毛重:F2} {单位}"),   // F2：磅单重量保留 2 位小数（仿实物）
+            ("地主电话", "{地主电话}", "皮重", "{皮重:F2} {单位}"),
+            ("车号", "{车号}", "净重", "{净重:F2} {单位}"),
             ("司机电话", "{司机电话}", "货主姓名", "{货主姓名}"),
+            ("品种", "{货物}", "单价", "{单价}"),
         };
-        t.Elements.Add(new RectElement { X = x0, Y = gy, W = w, H = rowH * rows.Length });
+        t.Elements.Add(new RectElement { X = x0, Y = gy, W = gridW, H = rowH * rows.Length });
         for (int i = 1; i < rows.Length; i++)
-            t.Elements.Add(new LineElement { X = x0, Y = gy + i * rowH, W = w, H = 0 });
+            t.Elements.Add(new LineElement { X = x0, Y = gy + i * rowH, W = gridW, H = 0 });
         foreach (var cx in new[] { c1, c2, c3 })
             t.Elements.Add(new LineElement { X = x0 + cx, Y = gy, W = 0, H = rowH * rows.Length });
         for (int i = 0; i < rows.Length; i++)
@@ -468,13 +479,26 @@ public class PrintTemplate
             t.Elements.Add(new TextElement { Text = rows[i].Item1, X = x0 + 2, Y = ry, W = c1 - 4, H = 5, FontPt = 9, Bold = true });
             t.Elements.Add(new TextElement { Text = rows[i].Item2, X = x0 + c1 + 2, Y = ry, W = c2 - c1 - 4, H = 5, FontPt = 10 });
             t.Elements.Add(new TextElement { Text = rows[i].Item3, X = x0 + c2 + 2, Y = ry, W = c3 - c2 - 4, H = 5, FontPt = 9, Bold = true });
-            t.Elements.Add(new TextElement { Text = rows[i].Item4, X = x0 + c3 + 2, Y = ry, W = w - c3 - 4, H = 5, FontPt = 10 });
+            t.Elements.Add(new TextElement { Text = rows[i].Item4, X = x0 + c3 + 2, Y = ry, W = gridW - c3 - 4, H = 5, FontPt = 10 });
+        }
+
+        // 联次标注（仿实物：表格右外侧竖排，说明白/红/蓝三张连单纸各联用途）
+        var marks = new[] { "白联:存根", "红联:客户", "蓝联:司机" };
+        const float markH = 4.5f, markX = x0 + gridW + 2;
+        for (int i = 0; i < marks.Length; i++)
+        {
+            float centerY = gy + rowH * rows.Length / marks.Length * (i + 0.5f);   // 表格高度三等分取段中心
+            t.Elements.Add(new TextElement
+            {
+                Text = marks[i], X = markX, Y = centerY - markH / 2,
+                W = right - markX, H = markH, FontPt = 7.5f,
+            });
         }
 
         // 毛重=第二次过磅、皮重=第一次过磅（公平计量站为先皮后毛流程）
-        t.Elements.Add(new TextElement { Text = "毛重司磅：{司磅员} {二次磅时间:yyyy-MM-dd HH:mm:ss}", X = x0, Y = 55.5f, W = 118, H = 4.5f, FontPt = 8 });
-        t.Elements.Add(new TextElement { Text = "皮重司磅：{司磅员} {一次磅时间:yyyy-MM-dd HH:mm:ss}", X = x0 + 118, Y = 55.5f, W = w - 118, H = 4.5f, FontPt = 8 });
-        t.Elements.Add(new TextElement { Text = "承诺：被作弊赔偿100万。", X = x0, Y = 61.5f, W = w, H = 4.5f, FontPt = 8 });
+        t.Elements.Add(new TextElement { Text = "毛重司磅：{司磅员} {二次磅时间:yyyy-MM-dd HH:mm:ss}", X = x0, Y = 63.5f, W = 118, H = 4.5f, FontPt = 8 });
+        t.Elements.Add(new TextElement { Text = "皮重司磅：{司磅员} {一次磅时间:yyyy-MM-dd HH:mm:ss}", X = x0 + 118, Y = 63.5f, W = right - x0 - 118, H = 4.5f, FontPt = 8 });
+        t.Elements.Add(new TextElement { Text = "承诺：被作弊赔偿100万。", X = x0, Y = 69.5f, W = right - x0, H = 4.5f, FontPt = 8 });
         return t;
     }
 

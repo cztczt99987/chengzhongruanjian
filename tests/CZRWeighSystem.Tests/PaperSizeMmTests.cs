@@ -109,4 +109,34 @@ public class PaperNamingTests
             cfg.Save();
         }
     }
+
+    [Fact]
+    public void EnsureBuiltinsOnDisk_版式版本升级_重建为最新版式并保持启用()
+    {
+        // 2026-10-04 公平计量模板版式升级（LayoutVersion 2→3）：已装机用户的旧文件
+        // 必须被自动删除重建为新版式（含白联/红联/蓝联标注），启用配置保持指向同名文件
+        var builtin = PrintTemplate.CreateBuiltins().Single(t => t.Name == "公平计量磅单-三等分");
+        string file = PrintTemplate.BuiltinFileName(builtin);
+
+        Directory.CreateDirectory(PrintTemplate.TemplatesDir);
+        new PrintTemplate { Name = builtin.Name, Category = "通用", PaperKey = "241x93", LayoutVersion = "2" }
+            .Save(file);
+        var cfg = AppConfig.Current;
+        cfg.PrintTemplateFile = file;
+
+        try
+        {
+            PrintTemplate.EnsureBuiltinsOnDisk();
+
+            var rebuilt = PrintTemplate.Load(file);
+            Assert.Equal("3", rebuilt.LayoutVersion);
+            Assert.Contains(rebuilt.Elements.OfType<TextElement>(), e => e.Text == "白联:存根");
+            Assert.Equal(file, cfg.PrintTemplateFile);   // 同名重建，启用配置不变
+        }
+        finally
+        {
+            cfg.PrintTemplateFile = "";
+            cfg.Save();
+        }
+    }
 }

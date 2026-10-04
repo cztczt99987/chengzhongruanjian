@@ -63,6 +63,41 @@ public class TemplateModelTests
     }
 
     [Fact]
+    public void BuildPlaceholders_弹窗固定字段未填时为空串()
+    {
+        // 记录未含 ext_json 固定键（地主姓名/地主电话/司机电话/货主姓名/单价）时取值应为空串，
+        // 否则公平计量模板中的 {单价} 等会把"{单价}"字面打印到磅单（2026-10-04 补齐字段）
+        var r = new WeighRecord { SerialNo = "S1", VehicleNo = "冀B00000" };
+        var ph = PrintTemplate.BuildPlaceholders(r, new AppConfig());
+
+        Assert.Equal("", ph["地主姓名"]);
+        Assert.Equal("", ph["地主电话"]);
+        Assert.Equal("", ph["司机电话"]);
+        Assert.Equal("", ph["货主姓名"]);
+        Assert.Equal("", ph["单价"]);
+        Assert.Equal("", PrintTemplate.Expand("{单价}", ph));   // 展开为空文本而非原样保留
+    }
+
+    [Fact]
+    public void BuildPlaceholders_固定字段有值时以ext_json为准()
+    {
+        // 空串兜底不得覆盖记录实际录入的固定字段值（兜底在 ext 之后 TryAdd）
+        var r = new WeighRecord
+        {
+            SerialNo = "S1",
+            ExtJson = WeighRecord.ExtToJson(new Dictionary<string, string>
+            {
+                ["单价"] = "235.5", ["地主姓名"] = "张三", ["司机电话"] = "13911111111",
+            }),
+        };
+        var ph = PrintTemplate.BuildPlaceholders(r, new AppConfig());
+
+        Assert.Equal("235.5", ph["单价"]);
+        Assert.Equal("张三", ph["地主姓名"]);
+        Assert.Equal("13911111111", ph["司机电话"]);
+    }
+
+    [Fact]
     public void CreateDefault_纸张合法且含元素()
     {
         var t = PrintTemplate.CreateDefault();
