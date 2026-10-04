@@ -117,10 +117,10 @@ public class WeighRecordRepository
     }
 
     /// <summary>
-    /// 首页统计：全部记录数、今日磅单数与今日毛/皮/净汇总（今日按 first_time 判定，
-    /// 毛/皮/净只统计已完成记录）。CASE WHEN 为 SQLite / SQL Server 双方言通用。
+    /// 首页统计：全部记录数、今日磅单数、今日毛/皮/净各测了多少车（对应重量非空的今日记录数）
+    /// 与今日应收金额合计（元，仅已完成记录）。CASE WHEN 为 SQLite / SQL Server 双方言通用。
     /// </summary>
-    public (int TotalCount, int TodayCount, double TodayGrossKg, double TodayTareKg, double TodayNetKg)
+    public (int TotalCount, int TodayCount, int GrossCars, int TareCars, int NetCars, decimal TodayAmountYuan)
         GetHomeStats()
     {
         using var conn = Db.CreateConnection();
@@ -128,9 +128,10 @@ public class WeighRecordRepository
         cmd.CommandText = """
             SELECT COUNT(*),
                    COALESCE(SUM(CASE WHEN first_time >= @from AND status = '已完成' THEN 1 ELSE 0 END), 0),
-                   COALESCE(SUM(CASE WHEN first_time >= @from AND status = '已完成' THEN gross_kg ELSE 0 END), 0),
-                   COALESCE(SUM(CASE WHEN first_time >= @from AND status = '已完成' THEN tare_kg ELSE 0 END), 0),
-                   COALESCE(SUM(CASE WHEN first_time >= @from AND status = '已完成' THEN net_kg ELSE 0 END), 0)
+                   COALESCE(SUM(CASE WHEN first_time >= @from AND gross_kg IS NOT NULL THEN 1 ELSE 0 END), 0),
+                   COALESCE(SUM(CASE WHEN first_time >= @from AND tare_kg IS NOT NULL THEN 1 ELSE 0 END), 0),
+                   COALESCE(SUM(CASE WHEN first_time >= @from AND net_kg IS NOT NULL THEN 1 ELSE 0 END), 0),
+                   COALESCE(SUM(CASE WHEN first_time >= @from AND status = '已完成' THEN amount_yuan ELSE 0 END), 0)
             FROM t_weigh_record
             """;
         cmd.Add("@from", DateTime.Now.ToString("yyyy-MM-dd 00:00:00"));
@@ -139,9 +140,10 @@ public class WeighRecordRepository
         return (
             Convert.ToInt32(reader.GetValue(0)),
             Convert.ToInt32(reader.GetValue(1)),
-            Convert.ToDouble(reader.GetValue(2)),
-            Convert.ToDouble(reader.GetValue(3)),
-            Convert.ToDouble(reader.GetValue(4)));
+            Convert.ToInt32(reader.GetValue(2)),
+            Convert.ToInt32(reader.GetValue(3)),
+            Convert.ToInt32(reader.GetValue(4)),
+            Convert.ToDecimal(reader.GetValue(5)));
     }
 
     /// <summary>
