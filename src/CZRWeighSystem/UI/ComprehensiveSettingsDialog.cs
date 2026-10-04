@@ -15,7 +15,9 @@ public class ComprehensiveSettingsDialog : Form
     // ===== 基本设置页控件（internal 供测试读写）=====
     internal TextBox TxtCompany = null!;
     internal TextBox TxtHeader = null!;
+    internal TextBox TxtStation = null!;
     internal TextBox TxtFooter = null!;
+    internal TextBox TxtPromise = null!;
     internal CheckBox ChkPrintCount = null!;
     internal NumericUpDown NumMaxPrint = null!;
     internal CheckBox ChkPaperWarn = null!;
@@ -55,7 +57,7 @@ public class ComprehensiveSettingsDialog : Form
         MaximizeBox = false;
         MinimizeBox = false;
         ShowInTaskbar = false;
-        ClientSize = new Size(900, 760);   // 容纳基本设置页 7 个区块（末块底 668 + 页签头/工具条 + 底部留白）
+        ClientSize = new Size(900, 920);   // 容纳基本设置页 7 个区块（末块底 791 + 页签头/工具条 + 底部留白）
         Font = new Font("Microsoft YaHei UI", 10F);
 
         BuildToolbar();
@@ -167,14 +169,33 @@ public class ComprehensiveSettingsDialog : Form
     {
         var cfg = AppConfig.Current;
 
-        // ---- 区块 1：公司信息（公司名称 / 磅单抬头 / 磅单底部） ----
-        var grpInfo = NewGroup(page, 15, 172);
+        // ---- 区块 1：公司信息（公司名称 / 磅单抬头 / 站点名称 / 磅单底部 / 承诺文案） ----
+        var grpInfo = NewGroup(page, 15, 285);
         TxtCompany = AddRow(grpInfo, "公司名称：", cfg.CompanyName, 15);
         TxtHeader = AddRow(grpInfo, "磅单抬头：", cfg.SlipHeader, 60);
-        TxtFooter = AddRow(grpInfo, "磅单底部：", cfg.SlipFooter, 105);
+        TxtStation = AddRow(grpInfo, "站点名称：", cfg.StationName, 105);
+        TxtFooter = AddRow(grpInfo, "磅单底部：", cfg.SlipFooter, 150);
+        // 承诺文案：多行输入（磅单底部承诺处）
+        var lblPromise = new Label
+        {
+            Text = "磅单承诺：",
+            AutoSize = true,
+            Location = new Point(18, 200),
+        };
+        TxtPromise = new TextBox
+        {
+            Text = cfg.PromiseText,
+            Multiline = true,
+            Location = new Point(110, 195),
+            Size = new Size(grpInfo.Width - 130, 70),
+            ScrollBars = ScrollBars.Vertical,
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+        };
+        grpInfo.Controls.Add(lblPromise);
+        grpInfo.Controls.Add(TxtPromise);
 
         // ---- 区块 2：磅单打印次数累计 / 纸张不符提示 ----
-        var grpPrint = NewGroup(page, 202, 96);
+        var grpPrint = NewGroup(page, 325, 96);
         ChkPrintCount = new CheckBox
         {
             Text = "启用磅单\"打印次数\"累计，同时设置每个磅单最多允许打印",
@@ -205,7 +226,7 @@ public class ComprehensiveSettingsDialog : Form
         FlowRow(ChkPrintCount, NumMaxPrint, lblCi);
 
         // ---- 区块 3：默认省份 / 数据稳定 ----
-        var grpProvince = NewGroup(page, 312, 56);
+        var grpProvince = NewGroup(page, 435, 56);
         var lblProvince = new Label
         { Text = "默认省份", AutoSize = true, Location = new Point(18, 21) };
         CboProvince = new ComboBox
@@ -268,7 +289,7 @@ public class ComprehensiveSettingsDialog : Form
             ChkStableSeconds, CboStableSeconds, lblStableTail);
 
         // ---- 区块 4：闲置锁屏 / 归零拦截 ----
-        var grpIdle = NewGroup(page, 382, 56);
+        var grpIdle = NewGroup(page, 505, 56);
         var lblIdle = new Label
         { Text = "电脑闲置", AutoSize = true, Location = new Point(18, 21) };
         NumIdleLock = new NumericUpDown
@@ -291,7 +312,7 @@ public class ComprehensiveSettingsDialog : Form
         FlowRow(lblIdle, NumIdleLock, lblIdleTail);   // 第二列 ChkBlockZero 固定 420 与区块 5 对齐
 
         // ---- 区块 5：自动清除 / 严格禁止二次称重 ----
-        var grpClear = NewGroup(page, 452, 56);
+        var grpClear = NewGroup(page, 575, 56);
         var lblClear = new Label
         { Text = "自动清除", AutoSize = true, Location = new Point(18, 21) };
         CboExpireDays = new ComboBox
@@ -324,7 +345,7 @@ public class ComprehensiveSettingsDialog : Form
 
         // ---- 区块 6：黑匣子（自原「称重设置」迁入：稳定持续设定秒数后自动记录 + 抓拍） ----
         // 两行布局：复选框独占首行，数值输入放第二行，避免长文案在不同 DPI 下遮挡输入框
-        var grpBlackBox = NewGroup(page, 522, 90);
+        var grpBlackBox = NewGroup(page, 645, 90);
         ChkBlackBox = new CheckBox
         {
             Text = "启用黑匣子（稳定达到触发重量并持续秒数后自动记录 + 抓拍）",
@@ -356,7 +377,7 @@ public class ComprehensiveSettingsDialog : Form
         FlowRow(lblMinKg, NumBlackBoxMinKg, lblSeconds, NumBlackBoxSeconds);
 
         // ---- 区块 7：空车去皮差值预警（本次皮重与本车上次已完成皮重相差超阈值时仅弹窗预警） ----
-        var grpTareDiff = NewGroup(page, 618, 50);
+        var grpTareDiff = NewGroup(page, 741, 50);
         var lblTareDiff = new Label
         { Text = "空车去皮差值预警：本次皮重与上次相差超过", AutoSize = true, Location = new Point(18, 21) };
         NumTareDiffWarnTon = new NumericUpDown
@@ -417,7 +438,9 @@ public class ComprehensiveSettingsDialog : Form
         var cfg = AppConfig.Current;
         cfg.CompanyName = TxtCompany.Text.Trim();
         cfg.SlipHeader = TxtHeader.Text.Trim();
+        cfg.StationName = TxtStation.Text.Trim();
         cfg.SlipFooter = TxtFooter.Text.Trim();
+        cfg.PromiseText = TxtPromise.Text.Trim();
         cfg.PrintCountEnabled = ChkPrintCount.Checked;
         cfg.MaxPrintCount = (int)NumMaxPrint.Value;
         cfg.ShowPaperSizeWarn = ChkPaperWarn.Checked;

@@ -92,6 +92,23 @@ public static class TemplateTicketRenderer
         using var brush = new SolidBrush(ParseColor(te.ForeColor, Color.Black));
         float x = te.X * pxPerMm;
         float w = te.W * pxPerMm;
+
+        // 自动换行（Wrap=true）：按元素宽度折行，行数受元素高度限制
+        if (te.Wrap && te.H > 0)
+        {
+            float lineH = Math.Max(1f, f.GetHeight(g));
+            float maxLines = Math.Max(1, (int)(te.H * pxPerMm / lineH));
+            using var sf = new StringFormat(StringFormat.GenericTypographic)
+            {
+                FormatFlags = StringFormatFlags.LineLimit,
+                Alignment = te.Align == TextAlign.Center ? StringAlignment.Center
+                    : te.Align == TextAlign.Right ? StringAlignment.Far : StringAlignment.Near,
+            };
+            g.DrawString(s, f, brush, new RectangleF(x, te.Y * pxPerMm, w, lineH * maxLines), sf);
+            return;
+        }
+
+        // 单行（默认）：左/中/右对齐，Y 起点绘制
         if (te.Align != TextAlign.Left)
         {
             var size = g.MeasureString(s, f);

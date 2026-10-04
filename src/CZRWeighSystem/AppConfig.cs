@@ -42,11 +42,16 @@ public class AppConfig
 
     // ===== 公司信息（对应 PRD F10-01，磅单抬头使用；综合设置-基本设置）=====
     /// <summary>公司名称（打印在磅单上）</summary>
-    public string CompanyName { get; set; } = "CZR 称重有限公司";
+    public string CompanyName { get; set; } = "精锐计量";
     /// <summary>磅单抬头（打印磅单的大标题，空则打印"磅 单"）</summary>
-    public string SlipHeader { get; set; } = "过磅单";
+    public string SlipHeader { get; set; } = "防作弊社会公平计量站";
+    /// <summary>站点名称（打印在磅单抬头下方；留空不打印）</summary>
+    public string StationName { get; set; } = "";
     /// <summary>磅单底部文字（打印在磅单页脚；空则打印系统默认文案）</summary>
     public string SlipFooter { get; set; } = "";
+    /// <summary>磅单顶部承诺文案（打印在磅单"承诺："冒号后；默认反作弊承诺，留空则不打印该行）</summary>
+    public string PromiseText { get; set; } =
+        "在此站点称重，在称重过程中无论利用有线遥控作弊，无线遥控作弊，远距离遥控作弊，近距离遥控作弊，无限距离遥控作弊，在称重过程中只要改变数字终端传出的实际重量数据，系统没有预警或自动锁机，被作弊赔偿100万。";
 
     // ===== 打印设置（对应 PRD F9-04 / F5-02 / F5-03）=====
     /// <summary>磅单纸张 key：A4 / 241x140 / 241x93（目录见 PoundTicketPrinter.Papers）</summary>

@@ -66,7 +66,7 @@ public class PrintTemplate
     /// <summary>可用占位符名（模板设计器"插入字段"用）</summary>
     public static readonly string[] PlaceholderNames =
     [
-        "公司名称", "磅单抬头", "流水号", "磅号", "车号", "货物", "发货单位", "收货单位", "规格", "批次",
+        "公司名称", "磅单抬头", "站点名称", "承诺", "流水号", "磅号", "车号", "货物", "发货单位", "收货单位", "规格", "批次",
         "毛重", "皮重", "净重", "扣重", "实收", "金额", "单位",
         "一次磅时间", "二次磅时间", "打印时间", "司磅员", "备注", "状态", "打印次数",
         // 称重弹窗固定录入字段（ext_json 固定键；BuildPlaceholders 对未填记录补空值兜底）
@@ -79,8 +79,11 @@ public class PrintTemplate
         var ph = new Dictionary<string, string>
         {
             ["公司名称"] = cfg.CompanyName,
-            // 磅单类型行（综合设置的磅单抬头，如"过磅单"；老软件的"皮重过磅单/毛重过磅单"即此处配置）
+            // 磅单类型行（综合设置的磅单抬头，如"防作弊社会公平计量站"）
             ["磅单抬头"] = string.IsNullOrWhiteSpace(cfg.SlipHeader) ? "过磅单" : cfg.SlipHeader,
+            ["站点名称"] = cfg.StationName ?? "",
+            // 承诺行（综合设置可改；留空则不打印承诺）
+            ["承诺"] = string.IsNullOrWhiteSpace(cfg.PromiseText) ? "" : "承诺：" + cfg.PromiseText,
             ["流水号"] = r.SerialNo,
             ["磅号"] = r.ScaleNo,
             ["车号"] = r.VehicleNo,
@@ -498,7 +501,9 @@ public class PrintTemplate
         // 毛重=第二次过磅、皮重=第一次过磅（公平计量站为先皮后毛流程）
         t.Elements.Add(new TextElement { Text = "毛重司磅：{司磅员} {二次磅时间:yyyy-MM-dd HH:mm:ss}", X = x0, Y = 63.5f, W = 118, H = 4.5f, FontPt = 8 });
         t.Elements.Add(new TextElement { Text = "皮重司磅：{司磅员} {一次磅时间:yyyy-MM-dd HH:mm:ss}", X = x0 + 118, Y = 63.5f, W = right - x0 - 118, H = 4.5f, FontPt = 8 });
-        t.Elements.Add(new TextElement { Text = "承诺：被作弊赔偿100万。", X = x0, Y = 69.5f, W = right - x0, H = 4.5f, FontPt = 8 });
+        // 站点名称（综合设置可配，留空则不显示）+ 承诺文案（综合设置可配，超宽自动折行）
+        t.Elements.Add(new TextElement { Text = "{站点名称}", X = x0, Y = 68.5f, W = right - x0, H = 4.5f, FontPt = 8, Bold = true });
+        t.Elements.Add(new TextElement { Text = "{承诺}", X = x0, Y = 73.5f, W = right - x0, H = 16f, FontPt = 6.5f, Wrap = true });
         return t;
     }
 
@@ -552,6 +557,10 @@ public class TextElement : TemplateElement
 
     [Category("内容"), DisplayName("文字颜色（#RRGGBB 或颜色名）")]
     public string ForeColor { get; set; } = "#000000";
+
+    /// <summary>换行：文本超宽时按元素宽度折行，最多填满元素高度（默认不换行，兼容旧模板）</summary>
+    [Category("内容"), DisplayName("自动换行")]
+    public bool Wrap { get; set; }
 
     [Browsable(false)]
     public override string Desc => $"文本：{Text}";

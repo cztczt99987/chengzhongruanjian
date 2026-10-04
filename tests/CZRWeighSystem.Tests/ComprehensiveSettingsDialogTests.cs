@@ -35,7 +35,9 @@ public class ComprehensiveSettingsDialogTests
 
         f.TxtCompany.Text = " 精锐计量 ";
         f.TxtHeader.Text = " 过磅单 ";
+        f.TxtStation.Text = " 沧州站 ";
         f.TxtFooter.Text = " 谢谢惠顾 ";
+        f.TxtPromise.Text = " 在此站点称重，被作弊赔偿100万。 ";
         f.ChkPrintCount.Checked = true;
         f.NumMaxPrint.Value = 3;
         f.CboProvince.SelectedItem = "吉";
@@ -57,7 +59,9 @@ public class ComprehensiveSettingsDialogTests
         var cfg = AppConfig.Current;
         Assert.Equal("精锐计量", cfg.CompanyName);
         Assert.Equal("过磅单", cfg.SlipHeader);
+        Assert.Equal("沧州站", cfg.StationName);
         Assert.Equal("谢谢惠顾", cfg.SlipFooter);
+        Assert.Equal("在此站点称重，被作弊赔偿100万。", cfg.PromiseText);
         Assert.True(cfg.PrintCountEnabled);
         Assert.Equal(3, cfg.MaxPrintCount);
         Assert.False(cfg.ShowPaperSizeWarn);
@@ -79,6 +83,9 @@ public class ComprehensiveSettingsDialogTests
         cfg.BlockSaveUntilZero = false;
         cfg.ForbidReweighMinutes = 0;
         cfg.ShowPaperSizeWarn = true;
+        cfg.StationName = "";
+        cfg.PromiseText =
+            "在此站点称重，在称重过程中无论利用有线遥控作弊，无线遥控作弊，远距离遥控作弊，近距离遥控作弊，无限距离遥控作弊，在称重过程中只要改变数字终端传出的实际重量数据，系统没有预警或自动锁机，被作弊赔偿100万。";
         cfg.Save();
     }
 
