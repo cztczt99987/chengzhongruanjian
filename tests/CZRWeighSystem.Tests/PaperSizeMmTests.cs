@@ -96,7 +96,7 @@ public class PaperNamingTests
             PrintTemplate.EnsureBuiltinsOnDisk();
 
             var rebuilt = PrintTemplate.Load(file);
-            Assert.Equal("5", rebuilt.LayoutVersion);
+            Assert.Equal("6", rebuilt.LayoutVersion);
             Assert.Contains(rebuilt.Elements.OfType<TextElement>(), e => e.Text == "白联:存根");
             Assert.Contains(rebuilt.Elements.OfType<TextElement>(), e => e.Text == "{站点名称}");
             Assert.Contains(rebuilt.Elements.OfType<TextElement>(), e => e.Text == "{承诺}");

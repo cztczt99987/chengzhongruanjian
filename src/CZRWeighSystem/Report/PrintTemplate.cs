@@ -319,15 +319,17 @@ public class PrintTemplate
     /// </summary>
     private static PrintTemplate BuildFairnessTemplate(string name, string paperKey)
     {
-        var t = new PrintTemplate { Name = name, Category = "通用", PaperKey = paperKey, LayoutVersion = "5" };
-        const float x0 = 8f, right = 226f;    // 页宽 241：针式机左右硬边距可达 ~7mm，内容右缘收到 226 防右侧被裁
-        const float gridW = 196f;             // 网格宽：右侧余 22mm 放联次标注（仿实物表格右侧留白）
+        var t = new PrintTemplate { Name = name, Category = "通用", PaperKey = paperKey, LayoutVersion = "6" };
+        // 内容右缘 206：EPSON LQ 系列驱动对程序提交的 241×93 自定义纸常回退为驱动预置的 215×85 纸，
+        // 215 纸扣左右硬件边距后可打印区约 209mm，内容右缘必须 ≤ 206 才能完整打印且不误报（2026-10-04）
+        const float x0 = 8f, right = 206f;
+        const float gridW = 176f;             // 网格宽：右侧余 20mm 放联次标注（仿实物表格右侧留白）
 
         t.Elements.Add(new TextElement { Text = "{公司名称}", X = x0, Y = 2, W = right - x0, H = 7, FontPt = 15, Bold = true, Align = TextAlign.Center });
         t.Elements.Add(new TextElement { Text = "{磅单抬头}", X = x0, Y = 10, W = right - x0, H = 5.5f, FontPt = 10.5f, Bold = true, Align = TextAlign.Center });
-        t.Elements.Add(new TextElement { Text = "第{打印次数}次打印", X = x0 + 158, Y = 10.8f, W = 58, H = 4.5f, FontPt = 7.5f, Align = TextAlign.Right });
+        t.Elements.Add(new TextElement { Text = "第{打印次数}次打印", X = x0 + 158, Y = 10.8f, W = 40, H = 4.5f, FontPt = 7.5f, Align = TextAlign.Right });
         t.Elements.Add(new TextElement { Text = "日期：{打印时间:yyyy年MM月dd日 HH:mm:ss}", X = x0, Y = 16, W = 120, H = 4.5f, FontPt = 8.5f });
-        t.Elements.Add(new TextElement { Text = "编号：{流水号}", X = x0 + 138, Y = 16, W = 78, H = 4.5f, FontPt = 8.5f, Align = TextAlign.Right });
+        t.Elements.Add(new TextElement { Text = "编号：{流水号}", X = x0 + 138, Y = 16, W = 60, H = 4.5f, FontPt = 8.5f, Align = TextAlign.Right });
 
         // 五行字段网格：[标签 20 | 值 82 | 标签 24 | 值 74]
         const float gy = 21.5f, rowH = 8f, c1 = 20f, c2 = 102f, c3 = 126f;
@@ -367,8 +369,8 @@ public class PrintTemplate
         }
 
         // 毛重=第二次过磅、皮重=第一次过磅（公平计量站为先皮后毛流程）
-        t.Elements.Add(new TextElement { Text = "毛重司磅：{司磅员} {二次磅时间:yyyy-MM-dd HH:mm:ss}", X = x0, Y = 63.5f, W = 118, H = 4.5f, FontPt = 8 });
-        t.Elements.Add(new TextElement { Text = "皮重司磅：{司磅员} {一次磅时间:yyyy-MM-dd HH:mm:ss}", X = x0 + 118, Y = 63.5f, W = right - x0 - 118, H = 4.5f, FontPt = 8 });
+        t.Elements.Add(new TextElement { Text = "毛重司磅：{司磅员} {二次磅时间:yyyy-MM-dd HH:mm:ss}", X = x0, Y = 63.5f, W = 110, H = 4.5f, FontPt = 8 });
+        t.Elements.Add(new TextElement { Text = "皮重司磅：{司磅员} {一次磅时间:yyyy-MM-dd HH:mm:ss}", X = x0 + 110, Y = 63.5f, W = right - x0 - 110, H = 4.5f, FontPt = 8 });
         // 站点名称（综合设置可配，留空则不显示）+ 承诺文案（综合设置可配，超宽自动折行）
         t.Elements.Add(new TextElement { Text = "{站点名称}", X = x0, Y = 68.5f, W = right - x0, H = 4.5f, FontPt = 8, Bold = true });
         t.Elements.Add(new TextElement { Text = "{承诺}", X = x0, Y = 73.5f, W = right - x0, H = 16f, FontPt = 6.5f, Wrap = true });
