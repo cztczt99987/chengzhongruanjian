@@ -42,7 +42,7 @@ public class MainForm : Form
 
     // ===== 今日称重统计（悬浮于摄像头画面上，自绘卡片，点击可竖直收起/展开）=====
     private const int StatsW = 252;           // 展开宽度
-    private const int StatsH = 250;           // 展开高度（悬浮卡片）
+    private const int StatsH = 290;           // 展开高度（悬浮卡片，6 行统计）
     private const int StatsCollapsedH = 32;   // 收起后仅剩标题条（竖直伸缩）
     private const int StatsHeaderH = 34;      // 标题条高度（标题居中）
     private const int StatsFirstRowY = 42;    // 首行数值 y
@@ -64,9 +64,10 @@ public class MainForm : Form
     private readonly Font _statsValueFont = new("Microsoft YaHei UI", 10F, FontStyle.Bold);
     private string _statTotal = "-";          // 全部记录
     private string _statToday = "-";          // 今日磅单
-    private string _statGross = "-";          // 今日毛重
-    private string _statTare = "-";           // 今日皮重
-    private string _statNet = "-";            // 今日净重
+    private string _statGross = "-";          // 今日毛重（车数）
+    private string _statTare = "-";           // 今日皮重（车数）
+    private string _statNet = "-";            // 今日净重（车数）
+    private string _statAmount = "-";         // 今日金额（元，合计）
     private Label _lblTodaySummary = null!;   // 视频区下方今日汇总行
 
     // ===== 底部称重记录列表 =====
@@ -226,7 +227,7 @@ public class MainForm : Form
 
         _lblWeight = new Label
         {
-            Text = "0 " + _cfg.Unit,
+            Text = "0 " + _cfg.UnitDisplay,
             Font = new Font("Consolas", 54F, FontStyle.Bold),
             ForeColor = Color.OrangeRed,
             TextAlign = ContentAlignment.MiddleCenter,
@@ -634,8 +635,8 @@ public class MainForm : Form
         if (!_statsExpanded) return;
 
         // 先量出名目/数值的最大宽度，再整体水平居中（各行左右对齐、成组居中）
-        string[] names = ["全部记录：", "今日磅单：", "今日毛重：", "今日皮重：", "今日净重："];
-        string[] values = [_statTotal, _statToday, _statGross, _statTare, _statNet];
+        string[] names = ["全部记录：", "今日磅单：", "今日毛重：", "今日皮重：", "今日净重：", "今日金额："];
+        string[] values = [_statTotal, _statToday, _statGross, _statTare, _statNet, _statAmount];
         int nameW = 0, valueW = 0;
         foreach (var n in names) nameW = Math.Max(nameW, MeasureText(n, _statsNameFont));
         foreach (var v in values) valueW = Math.Max(valueW, MeasureText(v, _statsValueFont));
@@ -671,17 +672,18 @@ public class MainForm : Form
         _statsPanel.Invalidate();   // 卡片自绘：内容区随展开状态重绘
     }
 
-    /// <summary>刷新右侧统计面板与今日汇总行（全部记录数、今日磅单数与毛/皮/净汇总）。</summary>
+    /// <summary>刷新右侧统计面板与今日汇总行（全部记录数、今日磅单数、毛/皮/净车数与金额合计）。</summary>
     private void RefreshStats()
     {
-        var (total, todayCount, gross, tare, net) = _recordRepo.GetHomeStats();
+        var (total, todayCount, grossCars, tareCars, netCars, amountYuan) = _recordRepo.GetHomeStats();
         _statTotal = $"{total} 条";
         _statToday = $"{todayCount} 张";
-        _statGross = _cfg.FormatWeight(gross);
-        _statTare = _cfg.FormatWeight(tare);
-        _statNet = _cfg.FormatWeight(net);
+        _statGross = $"{grossCars} 车";
+        _statTare = $"{tareCars} 车";
+        _statNet = $"{netCars} 车";
+        _statAmount = $"{amountYuan:0.##} 元";
         _statsPanel.Invalidate();   // 卡片自绘：数值变化后重绘
-        _lblTodaySummary.Text = $"今日称重：磅单 {todayCount} 张    净重 {_cfg.FormatWeight(net)}";
+        _lblTodaySummary.Text = $"今日称重：磅单 {todayCount} 张    金额合计 {amountYuan:0.##} 元";
     }
 
     // ---------- 底部称重记录面板（显示条数可选；双击未完成行带车号打开录入窗） ----------
@@ -728,15 +730,16 @@ public class MainForm : Form
         };
         // 记录列表字段与「空车去皮/重车过磅」录入弹窗一致：车牌、品种、地主姓名/电话、
         // 司机电话、货主姓名 + 结算结果（毛/皮/净、金额、时间、司磅员、状态）；
-        // 按内容固定列宽保证字段完整展示，列总宽超出面板时自动出现横向滚动条；
-        // 状态列 Fill 模式：宽窗口拉伸补满右侧
-        void AddCol(string name, string header, int width)
+        // 列宽由 FitCaptureColumns 按"内容宽/表头宽取大"自适应，保证表头与内容都单行完整展示，
+        // 列总宽超出面板时表格自动出现横向滚动条；状态列 Fill 模式：宽窗口拉伸补满右侧
+        void AddCol(string name, string header, int minWidth)
         {
             _captureGrid.Columns.Add(name, header);
             var col = _captureGrid.Columns[name]!;
             // 网格级默认 Fill 会忽略单列 Width，显式 None 才能按内容固定列宽
             col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
-            col.Width = width;
+            col.MinimumWidth = minWidth;   // 保底宽，实际宽度由 FitCaptureColumns 按内容/表头取大
+            col.HeaderCell.Style.WrapMode = DataGridViewTriState.False;   // 表头单行不换行
         }
         AddCol("SerialNo", "流水号", 138);
         AddCol("Date", "日期", 96);
@@ -749,6 +752,7 @@ public class MainForm : Form
         AddCol("Gross", "毛重", 80);
         AddCol("Tare", "皮重", 80);
         AddCol("Net", "净重", 80);
+        UpdateWeightColumnHeaders();   // 毛/皮/净表头带当前单位（如"毛重(吨)"）
         AddCol("AmountYuan", "金额(元)", 66);
         AddCol("GrossTime", "毛重时间", 76);
         AddCol("TareTime", "皮重时间", 76);
@@ -758,6 +762,7 @@ public class MainForm : Form
         statusCol.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
         statusCol.FillWeight = 1;
         statusCol.MinimumWidth = 60;
+        statusCol.HeaderCell.Style.WrapMode = DataGridViewTriState.False;
 
         // 双击未完成行：带车号打开录入窗（保存时按车号自动配对结算）
         _captureGrid.CellDoubleClick += (_, _) =>
@@ -821,12 +826,42 @@ public class MainForm : Form
         Controls.Add(_capturePanel);
     }
 
+    /// <summary>毛/皮/净列表头按当前显示单位刷新（单位只在表头显示，单元格为纯数字）。</summary>
+    private void UpdateWeightColumnHeaders()
+    {
+        _captureGrid.Columns["Gross"]!.HeaderText = $"毛重({_cfg.UnitDisplay})";
+        _captureGrid.Columns["Tare"]!.HeaderText = $"皮重({_cfg.UnitDisplay})";
+        _captureGrid.Columns["Net"]!.HeaderText = $"净重({_cfg.UnitDisplay})";
+        FitCaptureColumns();   // 表头带单位变长后重新适配列宽
+    }
+
+    /// <summary>
+    /// 称重记录列宽自适应：每列取「单元格内容宽」与「表头文字宽」的较大值（不低于保底宽），
+    /// 保证每个字段表头与内容都单行完整展示（不换行、不截断）；
+    /// 列总宽超出表格可视宽度时 DataGridView 自动出现横向滚动条。
+    /// </summary>
+    private void FitCaptureColumns()
+    {
+        foreach (DataGridViewColumn col in _captureGrid.Columns)
+        {
+            int headerW = TextRenderer.MeasureText(col.HeaderText, _captureGrid.Font).Width + 12;
+            if (col.AutoSizeMode == DataGridViewAutoSizeColumnMode.Fill)
+            {
+                col.MinimumWidth = Math.Max(col.MinimumWidth, headerW);   // 末列拉伸补剩余宽，表头保完整
+                continue;
+            }
+            int contentW = col.GetPreferredWidth(DataGridViewAutoSizeColumnMode.AllCells, true);
+            col.Width = Math.Max(col.MinimumWidth, Math.Max(headerW, contentW));
+        }
+    }
+
     /// <summary>切换显示单位（kg/吨）：写回 config.json，列表、统计卡片、今日汇总与顶部大屏全部按新单位刷新。</summary>
     private void SwitchUnit(string unit)
     {
         if (_cfg.Unit == unit) return;   // 构造时按当前单位设置单选框会触发事件，同值直接返回
         _cfg.Unit = unit;
         _cfg.Save();
+        UpdateWeightColumnHeaders();   // 表头单位
         RefreshGrid();      // 列表重量列
         RefreshStats();     // 统计卡片与今日汇总
         OnWeightUpdated();  // 顶部大屏实时重量与颜色
@@ -851,9 +886,10 @@ public class MainForm : Form
                 ext.GetValueOrDefault("地主电话", ""),
                 ext.GetValueOrDefault("司机电话", ""),
                 ext.GetValueOrDefault("货主姓名", ""),
-                _cfg.FormatWeight(r.GrossKg ?? 0),
-                r.TareKg.HasValue ? _cfg.FormatWeight(r.TareKg.Value) : "--",
-                r.NetKg.HasValue ? _cfg.FormatWeight(r.NetKg.Value) : "--",
+                // 毛/皮/净：单位在表头，单元格只显示换算后的数字
+                _cfg.FormatWeightNumber(r.GrossKg ?? 0),
+                r.TareKg.HasValue ? _cfg.FormatWeightNumber(r.TareKg.Value) : "--",
+                r.NetKg.HasValue ? _cfg.FormatWeightNumber(r.NetKg.Value) : "--",
                 r.AmountYuan?.ToString("0.##") ?? "--",
                 r.FirstTime?.ToString("HH:mm:ss") ?? "",
                 r.SecondTime?.ToString("HH:mm:ss") ?? "",
@@ -868,6 +904,8 @@ public class MainForm : Form
                 _captureGrid.Rows[i].DefaultCellStyle.ForeColor = Color.Firebrick;
             }
         }
+
+        FitCaptureColumns();   // 填充后按实际内容/表头适配列宽（不足出横向滚动条）
     }
 
     /// <summary>保存称重后自动抓拍（对应 PRD F7-02），返回存档路径数。</summary>

@@ -320,13 +320,16 @@ public class MainFormLayoutTests
             {
                 rdoKg.Checked = true;   // 确保从 kg 开始（同值不触发切换）
                 Assert.Equal("kg", cfg.Unit);
-                Assert.EndsWith("kg", (string)grid.Rows[0].Cells["Gross"].Value!);
+                // 单位只在表头显示，单元格为不带单位的纯数字
+                Assert.Equal("毛重(kg)", grid.Columns["Gross"]!.HeaderText);
+                Assert.Equal("1000", (string)grid.Rows[0].Cells["Gross"].Value!);
 
-                // 切吨：配置立即写回，列表按新单位显示（1000kg → 1t）
+                // 切吨：配置立即写回，列表按新单位显示（1000kg → 1），表头变"毛重(吨)"
                 rdoTon.Checked = true;
                 Assert.Equal("t", cfg.Unit);
                 Assert.True(rdoKg.Checked == false, "kg/吨 单选应互斥");
-                Assert.EndsWith("t", (string)grid.Rows[0].Cells["Gross"].Value!);
+                Assert.Equal("毛重(吨)", grid.Columns["Gross"]!.HeaderText);
+                Assert.Equal("1", (string)grid.Rows[0].Cells["Gross"].Value!);
 
                 rdoKg.Checked = true;   // 切回 kg
                 Assert.Equal("kg", cfg.Unit);
@@ -361,6 +364,47 @@ public class MainFormLayoutTests
                 $"条数下拉框右缘({combo.Right})超出面板可视宽度({panel.ClientSize.Width})");
             Assert.True(combo.Left >= label.Right, "条数标签应位于下拉框左侧且不重叠");
             Assert.True(combo.DropDownWidth >= combo.Width, "下拉列表宽度不应小于下拉框本体宽度");
+        });
+    }
+
+    [Fact]
+    public void 底部记录列表_表头与内容单行完整展示_窄窗出横向滚动()
+    {
+        Db.Initialize();
+        var repo = new WeighRecordRepository();
+        repo.InsertFirstWeigh(new WeighRecord
+        {
+            ScaleNo = "93", VehicleNo = "黑A12345", FirstTime = DateTime.Now, Status = "未完成",
+            ExtJson = WeighRecord.ExtToJson(new Dictionary<string, string>
+            {
+                ["地主姓名"] = "张三三",
+                ["地主电话"] = "13800001234",
+            }),
+        });
+
+        RunOnSta(() =>
+        {
+            using var form = new MainForm();
+            var grid = (DataGridView)Fld(form, "_captureGrid");
+
+            // 每列宽度必须容纳表头文字（单行完整展示，不换行不截断），且表头禁止换行
+            foreach (DataGridViewColumn col in grid.Columns)
+            {
+                int headerW = System.Windows.Forms.TextRenderer.MeasureText(col.HeaderText, grid.Font).Width + 8;
+                Assert.True(col.Width >= headerW,
+                    $"列[{col.HeaderText}]宽 {col.Width} 小于表头文字宽 {headerW}，表头会被截断");
+                Assert.NotEqual(DataGridViewTriState.True, col.HeaderCell.Style.WrapMode);
+            }
+
+            // 窄窗口：列总宽超出表格可视宽度 → 出现横向滚动条，字段不隐藏
+            form.WindowState = FormWindowState.Normal;
+            form.ClientSize = new Size(900, 700);
+            Application.DoEvents();
+            int totalW = grid.Columns.Cast<DataGridViewColumn>().Sum(c => c.Width);
+            Assert.True(totalW > grid.ClientSize.Width,
+                $"列总宽({totalW})应超出窄表格可视宽度({grid.ClientSize.Width})以触发横向滚动条");
+            Assert.True((grid.ScrollBars & ScrollBars.Horizontal) != 0,
+                "表格应启用横向滚动条");
         });
     }
 
