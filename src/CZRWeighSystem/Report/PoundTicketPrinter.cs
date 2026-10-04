@@ -312,8 +312,12 @@ public static class PoundTicketPrinter
     {
         if (tpl != null)
         {
-            // 模板模式：OriginAtMargins 已把原点放在可打印区起点，模板坐标（毫米）直接渲染
-            TemplateTicketRenderer.Render(tpl, g, r, AppConfig.Current, g.DpiX / 25.4f);
+            // 模板模式：OriginAtMargins 已把原点放在可打印区起点，模板坐标（毫米）直接渲染。
+            // 打印 Graphics 固定 PageUnit=Display（1 逻辑单位 = 1/100 英寸），与打印机物理 DPI
+            // 无关 → 毫米换算系数固定 100/25.4。若用 g.DpiX/25.4：600dpi 打印机会按设备像素
+            // 解释（23.6 vs 3.94），内容整体放大 6 倍移出纸面，预览/打印整页空白
+            // （2026-10-04 用户反馈三等分模板打印预览空白）。
+            TemplateTicketRenderer.Render(tpl, g, r, AppConfig.Current, 100f / 25.4f);
         }
         else
         {
