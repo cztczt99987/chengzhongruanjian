@@ -154,6 +154,7 @@ public class RecordQueryForm : Form
         _grid.Columns.Add("OwnerPhone", "地主电话");
         _grid.Columns.Add("DriverPhone", "司机电话");
         _grid.Columns.Add("CargoOwner", "货主姓名");
+        _grid.Columns.Add("UnitPrice", "单价");
         _grid.Columns.Add("Gross", $"毛重({_cfg.UnitDisplay})");
         _grid.Columns.Add("Tare", $"皮重({_cfg.UnitDisplay})");
         _grid.Columns.Add("Net", $"净重({_cfg.UnitDisplay})");
@@ -502,6 +503,7 @@ public class RecordQueryForm : Form
                 ext.GetValueOrDefault("地主电话", ""),
                 ext.GetValueOrDefault("司机电话", ""),
                 ext.GetValueOrDefault("货主姓名", ""),
+                ext.GetValueOrDefault("单价", ""),
                 Fmt(r.GrossKg),
                 Fmt(r.TareKg),
                 Fmt(r.NetKg),
@@ -510,9 +512,9 @@ public class RecordQueryForm : Form
                 r.SecondTime?.ToString("yyyy-MM-dd HH:mm") ?? "",
                 r.Operator ?? "",
                 r.Status);
-            // 自定义字段动态列取值（固定列 15 个，动态列从索引 15 起）
+            // 自定义字段动态列取值（固定列 16 个，动态列从索引 16 起）
             for (int k = 0; k < extFields.Count; k++)
-                _grid.Rows[i].Cells[15 + k].Value = ext.TryGetValue(extFields[k].Name, out var v) ? v : "";
+                _grid.Rows[i].Cells[16 + k].Value = ext.TryGetValue(extFields[k].Name, out var v) ? v : "";
             _grid.Rows[i].Tag = r;   // 行 Tag 保存完整记录，供补打使用
         }
 
