@@ -385,6 +385,106 @@ public class WeighEntryDialogTests
     }
 
     [Fact]
+    public void 自动回填后_换无历史车号_自动字段全部清空()
+    {
+        string plate = "黑T" + Guid.NewGuid().ToString("N")[..4];
+        _repo.InsertFirstWeigh(new WeighRecord
+        {
+            ScaleNo = "86",
+            VehicleNo = plate,
+            Goods = "玉米",
+            ExtJson = WeighRecord.ExtToJson(new Dictionary<string, string>
+            {
+                ["地主姓名"] = "张三",
+                ["地主电话"] = "13800000000",
+                ["司机电话"] = "13911111111",
+                ["货主姓名"] = "李四",
+                ["单价"] = "235.5",
+            }),
+        });
+
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+            var cbo = Fld<ProvincePicker>(dlg, "_cboPrefix");
+            cbo.SelectedIndex = ProvincePicker.Items.IndexOf("黑");
+
+            // 输入完整历史车号 → 回填
+            Fld<TextBox>(dlg, "_txtVehicle").Text = plate[1..];
+            Assert.Equal("玉米", Fld<TextBox>(dlg, "_txtVariety").Text);
+
+            // 换成当天无记录的车号 → 上一辆车自动填入的信息必须全部清空（用户反馈的残留问题）
+            Fld<TextBox>(dlg, "_txtVehicle").Text = "X" + Guid.NewGuid().ToString("N")[..5];
+            Assert.Equal("", Fld<TextBox>(dlg, "_txtVariety").Text);
+            Assert.Equal("", Fld<TextBox>(dlg, "_txtOwner").Text);
+            Assert.Equal("", Fld<TextBox>(dlg, "_txtOwnerPhone").Text);
+            Assert.Equal("", Fld<TextBox>(dlg, "_txtDriverPhone").Text);
+            Assert.Equal("", Fld<TextBox>(dlg, "_txtCargoOwner").Text);
+            Assert.Equal("", Fld<TextBox>(dlg, "_txtUnitPrice").Text);
+        });
+        manager.Dispose();
+    }
+
+    [Fact]
+    public void 无历史车号下手工填写_再换车号_手填内容保留()
+    {
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+            SilenceDialogs(dlg);
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = NewVehicle("V1");   // 新车号，无回填
+            Fld<TextBox>(dlg, "_txtVariety").Text = "小麦";              // 用户手工填写
+            Fld<TextBox>(dlg, "_txtOwner").Text = "王五";
+
+            // 再换成另一个无历史车号：手填内容不应被清空（不是上一辆车的自动信息）
+            Fld<TextBox>(dlg, "_txtVehicle").Text = NewVehicle("V2");
+            Assert.Equal("小麦", Fld<TextBox>(dlg, "_txtVariety").Text);
+            Assert.Equal("王五", Fld<TextBox>(dlg, "_txtOwner").Text);
+        });
+        manager.Dispose();
+    }
+
+    [Fact]
+    public void 自动回填后手动改过的字段_换车号时保留_其余自动字段清空()
+    {
+        string plate = "黑T" + Guid.NewGuid().ToString("N")[..4];
+        _repo.InsertFirstWeigh(new WeighRecord
+        {
+            ScaleNo = "87",
+            VehicleNo = plate,
+            Goods = "玉米",
+            ExtJson = WeighRecord.ExtToJson(new Dictionary<string, string>
+            {
+                ["地主姓名"] = "张三",
+                ["货主姓名"] = "李四",
+            }),
+        });
+
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+            var cbo = Fld<ProvincePicker>(dlg, "_cboPrefix");
+            cbo.SelectedIndex = ProvincePicker.Items.IndexOf("黑");
+            Fld<TextBox>(dlg, "_txtVehicle").Text = plate[1..];
+            Assert.Equal("张三", Fld<TextBox>(dlg, "_txtOwner").Text);
+
+            // 用户把自动回填的地主姓名手工改成另一个人
+            Fld<TextBox>(dlg, "_txtOwner").Text = "赵六";
+
+            // 换成无历史车号：手改的地主姓名保留，其他纯自动字段清空
+            Fld<TextBox>(dlg, "_txtVehicle").Text = "Y" + Guid.NewGuid().ToString("N")[..5];
+            Assert.Equal("赵六", Fld<TextBox>(dlg, "_txtOwner").Text);
+            Assert.Equal("", Fld<TextBox>(dlg, "_txtVariety").Text);
+            Assert.Equal("", Fld<TextBox>(dlg, "_txtCargoOwner").Text);
+        });
+        manager.Dispose();
+    }
+
+    [Fact]
     public void 默认字母_编号框预填配置字母_带预填车号或关闭开关时不预填()
     {
         // 临时改配置并在结束时还原，避免污染其他用例

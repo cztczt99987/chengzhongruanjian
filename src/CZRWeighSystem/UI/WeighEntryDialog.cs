@@ -30,6 +30,15 @@ public class WeighEntryDialog : Form
     /// <summary>当天已保存过（未作废）的记录：车牌自动补全候选 + 选中后回填上次信息。</summary>
     private List<WeighRecord> _todayRecords = [];
 
+    /// <summary>
+    /// 当前值由"命中历史车牌自动回填"而来的字段集合。
+    /// 换车号且无命中时只清空这些字段——用户手动输入/改过的字段保留，
+    /// 避免自动填入的上一辆车信息残留到新车；用户一旦手改某字段即从集合摘除。
+    /// </summary>
+    private readonly HashSet<TextBox> _autoFilledFields = [];
+    /// <summary>程序回填赋值进行中：此期间字段 TextChanged 不算用户手改，不摘除脏标记。</summary>
+    private bool _autoFilling;
+
     // 两种模式的背景色：皮重=蓝、毛重=绿，一眼可辨当前在哪个流程
     private static readonly Color TareBack = Color.FromArgb(0, 102, 164);
     private static readonly Color GrossBack = Color.FromArgb(0, 145, 60);
@@ -310,6 +319,10 @@ public class WeighEntryDialog : Form
         grid.Controls.Add(_txtUnitPrice, 1, 6);
         ticket.Controls.Add(grid);
 
+        // 用户手动改任一可回填字段 → 摘除其"自动填入"标记，之后换车号不再把它当旧车信息清掉
+        foreach (var box in new[] { _txtVariety, _txtOwner, _txtOwnerPhone, _txtDriverPhone, _txtCargoOwner, _txtUnitPrice })
+            box.TextChanged += (_, _) => { if (!_autoFilling) _autoFilledFields.Remove(box); };
+
         // 表格下方：司磅员（当前登录用户，自动记录）。
         // 框顶与表格底留 24px（表格底 480 → 框顶 504）：高 DPI 缩放取整会吃掉小间隙，
         // 原 8px 间隙在用户 125%/150% 缩放下表格底边框线压住框顶
@@ -572,23 +585,51 @@ public class WeighEntryDialog : Form
     }
 
     /// <summary>
-    /// 完整车号命中当天已保存记录时，自动回填上次填写的信息
-    /// （品种 + 地主姓名/地主电话/司机电话/货主姓名/单价，取该车牌最新一条）。
+    /// 车号变化时回填/清理历史信息：
+    /// 完整车号命中当天已保存记录 → 回填最新一条的品种/地主姓名/地主电话/司机电话/货主姓名/单价，
+    /// 并把这些字段标记为"自动填入"；
+    /// 车号为空或无命中 → 只清空仍带"自动填入"标记的字段（用户手动输入/改过的保留），
+    /// 避免上一辆车的自动回填信息残留到新车。
     /// </summary>
     private void TryAutoFill()
     {
         string no = ComposeVehicleNo();
-        if (no.Length == 0) return;
-        var hit = _todayRecords.FirstOrDefault(r => r.VehicleNo == no);
-        if (hit == null) return;
+        var hit = no.Length == 0 ? null
+            : _todayRecords.FirstOrDefault(r => r.VehicleNo == no);
 
-        var ext = hit.ParseExt();
-        _txtVariety.Text = hit.Goods ?? "";
-        _txtOwner.Text = ext.GetValueOrDefault("地主姓名", "");
-        _txtOwnerPhone.Text = ext.GetValueOrDefault("地主电话", "");
-        _txtDriverPhone.Text = ext.GetValueOrDefault("司机电话", "");
-        _txtCargoOwner.Text = ext.GetValueOrDefault("货主姓名", "");
-        _txtUnitPrice.Text = ext.GetValueOrDefault("单价", "");
+        _autoFilling = true;   // 下面赋值触发的 TextChanged 是程序回填，不算用户手改
+        try
+        {
+            if (hit != null)
+            {
+                var ext = hit.ParseExt();
+                FillAuto(_txtVariety, hit.Goods ?? "");
+                FillAuto(_txtOwner, ext.GetValueOrDefault("地主姓名", ""));
+                FillAuto(_txtOwnerPhone, ext.GetValueOrDefault("地主电话", ""));
+                FillAuto(_txtDriverPhone, ext.GetValueOrDefault("司机电话", ""));
+                FillAuto(_txtCargoOwner, ext.GetValueOrDefault("货主姓名", ""));
+                FillAuto(_txtUnitPrice, ext.GetValueOrDefault("单价", ""));
+            }
+            else
+            {
+                // 无命中：清空自动回填字段；用户手填/手改过的字段（不在集合中）原样保留
+                foreach (var box in _autoFilledFields.ToList())
+                    box.Text = "";
+                _autoFilledFields.Clear();
+            }
+        }
+        finally
+        {
+            _autoFilling = false;
+        }
+    }
+
+    /// <summary>程序自动回填一个字段并登记脏标记（仅值变化时才登记，空值不登记）。</summary>
+    private void FillAuto(TextBox box, string value)
+    {
+        box.Text = value;
+        if (value.Length > 0) _autoFilledFields.Add(box);
+        else _autoFilledFields.Remove(box);
     }
 
     /// <summary>
@@ -786,6 +827,7 @@ public class WeighEntryDialog : Form
         _txtDriverPhone.Clear();
         _txtCargoOwner.Clear();
         _txtUnitPrice.Clear();
+        _autoFilledFields.Clear();   // 表单整体清空：脏标记一并复位，不依赖各 Clear 的事件顺序
 
         _confirmedKg = null;
         _confirmedFirst = null;
