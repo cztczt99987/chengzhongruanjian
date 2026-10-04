@@ -127,6 +127,7 @@ public class WeighEntryDialogTests
             Fld<TextBox>(dlg, "_txtOwnerPhone").Text = "13800000000";
             Fld<TextBox>(dlg, "_txtDriverPhone").Text = "13911111111";
             Fld<TextBox>(dlg, "_txtCargoOwner").Text = "李四";
+            Fld<TextBox>(dlg, "_txtUnitPrice").Text = " 235.5 ";
             PushStable(manager, 10000);
             ConfirmAndSave(dlg);
         });
@@ -134,11 +135,12 @@ public class WeighEntryDialogTests
 
         var record = _repo.Query(null, null, vehicle, "", "", "").Single();
         Assert.Equal("玉米", record.Goods);              // 品种 → Goods 列
-        var ext = record.ParseExt();                     // 人名/电话 → ext_json 固定键
+        var ext = record.ParseExt();                     // 人名/电话/单价 → ext_json 固定键
         Assert.Equal("张三", ext["地主姓名"]);
         Assert.Equal("13800000000", ext["地主电话"]);
         Assert.Equal("13911111111", ext["司机电话"]);
         Assert.Equal("李四", ext["货主姓名"]);
+        Assert.Equal("235.5", ext["单价"]);              // 单价 → ext_json 固定键（保存时去除首尾空白）
     }
 
     [Fact]
@@ -310,6 +312,7 @@ public class WeighEntryDialogTests
                 ["地主姓名"] = "张三",
                 ["地主电话"] = "13800000000",
                 ["货主姓名"] = "李四",
+                ["单价"] = "235.5",
             }),
         });
 
@@ -331,6 +334,7 @@ public class WeighEntryDialogTests
             Assert.Equal("张三", Fld<TextBox>(dlg, "_txtOwner").Text);
             Assert.Equal("13800000000", Fld<TextBox>(dlg, "_txtOwnerPhone").Text);
             Assert.Equal("李四", Fld<TextBox>(dlg, "_txtCargoOwner").Text);
+            Assert.Equal("235.5", Fld<TextBox>(dlg, "_txtUnitPrice").Text);   // 单价一并回填
         });
         manager.Dispose();
     }
