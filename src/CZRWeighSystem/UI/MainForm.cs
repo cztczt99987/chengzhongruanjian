@@ -101,6 +101,7 @@ public class MainForm : Form
         MinimumSize = new Size(1240, 780);
         WindowState = FormWindowState.Maximized;   // 软件打开默认全屏（最大化）
         Font = new Font("Microsoft YaHei UI", 10F);
+        Icon = AppIcon.Load();                     // 窗口图标（与 exe 图标同一份内嵌 app.ico）
         // 高 DPI（125%/150%）下按 DPI 缩放布局，避免文字截断与控件错位
         AutoScaleMode = AutoScaleMode.Dpi;
         // F3 打开综合设置（对应目标软件快捷键）

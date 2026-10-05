@@ -20,6 +20,9 @@
     <SatelliteResourceLanguages>zh-Hans</SatelliteResourceLanguages>
     <!-- x64 进程：VLC 原生解码库（libvlc/win-x64）要求位次匹配 -->
     <PlatformTarget>x64</PlatformTarget>
+    <!-- 程序图标（用户提供的「精锐计量」徽标，由 jpg 转换，含 16~256 多尺寸帧）：
+         exe 文件图标，供资源管理器、桌面快捷方式、卸载列表使用 -->
+    <ApplicationIcon>UI\Resources\app.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -48,6 +51,8 @@
   <ItemGroup>
     <!-- 界面图标（空/重车自卸车图，用户提供，已处理为透明背景 PNG）随程序集内嵌，免外部文件 -->
     <EmbeddedResource Include="UI\Resources\*.png" />
+    <!-- 程序图标随程序集内嵌，供窗体标题栏/任务栏使用（与 exe 图标同一份 app.ico） -->
+    <EmbeddedResource Include="UI\Resources\app.ico" />
   </ItemGroup>
 
 </Project>

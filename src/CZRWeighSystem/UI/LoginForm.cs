@@ -27,6 +27,7 @@ public class LoginForm : Form
         MinimizeBox = false;
         ClientSize = new Size(400, 320);   // 底部预留错误提示（可换行至两三行）与按钮的完整空间
         Font = new Font("Microsoft YaHei UI", 10F);
+        Icon = AppIcon.Load();   // 窗口图标（与 exe 图标同一份内嵌 app.ico）
 
         BuildUi();
     }

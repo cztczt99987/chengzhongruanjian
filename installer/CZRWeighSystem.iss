@@ -31,6 +31,8 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayName={#AppName}
 UninstallDisplayIcon={app}\{#ExeName}
+; 安装包自身的图标（与软件 exe 同一份 app.ico）
+SetupIconFile=..\src\CZRWeighSystem\UI\Resources\app.ico
 ; 安装/升级前提示关闭正在运行的软件，避免文件被占用
 CloseApplications=yes
 RestartApplications=no
