@@ -290,22 +290,22 @@ public class MainFormLayoutTests
     }
 
     [Fact]
-    public void 底部记录列表_十七列与弹窗字段一致_含单价与金额()
+    public void 底部记录列表_十八列与弹窗字段一致_含单价与货主电话()
     {
         var s = BuildAndMeasure();
         // 字段与「空车去皮/重车过磅」录入弹窗一致：流水号/日期/车牌/品种/地主姓名/电话/
-        // 司机电话/货主姓名/单价/毛/皮/净/金额/毛重时间/皮重时间/司磅员/状态
-        Assert.Equal(17, s.CaptureColumnCount);
+        // 司机电话/货主姓名/货主电话/单价/毛/皮/净/金额/毛重时间/皮重时间/司磅员/状态
+        Assert.Equal(18, s.CaptureColumnCount);
         Assert.Equal("流水号", s.FirstColumnHeader);
         Assert.Equal("状态", s.LastColumnHeader);   // 单价/金额等列插在皮重时间与状态之间
     }
 
     /// <summary>
-    /// 首页称重记录列表必须显示"单价"列且取记录 ext_json 固定键"单价"
-    /// （用户反馈：录入弹窗新增单价后，首页列表与记录查询都没有该字段）。
+    /// 首页称重记录列表必须显示"单价"与"货主电话"列且取记录 ext_json 固定键
+    /// （用户反馈：录入弹窗新增字段后，首页列表与记录查询都没有这些字段）。
     /// </summary>
     [Fact]
-    public void 底部记录列表_显示单价列_取自记录扩展字段()
+    public void 底部记录列表_显示单价与货主电话列_取自记录扩展字段()
     {
         Db.Initialize();
         var repo = new WeighRecordRepository();
@@ -313,7 +313,10 @@ public class MainFormLayoutTests
         repo.InsertFirstWeigh(new WeighRecord
         {
             ScaleNo = "93", VehicleNo = vehicle, FirstTime = DateTime.Now, Status = "未完成",
-            ExtJson = WeighRecord.ExtToJson(new Dictionary<string, string> { ["单价"] = "12.5" }),
+            ExtJson = WeighRecord.ExtToJson(new Dictionary<string, string>
+            {
+                ["单价"] = "12.5", ["货主电话"] = "13700000000",
+            }),
         });
 
         RunOnSta(() =>
@@ -321,9 +324,11 @@ public class MainFormLayoutTests
             using var form = new MainForm();
             var grid = (DataGridView)Fld(form, "_captureGrid");
             Assert.Equal("单价", grid.Columns["UnitPrice"]!.HeaderText);
+            Assert.Equal("货主电话", grid.Columns["CargoOwnerPhone"]!.HeaderText);
             var row = grid.Rows.Cast<DataGridViewRow>()
                 .First(r => (string)r.Cells["VehicleNo"].Value! == vehicle);
             Assert.Equal("12.5", (string)row.Cells["UnitPrice"].Value!);
+            Assert.Equal("13700000000", (string)row.Cells["CargoOwnerPhone"].Value!);
         });
     }
 

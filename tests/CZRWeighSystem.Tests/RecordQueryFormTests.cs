@@ -49,11 +49,11 @@ public class RecordQueryFormTests
     }
 
     /// <summary>
-    /// 记录查询表格必须显示"单价"列且取记录 ext_json 固定键"单价"
-    /// （用户反馈：录入弹窗新增单价后，首页列表与记录查询都没有该字段）。
+    /// 记录查询表格必须显示"单价"与"货主电话"列且取记录 ext_json 固定键
+    /// （用户反馈：录入弹窗新增字段后，首页列表与记录查询都没有这些字段）。
     /// </summary>
     [Fact]
-    public void 记录查询_表格含单价列_取自记录扩展字段()
+    public void 记录查询_表格含单价与货主电话列_取自记录扩展字段()
     {
         Db.Initialize();
         var repo = new WeighRecordRepository();
@@ -61,7 +61,10 @@ public class RecordQueryFormTests
         repo.InsertFirstWeigh(new WeighRecord
         {
             ScaleNo = "94", VehicleNo = vehicle, FirstTime = DateTime.Now, Status = "未完成",
-            ExtJson = WeighRecord.ExtToJson(new Dictionary<string, string> { ["单价"] = "12.5" }),
+            ExtJson = WeighRecord.ExtToJson(new Dictionary<string, string>
+            {
+                ["单价"] = "12.5", ["货主电话"] = "13700000000",
+            }),
         });
 
         RunOnSta(() =>
@@ -74,9 +77,11 @@ public class RecordQueryFormTests
                 .GetMethod("DoQuery", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(form, null);
 
             Assert.Equal("单价", grid.Columns["UnitPrice"]!.HeaderText);
+            Assert.Equal("货主电话", grid.Columns["CargoOwnerPhone"]!.HeaderText);
             var row = grid.Rows.Cast<DataGridViewRow>()
                 .First(r => (string)r.Cells["VehicleNo"].Value! == vehicle);
             Assert.Equal("12.5", (string)row.Cells["UnitPrice"].Value!);
+            Assert.Equal("13700000000", (string)row.Cells["CargoOwnerPhone"].Value!);
         });
     }
 

@@ -6,7 +6,7 @@ namespace CZRWeighSystem.UI;
 /// <summary>
 /// 称重录入弹窗（仿老软件链式流程：确认 → 保存 → 打印 → 继续）。
 /// 点首页「空车去皮 / 重车过磅」弹出，左侧米黄票据按网格两列布局：
-/// 左列固定字段（车牌号码/地主姓名/地主电话/司机电话/货主姓名/品种），
+/// 左列固定字段（车牌号码/地主姓名/地主电话/司机电话/货主姓名/货主电话/品种/单价），
 /// 右列实时毛/皮/净预览；右栏为四步链式按钮，按顺序逐步解锁：
 /// 确认（校验车号/稳定并锁定读数）→ 保存（第一次称重或二次磅结算）→
 /// 打印（直接出单，不再弹"是否打印"）→ 继续（清空表单连续录入下一辆，窗口不关闭）。
@@ -66,6 +66,7 @@ public class WeighEntryDialog : Form
     private TextBox _txtOwnerPhone = null!;  // 地主电话（ext_json 固定键）
     private TextBox _txtDriverPhone = null!; // 司机电话（ext_json 固定键）
     private TextBox _txtCargoOwner = null!;  // 货主姓名（ext_json 固定键）
+    private TextBox _txtCargoOwnerPhone = null!; // 货主电话（ext_json 固定键）
     private TextBox _txtUnitPrice = null!;   // 单价（ext_json 固定键；只允许数字与小数点）
     private TextBox _txtOperator = null!;    // 司磅员（当前登录用户，只读）
     private TableLayoutPanel _grid = null!;  // 票据固定字段表格（测试用：验证不压住下方司磅员框）
@@ -95,7 +96,7 @@ public class WeighEntryDialog : Form
         _isTare = isTare;
         Text = (isTare ? "空车去皮" : "重车过磅") + $"（本次按{(isTare ? "皮" : "毛")}重保存）";
         StartPosition = FormStartPosition.CenterParent;
-        Size = new Size(970, 655);   // 右栏内容与右边缘留出边距；票据加高后窗口同步加高
+        Size = new Size(970, 705);   // 右栏内容与右边缘留出边距；票据加高（货主电话行）后窗口同步加高
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
@@ -156,7 +157,7 @@ public class WeighEntryDialog : Form
         var ticket = new Panel
         {
             Location = new Point(15, 15),
-            Size = new Size(650, 590),
+            Size = new Size(650, 640),   // 加高 50px：表格新增"货主电话"一行
             BackColor = Color.FromArgb(255, 255, 224),
             Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left,
         };
@@ -202,7 +203,7 @@ public class WeighEntryDialog : Form
         {
             Location = new Point(25, 124),
             ColumnCount = 4,
-            RowCount = 7,
+            RowCount = 8,
             CellBorderStyle = TableLayoutPanelCellBorderStyle.Single,
             BackColor = ticket.BackColor,
             AutoSize = true,
@@ -213,7 +214,7 @@ public class WeighEntryDialog : Form
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 264));  // 输入框（车牌行含省份下拉）
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 68));   // 重量名
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 176));  // 重量值
-        for (int i = 0; i < 7; i++)
+        for (int i = 0; i < 8; i++)
             grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
 
         // 单元格控件统一留 1px 内边距：避免控件盖住 TableLayoutPanel 的网格线
@@ -302,13 +303,18 @@ public class WeighEntryDialog : Form
         _txtCargoOwner = Input();
         grid.Controls.Add(_txtCargoOwner, 1, 4);
 
-        // 行6：品种（存记录 Goods 列；右列留空）
-        grid.Controls.Add(Head("品种"), 0, 5);
-        _txtVariety = Input();
-        grid.Controls.Add(_txtVariety, 1, 5);
+        // 行6：货主电话（ext_json 固定键；右列留空）
+        grid.Controls.Add(Head("货主电话"), 0, 5);
+        _txtCargoOwnerPhone = Input();
+        grid.Controls.Add(_txtCargoOwnerPhone, 1, 5);
 
-        // 行7：单价（ext_json 固定键；右列留空）——只允许输入数字与小数点
-        grid.Controls.Add(Head("单价"), 0, 6);
+        // 行7：品种（存记录 Goods 列；右列留空）
+        grid.Controls.Add(Head("品种"), 0, 6);
+        _txtVariety = Input();
+        grid.Controls.Add(_txtVariety, 1, 6);
+
+        // 行8：单价（ext_json 固定键；右列留空）——只允许输入数字与小数点
+        grid.Controls.Add(Head("单价"), 0, 7);
         _txtUnitPrice = Input();
         _txtUnitPrice.KeyPress += (_, e) =>
         {
@@ -316,26 +322,26 @@ public class WeighEntryDialog : Form
             if (!char.IsControl(e.KeyChar) && !char.IsDigit(e.KeyChar) && e.KeyChar != '.')
                 e.Handled = true;
         };
-        grid.Controls.Add(_txtUnitPrice, 1, 6);
+        grid.Controls.Add(_txtUnitPrice, 1, 7);
         ticket.Controls.Add(grid);
 
         // 用户手动改任一可回填字段 → 摘除其"自动填入"标记，之后换车号不再把它当旧车信息清掉
-        foreach (var box in new[] { _txtVariety, _txtOwner, _txtOwnerPhone, _txtDriverPhone, _txtCargoOwner, _txtUnitPrice })
+        foreach (var box in new[] { _txtVariety, _txtOwner, _txtOwnerPhone, _txtDriverPhone, _txtCargoOwner, _txtCargoOwnerPhone, _txtUnitPrice })
             box.TextChanged += (_, _) => { if (!_autoFilling) _autoFilledFields.Remove(box); };
 
         // 表格下方：司磅员（当前登录用户，自动记录）。
-        // 框顶与表格底留 24px（表格底 480 → 框顶 504）：高 DPI 缩放取整会吃掉小间隙，
+        // 框顶与表格底留 24px（8 行表格底约 530 → 框顶 554）：高 DPI 缩放取整会吃掉小间隙，
         // 原 8px 间隙在用户 125%/150% 缩放下表格底边框线压住框顶
         ticket.Controls.Add(new Label
         {
             Text = "司磅员：",
             AutoSize = true,
-            Location = new Point(25, 510),
+            Location = new Point(25, 560),
             Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Bold),
         });
         _txtOperator = new TextBox
         {
-            Location = new Point(113, 504), Size = new Size(200, 36),
+            Location = new Point(113, 554), Size = new Size(200, 36),
             Font = new Font("Microsoft YaHei UI", 12F),
             ReadOnly = true, Text = AppSession.DisplayName,
         };
@@ -586,7 +592,7 @@ public class WeighEntryDialog : Form
 
     /// <summary>
     /// 车号变化时回填/清理历史信息：
-    /// 完整车号命中当天已保存记录 → 回填最新一条的品种/地主姓名/地主电话/司机电话/货主姓名/单价，
+    /// 完整车号命中当天已保存记录 → 回填最新一条的品种/地主姓名/地主电话/司机电话/货主姓名/货主电话/单价，
     /// 并把这些字段标记为"自动填入"；
     /// 车号为空或无命中 → 只清空仍带"自动填入"标记的字段（用户手动输入/改过的保留），
     /// 避免上一辆车的自动回填信息残留到新车。
@@ -608,6 +614,7 @@ public class WeighEntryDialog : Form
                 FillAuto(_txtOwnerPhone, ext.GetValueOrDefault("地主电话", ""));
                 FillAuto(_txtDriverPhone, ext.GetValueOrDefault("司机电话", ""));
                 FillAuto(_txtCargoOwner, ext.GetValueOrDefault("货主姓名", ""));
+                FillAuto(_txtCargoOwnerPhone, ext.GetValueOrDefault("货主电话", ""));
                 FillAuto(_txtUnitPrice, ext.GetValueOrDefault("单价", ""));
             }
             else
@@ -892,6 +899,7 @@ public class WeighEntryDialog : Form
         _txtOwnerPhone.Clear();
         _txtDriverPhone.Clear();
         _txtCargoOwner.Clear();
+        _txtCargoOwnerPhone.Clear();
         _txtUnitPrice.Clear();
         _autoFilledFields.Clear();   // 表单整体清空：脏标记一并复位，不依赖各 Clear 的事件顺序
 
@@ -964,6 +972,7 @@ public class WeighEntryDialog : Form
         Add("地主电话", _txtOwnerPhone);
         Add("司机电话", _txtDriverPhone);
         Add("货主姓名", _txtCargoOwner);
+        Add("货主电话", _txtCargoOwnerPhone);
         Add("单价", _txtUnitPrice);
         return ext;
     }

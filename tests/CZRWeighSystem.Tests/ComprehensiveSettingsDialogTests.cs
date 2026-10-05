@@ -6,7 +6,10 @@ namespace CZRWeighSystem.Tests;
 /// 综合设置窗体测试（对应目标软件"综合设置 [F3]"）：
 /// 1) 构造冒烟：5 个页签齐全、标题正确，内嵌串口/联网/平台对接/视频设置不抛异常；
 /// 2) 基本设置页保存：界面值逐项写入 AppConfig（公司信息/打印次数/省份/稳定秒数/锁屏/归零拦截/自动清除/二次称重禁止/黑匣子）。
+/// 与「数据库顺序」集合串行执行：本类会改写 AppConfig.Current 静态配置，
+/// 与 WeighEntryDialogTests 等同样读写该配置的测试并行时互相污染（稳定秒数/默认字母竞态）。
 /// </summary>
+[Collection("数据库顺序")]
 public class ComprehensiveSettingsDialogTests
 {
     [Fact]
@@ -54,39 +57,44 @@ public class ComprehensiveSettingsDialogTests
         f.NumBlackBoxSeconds.Value = 20;
         f.ChkPaperWarn.Checked = false;
 
-        f.SaveBasic();
-
         var cfg = AppConfig.Current;
-        Assert.Equal("精锐计量", cfg.CompanyName);
-        Assert.Equal("过磅单", cfg.SlipHeader);
-        Assert.Equal("沧州站", cfg.StationName);
-        Assert.Equal("谢谢惠顾", cfg.SlipFooter);
-        Assert.Equal("在此站点称重，被作弊赔偿100万。", cfg.PromiseText);
-        Assert.True(cfg.PrintCountEnabled);
-        Assert.Equal(3, cfg.MaxPrintCount);
-        Assert.False(cfg.ShowPaperSizeWarn);
-        Assert.Equal("吉", cfg.DefaultProvince);
-        Assert.Equal("A", cfg.DefaultLetter);
-        Assert.False(cfg.UseProvinceLetter);
-        Assert.Equal(10, cfg.StableSeconds);
-        Assert.Equal(30, cfg.IdleLockMinutes);
-        Assert.True(cfg.BlockSaveUntilZero);
-        Assert.Equal(15, cfg.FirstWeighExpireDays);
-        Assert.Equal(15, cfg.ForbidReweighMinutes);
-        Assert.False(cfg.BlackBoxEnabled);
-        Assert.Equal(150, cfg.BlackBoxMinKg);
-        Assert.Equal(20, cfg.BlackBoxSeconds);
-        Assert.Single(messages);   // 保存成功提示恰好一次
-
-        // 还原，避免影响其他测试
-        cfg.StableSeconds = 0;
-        cfg.BlockSaveUntilZero = false;
-        cfg.ForbidReweighMinutes = 0;
-        cfg.ShowPaperSizeWarn = true;
-        cfg.StationName = "";
-        cfg.PromiseText =
-            "在此站点称重，在称重过程中无论利用有线遥控作弊，无线遥控作弊，远距离遥控作弊，近距离遥控作弊，无限距离遥控作弊，在称重过程中只要改变数字终端传出的实际重量数据，系统没有预警或自动锁机，被作弊赔偿100万。";
-        cfg.Save();
+        try
+        {
+            f.SaveBasic();
+            Assert.Equal("精锐计量", cfg.CompanyName);
+            Assert.Equal("过磅单", cfg.SlipHeader);
+            Assert.Equal("沧州站", cfg.StationName);
+            Assert.Equal("谢谢惠顾", cfg.SlipFooter);
+            Assert.Equal("在此站点称重，被作弊赔偿100万。", cfg.PromiseText);
+            Assert.True(cfg.PrintCountEnabled);
+            Assert.Equal(3, cfg.MaxPrintCount);
+            Assert.False(cfg.ShowPaperSizeWarn);
+            Assert.Equal("吉", cfg.DefaultProvince);
+            Assert.Equal("A", cfg.DefaultLetter);
+            Assert.False(cfg.UseProvinceLetter);
+            Assert.Equal(10, cfg.StableSeconds);
+            Assert.Equal(30, cfg.IdleLockMinutes);
+            Assert.True(cfg.BlockSaveUntilZero);
+            Assert.Equal(15, cfg.FirstWeighExpireDays);
+            Assert.Equal(15, cfg.ForbidReweighMinutes);
+            Assert.False(cfg.BlackBoxEnabled);
+            Assert.Equal(150, cfg.BlackBoxMinKg);
+            Assert.Equal(20, cfg.BlackBoxSeconds);
+            Assert.Single(messages);   // 保存成功提示恰好一次
+        }
+        finally
+        {
+            // 还原，避免影响其他测试；必须放 finally——断言失败若跳过还原，
+            // StableSeconds=10 会泄漏给后续测试（确认时报"重量未稳定"，曾造成大面积串扰）
+            cfg.StableSeconds = 0;
+            cfg.BlockSaveUntilZero = false;
+            cfg.ForbidReweighMinutes = 0;
+            cfg.ShowPaperSizeWarn = true;
+            cfg.StationName = "";
+            cfg.PromiseText =
+                "在此站点称重，在称重过程中无论利用有线遥控作弊，无线遥控作弊，远距离遥控作弊，近距离遥控作弊，无限距离遥控作弊，在称重过程中只要改变数字终端传出的实际重量数据，系统没有预警或自动锁机，被作弊赔偿100万。";
+            cfg.Save();
+        }
     }
 
     [Fact]

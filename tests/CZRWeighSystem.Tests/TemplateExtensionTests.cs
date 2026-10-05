@@ -162,6 +162,9 @@ public class BuiltinTemplatesTests
         Assert.Contains("{货物}", text);
         Assert.Contains("单价", text);
         Assert.Contains("{单价}", text);
+        // 货主电话（ext_json 固定键）同步进默认模板（2026-10-05）
+        Assert.Contains("货主电话", text);
+        Assert.Contains("{货主电话}", text);
     }
 
     [Fact]
@@ -176,10 +179,10 @@ public class BuiltinTemplatesTests
         // 网格右缘 = 8 + 176 = 184：三行标注须位于网格右侧空白区且不超内容右缘 206（防 215 纸右侧裁切）
         Assert.All(marks, e => Assert.True(e.X >= 184f && e.X + e.W <= 206f,
             $"联次标注「{e.Text}」不在网格右侧空白区（X={e.X}，右缘={e.X + e.W}）"));
-        // 竖直方向按网格高度（5 行 × 8mm）三等分：行距相等（13.33mm）
+        // 竖直方向按网格高度（6 行 × 6.5mm = 39mm）三等分：行距相等（13mm）
         var ys = marks.OrderBy(e => e.Y).Select(e => e.Y).ToList();
-        Assert.InRange(ys[1] - ys[0], 13.2f, 13.5f);
-        Assert.InRange(ys[2] - ys[1], 13.2f, 13.5f);
+        Assert.InRange(ys[1] - ys[0], 12.8f, 13.2f);
+        Assert.InRange(ys[2] - ys[1], 12.8f, 13.2f);
     }
 
     [Fact]

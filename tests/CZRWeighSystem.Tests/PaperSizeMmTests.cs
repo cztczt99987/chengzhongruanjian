@@ -96,10 +96,11 @@ public class PaperNamingTests
             PrintTemplate.EnsureBuiltinsOnDisk();
 
             var rebuilt = PrintTemplate.Load(file);
-            Assert.Equal("6", rebuilt.LayoutVersion);
+            Assert.Equal("7", rebuilt.LayoutVersion);
             Assert.Contains(rebuilt.Elements.OfType<TextElement>(), e => e.Text == "白联:存根");
             Assert.Contains(rebuilt.Elements.OfType<TextElement>(), e => e.Text == "{站点名称}");
             Assert.Contains(rebuilt.Elements.OfType<TextElement>(), e => e.Text == "{承诺}");
+            Assert.Contains(rebuilt.Elements.OfType<TextElement>(), e => e.Text == "{货主电话}");   // 版式 7：货主电话行
             Assert.Equal(file, cfg.PrintTemplateFile);   // 同名重建，启用配置不变
         }
         finally

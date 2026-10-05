@@ -65,7 +65,7 @@ public class TemplateModelTests
     [Fact]
     public void BuildPlaceholders_弹窗固定字段未填时为空串()
     {
-        // 记录未含 ext_json 固定键（地主姓名/地主电话/司机电话/货主姓名/单价）时取值应为空串，
+        // 记录未含 ext_json 固定键（地主姓名/地主电话/司机电话/货主姓名/货主电话/单价）时取值应为空串，
         // 否则公平计量模板中的 {单价} 等会把"{单价}"字面打印到磅单（2026-10-04 补齐字段）
         var r = new WeighRecord { SerialNo = "S1", VehicleNo = "冀B00000" };
         var ph = PrintTemplate.BuildPlaceholders(r, new AppConfig());
@@ -74,6 +74,7 @@ public class TemplateModelTests
         Assert.Equal("", ph["地主电话"]);
         Assert.Equal("", ph["司机电话"]);
         Assert.Equal("", ph["货主姓名"]);
+        Assert.Equal("", ph["货主电话"]);
         Assert.Equal("", ph["单价"]);
         Assert.Equal("", PrintTemplate.Expand("{单价}", ph));   // 展开为空文本而非原样保留
     }

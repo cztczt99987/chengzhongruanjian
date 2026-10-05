@@ -731,7 +731,7 @@ public class MainForm : Form
             BorderStyle = BorderStyle.FixedSingle,
         };
         // 记录列表字段与「空车去皮/重车过磅」录入弹窗一致：车牌、品种、地主姓名/电话、
-        // 司机电话、货主姓名、单价 + 结算结果（毛/皮/净、金额、时间、司磅员、状态）；
+        // 司机电话、货主姓名、货主电话、单价 + 结算结果（毛/皮/净、金额、时间、司磅员、状态）；
         // 列宽由 FitCaptureColumns 按"内容宽/表头宽取大"自适应，保证表头与内容都单行完整展示，
         // 列总宽超出面板时表格自动出现横向滚动条；状态列 Fill 模式：宽窗口拉伸补满右侧
         void AddCol(string name, string header, int minWidth)
@@ -751,6 +751,7 @@ public class MainForm : Form
         AddCol("OwnerPhone", "地主电话", 110);
         AddCol("DriverPhone", "司机电话", 110);
         AddCol("CargoOwner", "货主姓名", 90);
+        AddCol("CargoOwnerPhone", "货主电话", 110);
         AddCol("UnitPrice", "单价", 60);
         AddCol("Gross", "毛重", 80);
         AddCol("Tare", "皮重", 80);
@@ -889,6 +890,7 @@ public class MainForm : Form
                 ext.GetValueOrDefault("地主电话", ""),
                 ext.GetValueOrDefault("司机电话", ""),
                 ext.GetValueOrDefault("货主姓名", ""),
+                ext.GetValueOrDefault("货主电话", ""),
                 ext.GetValueOrDefault("单价", ""),
                 // 毛/皮/净：单位在表头，单元格只显示换算后的数字
                 _cfg.FormatWeightNumber(r.GrossKg ?? 0),

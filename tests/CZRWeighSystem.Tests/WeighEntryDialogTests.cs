@@ -87,7 +87,7 @@ public class WeighEntryDialogTests
     }
 
     /// <summary>
-    /// 票据表格不得压住下方司磅员框：行7 加"单价"后表格底(480)与司磅员框顶曾只留 8px 间隙，
+    /// 票据表格不得压住下方司磅员框：行数增加时曾出现表格底与司磅员框顶间隙过小，
     /// 用户高 DPI 环境缩放取整后表格底边框线盖住框顶。现间隙 24px，并要求 ≥16px 回归保护。
     /// </summary>
     [Fact]
@@ -106,11 +106,11 @@ public class WeighEntryDialogTests
     }
 
     /// <summary>
-    /// 票据表格 7 行必须等高且完整渲染：表格高 356 扣除单元格边框后若容不下 7×50=350，
+    /// 票据表格 8 行必须等高且完整渲染：表格高度由行内容自适应（AutoSize），若容不下 8×50=400，
     /// TableLayoutPanel 会压缩靠后的行（用户反馈"单价行下方显示不全"）。行高取自 TLP 实际布局。
     /// </summary>
     [Fact]
-    public void 布局_表格七行等高完整渲染()
+    public void 布局_表格八行等高完整渲染()
     {
         WeighManager manager = new();
         RunOnSta(() =>
@@ -119,7 +119,7 @@ public class WeighEntryDialogTests
             var grid = Fld<TableLayoutPanel>(dlg, "_grid");
             dlg.Show();   // 触发布局，GetRowHeights 才有值
             var heights = grid.GetRowHeights();
-            Assert.Equal(7, heights.Length);
+            Assert.Equal(8, heights.Length);
             // 每行实际高度不得低于设计行高 50 的 98%（TLP 空间不足时会压缩行）
             for (int i = 0; i < heights.Length; i++)
                 Assert.True(heights[i] >= 49,
@@ -170,6 +170,7 @@ public class WeighEntryDialogTests
             Fld<TextBox>(dlg, "_txtOwnerPhone").Text = "13800000000";
             Fld<TextBox>(dlg, "_txtDriverPhone").Text = "13911111111";
             Fld<TextBox>(dlg, "_txtCargoOwner").Text = "李四";
+            Fld<TextBox>(dlg, "_txtCargoOwnerPhone").Text = " 13700000000 ";
             Fld<TextBox>(dlg, "_txtUnitPrice").Text = " 235.5 ";
             PushStable(manager, 10000);
             ConfirmAndSave(dlg);
@@ -183,6 +184,7 @@ public class WeighEntryDialogTests
         Assert.Equal("13800000000", ext["地主电话"]);
         Assert.Equal("13911111111", ext["司机电话"]);
         Assert.Equal("李四", ext["货主姓名"]);
+        Assert.Equal("13700000000", ext["货主电话"]);    // 货主电话 → ext_json 固定键（保存时去除首尾空白）
         Assert.Equal("235.5", ext["单价"]);              // 单价 → ext_json 固定键（保存时去除首尾空白）
     }
 
@@ -524,6 +526,7 @@ public class WeighEntryDialogTests
                 ["地主姓名"] = "张三",
                 ["地主电话"] = "13800000000",
                 ["货主姓名"] = "李四",
+                ["货主电话"] = "13700000000",
                 ["单价"] = "235.5",
             }),
         });
@@ -546,6 +549,7 @@ public class WeighEntryDialogTests
             Assert.Equal("张三", Fld<TextBox>(dlg, "_txtOwner").Text);
             Assert.Equal("13800000000", Fld<TextBox>(dlg, "_txtOwnerPhone").Text);
             Assert.Equal("李四", Fld<TextBox>(dlg, "_txtCargoOwner").Text);
+            Assert.Equal("13700000000", Fld<TextBox>(dlg, "_txtCargoOwnerPhone").Text);   // 货主电话一并回填
             Assert.Equal("235.5", Fld<TextBox>(dlg, "_txtUnitPrice").Text);   // 单价一并回填
         });
         manager.Dispose();
@@ -566,6 +570,7 @@ public class WeighEntryDialogTests
                 ["地主电话"] = "13800000000",
                 ["司机电话"] = "13911111111",
                 ["货主姓名"] = "李四",
+                ["货主电话"] = "13700000000",
                 ["单价"] = "235.5",
             }),
         });
@@ -588,6 +593,7 @@ public class WeighEntryDialogTests
             Assert.Equal("", Fld<TextBox>(dlg, "_txtOwnerPhone").Text);
             Assert.Equal("", Fld<TextBox>(dlg, "_txtDriverPhone").Text);
             Assert.Equal("", Fld<TextBox>(dlg, "_txtCargoOwner").Text);
+            Assert.Equal("", Fld<TextBox>(dlg, "_txtCargoOwnerPhone").Text);
             Assert.Equal("", Fld<TextBox>(dlg, "_txtUnitPrice").Text);
         });
         manager.Dispose();

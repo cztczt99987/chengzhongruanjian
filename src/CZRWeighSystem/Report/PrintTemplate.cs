@@ -70,7 +70,7 @@ public class PrintTemplate
         "毛重", "皮重", "净重", "扣重", "实收", "金额", "单位",
         "一次磅时间", "二次磅时间", "打印时间", "司磅员", "备注", "状态", "打印次数",
         // 称重弹窗固定录入字段（ext_json 固定键；BuildPlaceholders 对未填记录补空值兜底）
-        "地主姓名", "地主电话", "司机电话", "货主姓名", "单价",
+        "地主姓名", "地主电话", "司机电话", "货主姓名", "货主电话", "单价",
     ];
 
     /// <summary>按称重记录与配置生成占位符取值表（含自定义字段）。</summary>
@@ -115,7 +115,7 @@ public class PrintTemplate
             ph.TryAdd(name, val);
         // 称重弹窗固定录入字段（ext_json 固定键）：记录未填时兜底空串，
         // 避免模板中的 {地主姓名}/{单价} 等因键缺失把"{字段名}"字面打印到磅单（须在 ext 之后兜底）
-        foreach (var key in new[] { "地主姓名", "地主电话", "司机电话", "货主姓名", "单价" })
+        foreach (var key in new[] { "地主姓名", "地主电话", "司机电话", "货主姓名", "货主电话", "单价" })
             ph.TryAdd(key, "");
         return ph;
     }
@@ -312,14 +312,14 @@ public class PrintTemplate
     /// <summary>
     /// 生成"公平计量磅单-三等分"模板（仿公平计量站老软件三等分连单版式，241×93mm）：
     /// 公司名抬头 + 磅单抬头行（右上"第 N 次打印"）+ 日期/编号 +
-    /// 五行字段网格（地主姓名/地主电话/车号/司机电话/品种 × 毛重/皮重/净重/货主姓名/单价）+
+    /// 六行字段网格（地主姓名/地主电话/车号/司机电话/品种/货主电话 × 毛重/皮重/净重/货主姓名/单价）+
     /// 表格右外侧联次标注（白联:存根 / 红联:客户 / 蓝联:司机，按网格高度三等分竖排）+
     /// 毛重/皮重司磅时间行 + 承诺行。
     /// 注：毛重司磅取二次磅时间、皮重司磅取一次磅时间（公平计量站为先皮后毛流程）。
     /// </summary>
     private static PrintTemplate BuildFairnessTemplate(string name, string paperKey)
     {
-        var t = new PrintTemplate { Name = name, Category = "通用", PaperKey = paperKey, LayoutVersion = "6" };
+        var t = new PrintTemplate { Name = name, Category = "通用", PaperKey = paperKey, LayoutVersion = "7" };
         // 内容右缘 206：EPSON LQ 系列驱动对程序提交的 241×93 自定义纸常回退为驱动预置的 215×85 纸，
         // 215 纸扣左右硬件边距后可打印区约 209mm，内容右缘必须 ≤ 206 才能完整打印且不误报（2026-10-04）
         const float x0 = 8f, right = 206f;
@@ -331,8 +331,9 @@ public class PrintTemplate
         t.Elements.Add(new TextElement { Text = "日期：{打印时间:yyyy年MM月dd日 HH:mm:ss}", X = x0, Y = 16, W = 120, H = 4.5f, FontPt = 8.5f });
         t.Elements.Add(new TextElement { Text = "编号：{流水号}", X = x0 + 138, Y = 16, W = 60, H = 4.5f, FontPt = 8.5f, Align = TextAlign.Right });
 
-        // 五行字段网格：[标签 20 | 值 82 | 标签 24 | 值 74]
-        const float gy = 21.5f, rowH = 8f, c1 = 20f, c2 = 102f, c3 = 126f;
+        // 六行字段网格：[标签 20 | 值 82 | 标签 24 | 值 74]
+        // rowH 6.5：新增"货主电话"行后压缩行高，六行网格底 60.5 仍低于毛重司磅行 63.5（不互相压盖）
+        const float gy = 21.5f, rowH = 6.5f, c1 = 20f, c2 = 102f, c3 = 126f;
         var rows = new[]
         {
             ("地主姓名", "{地主姓名}", "毛重", "{毛重:F2} {单位}"),   // F2：磅单重量保留 2 位小数（仿实物）
@@ -340,6 +341,7 @@ public class PrintTemplate
             ("车号", "{车号}", "净重", "{净重:F2} {单位}"),
             ("司机电话", "{司机电话}", "货主姓名", "{货主姓名}"),
             ("品种", "{货物}", "单价", "{单价}"),
+            ("货主电话", "{货主电话}", "", ""),
         };
         t.Elements.Add(new RectElement { X = x0, Y = gy, W = gridW, H = rowH * rows.Length });
         for (int i = 1; i < rows.Length; i++)
@@ -348,7 +350,7 @@ public class PrintTemplate
             t.Elements.Add(new LineElement { X = x0 + cx, Y = gy, W = 0, H = rowH * rows.Length });
         for (int i = 0; i < rows.Length; i++)
         {
-            float ry = gy + i * rowH + 2;
+            float ry = gy + i * rowH + 1.2f;   // 行高压缩后文本上抬，行内垂直居中
             t.Elements.Add(new TextElement { Text = rows[i].Item1, X = x0 + 2, Y = ry, W = c1 - 4, H = 5, FontPt = 9, Bold = true });
             t.Elements.Add(new TextElement { Text = rows[i].Item2, X = x0 + c1 + 2, Y = ry, W = c2 - c1 - 4, H = 5, FontPt = 10 });
             t.Elements.Add(new TextElement { Text = rows[i].Item3, X = x0 + c2 + 2, Y = ry, W = c3 - c2 - 4, H = 5, FontPt = 9, Bold = true });
