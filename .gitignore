@@ -14,3 +14,4 @@ src/*/bin/**/data/
 .vs/
 *.user
 *.suo
+TestResults/
