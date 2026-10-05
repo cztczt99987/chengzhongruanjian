@@ -106,6 +106,7 @@ public class ComprehensiveSettingsDialogTests
         {
             cfg.TareDiffWarnTon = 0.5;
             using var f = new ComprehensiveSettingsDialog();
+            f.InfoBox = (_, _, _) => { };   // 注入静默提示框：SaveBasic 末尾会弹"设置已保存"，真实弹窗会卡死测试
             Assert.Equal(0.5m, f.NumTareDiffWarnTon.Value);   // 打开即回显配置值
             Assert.Equal(0, f.NumTareDiffWarnTon.Minimum);   // 允许 0=关闭
 
