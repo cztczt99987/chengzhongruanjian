@@ -9,7 +9,7 @@
 #endif
 #define AppName "精锐计量称重软件"
 #define ExeName "CZRWeighSystem.exe"
-#define PublishDir "..\src\CZRWeighSystem\bin\Release\net10.0-windows\win-x64\publish"
+#define PublishDir "..\src\CZRWeighSystem\bin\Release\net8.0-windows\win-x64\publish"
 
 [Setup]
 AppId={{B7B1A2C4-8E3D-4C9A-9E2F-2F5C6D7E8A91}

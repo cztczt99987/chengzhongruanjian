@@ -20,7 +20,7 @@ $ErrorActionPreference = 'Stop'
 
 $root       = $PSScriptRoot
 $project    = Join-Path $root 'src\CZRWeighSystem\CZRWeighSystem.csproj'
-$publishDir = Join-Path $root 'src\CZRWeighSystem\bin\Release\net10.0-windows\win-x64\publish'
+$publishDir = Join-Path $root 'src\CZRWeighSystem\bin\Release\net8.0-windows\win-x64\publish'
 $distDir    = Join-Path $root 'dist'
 $zipPath    = Join-Path $distDir ("CZRWeighSystem_{0}.zip" -f (Get-Date -Format 'yyyyMMdd_HHmm'))
 

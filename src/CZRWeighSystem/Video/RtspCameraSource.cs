@@ -268,7 +268,8 @@ public class RtspCameraSource : ICameraSource
                 _back = new Bitmap(_width, _height, System.Drawing.Imaging.PixelFormat.Format32bppRgb);
             }
             // chroma 是 VLC 提供的格式缓冲区（至少 32 字节），写入 "RV32\0"
-            Marshal.Copy([(byte)'R', (byte)'V', (byte)'3', (byte)'2', (byte)0], 0, chroma, 5);
+            byte[] rv32 = [(byte)'R', (byte)'V', (byte)'3', (byte)'2', (byte)0];   // net8/C#12 下需显式类型，避免 Copy 重载二义
+            Marshal.Copy(rv32, 0, chroma, 5);
             return 1;
         }
         catch (Exception ex)

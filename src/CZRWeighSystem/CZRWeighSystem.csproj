@@ -2,8 +2,9 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <!-- 目标框架：.NET 10（LTS，本机 VS2026 配套 SDK），Windows 桌面专用 -->
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <!-- 目标框架：.NET 8（LTS）——现场有 2021 补丁级老 Win10 对 .NET 10 运行时
+         初始化即崩（0x80131506），降 8 保兼容；自包含部署离线用不受影响 -->
+    <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <!-- 启用 Windows 窗体（WinForms） -->
     <UseWindowsForms>true</UseWindowsForms>
