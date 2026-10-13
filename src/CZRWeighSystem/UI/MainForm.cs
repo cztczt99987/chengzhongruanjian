@@ -982,11 +982,11 @@ public class MainForm : Form
         f.ShowDialog(this);
     }
 
-    /// <summary>右键-打印预览：预览该条记录的磅单（不耗纸）。</summary>
+    /// <summary>右键-打印预览：预览该条记录的磅单（不耗纸），预览窗口底部可直接点「打印」出单。</summary>
     private void PrintPreviewSelected()
     {
         if (SelectedRecord is not { } r) { WarnNoRecordSelected(); return; }
-        Report.PoundTicketPrinter.PrintPreview(r);
+        Report.PoundTicketPrinter.PrintPreview(r, allowPrint: true);
     }
 
     /// <summary>右键-过磅视图：查看该次过磅的抓拍存证图片（对应 PRD F7-03）。</summary>

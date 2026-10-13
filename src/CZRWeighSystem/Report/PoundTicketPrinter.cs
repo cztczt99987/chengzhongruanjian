@@ -136,18 +136,91 @@ public static class PoundTicketPrinter
     /// <summary>
     /// 打印预览（不占用纸张，便于调试磅单版式）。预览不弹纸张不符指引（仅真实打印提示）。
     /// </summary>
-    public static void PrintPreview(WeighRecord r)
+    /// <param name="allowPrint">
+    /// true 时预览窗口底部新增「打 印」按钮，点击即按当前版式直接出单
+    /// （首页记录右键「打印预览」、记录查询页「磅单预览」）；
+    /// false 仅预览不出单（打印设置里的样张预览、模板库预览）。
+    /// </param>
+    public static void PrintPreview(WeighRecord r, bool allowPrint = false)
     {
-        using var doc = BuildRecordDocument(r, copies: 0, showPaperWarning: false);
-        using var preview = new PrintPreviewDialog
+        using var preview = BuildPreview(r, allowPrint);
+        preview.ShowDialog();
+    }
+
+    /// <summary>
+    /// 构建磅单打印预览窗口：allowPrint 时底部操作栏提供「打 印」（直接出单）与「关 闭」。
+    /// 单独暴露（internal）便于测试在不弹窗的前提下校验控件结构与打印路径。
+    /// </summary>
+    internal static PrintPreviewDialog BuildPreview(WeighRecord r, bool allowPrint)
+    {
+        var preview = new PrintPreviewDialog
         {
-            Document = doc,
+            Document = BuildRecordDocument(r, copies: 0, showPaperWarning: false),
             Width = 800,
             Height = 600,
             StartPosition = FormStartPosition.CenterParent,
+            Text = $"磅单预览 - {r.VehicleNo}",
         };
-        preview.ShowDialog();
+        if (!allowPrint) return preview;
+
+        // 系统工具栏自带的打印图标与本按钮重复，且不经打印次数校验/日志/提示，隐藏之（名称未命中则忽略）
+        if (preview.Controls.OfType<ToolStrip>().FirstOrDefault() is { } tool
+            && tool.Items["printToolStripButton"] is { } builtinPrint)
+            builtinPrint.Visible = false;
+
+        var bar = new FlowLayoutPanel
+        {
+            Name = "previewActionBar",
+            Dock = DockStyle.Bottom,
+            FlowDirection = FlowDirection.RightToLeft,   // 先加入者靠最右
+            Height = 52,
+            Padding = new Padding(0, 9, 14, 0),
+        };
+        var btnClose = new Button
+        {
+            Name = "btnPreviewClose",
+            Text = "关 闭",
+            Size = new Size(96, 32),
+            FlatStyle = FlatStyle.Flat,
+        };
+        var btnPrint = new Button
+        {
+            Name = "btnPreviewPrint",
+            Text = "打 印",
+            Size = new Size(108, 32),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Color.FromArgb(0, 122, 204),
+            ForeColor = Color.White,
+            Margin = new Padding(8, 0, 0, 0),
+        };
+        btnPrint.Click += (_, _) => PrintFromPreview(r, preview);
+        btnClose.Click += (_, _) => preview.Close();
+        bar.Controls.Add(btnClose);
+        bar.Controls.Add(btnPrint);
+        preview.Controls.Add(bar);
+        return preview;
     }
+
+    /// <summary>
+    /// 预览窗口「打 印」按钮动作：按当前版式直接打印到系统默认打印机
+    /// （复用 <see cref="Print"/>：含打印次数上限校验、日志与"正在打印"提示）。
+    /// 仅已完成结算的记录可打印，与记录查询页「补打磅单」一致。
+    /// </summary>
+    internal static void PrintFromPreview(WeighRecord r, Form owner)
+    {
+        if (!CanPrint(r))
+        {
+            MessageBox.Show(owner, "只有已完成结算的记录才能打印磅单", "提示",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        using var indicator = new UI.PrintingIndicator();
+        indicator.Show(owner);
+        Print(r);
+    }
+
+    /// <summary>只有已完成结算的记录才能打印磅单（与记录查询页「补打磅单」一致）。</summary>
+    internal static bool CanPrint(WeighRecord r) => r.Status == "已完成";
 
     /// <summary>
     /// 按给定画布直接渲染磅单内容（供验证工具做渲染自检）。

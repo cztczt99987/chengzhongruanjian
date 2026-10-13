@@ -261,7 +261,7 @@ public class RecordQueryForm : Form
                     MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
-            Report.PoundTicketPrinter.PrintPreview(r);
+            Report.PoundTicketPrinter.PrintPreview(r, allowPrint: true);
         };
 
         Controls.Add(_lblSummary);
