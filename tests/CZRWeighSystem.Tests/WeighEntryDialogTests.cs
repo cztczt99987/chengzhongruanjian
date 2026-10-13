@@ -106,8 +106,9 @@ public class WeighEntryDialogTests
     }
 
     /// <summary>
-    /// 票据表格 8 行必须等高且完整渲染：表格高度由行内容自适应（AutoSize），若容不下 8×50=400，
-    /// TableLayoutPanel 会压缩靠后的行（用户反馈"单价行下方显示不全"）。行高取自 TLP 实际布局。
+    /// 票据表格 8 行必须等高且完整渲染：表格高度由行内容自适应（AutoSize），若容不下全部行高，
+    /// TableLayoutPanel 会压缩靠后的行（用户反馈"单价行下方显示不全"）。行高取自 TLP 实际布局，
+    /// 设计行高取自 RowStyles（紧凑版已由 50 缩到 38），不写死具体像素。
     /// </summary>
     [Fact]
     public void 布局_表格八行等高完整渲染()
@@ -117,13 +118,14 @@ public class WeighEntryDialogTests
         {
             using var dlg = new WeighEntryDialog(manager, isTare: true);
             var grid = Fld<TableLayoutPanel>(dlg, "_grid");
+            int design = (int)grid.RowStyles[0].Height;
             dlg.Show();   // 触发布局，GetRowHeights 才有值
             var heights = grid.GetRowHeights();
             Assert.Equal(8, heights.Length);
-            // 每行实际高度不得低于设计行高 50 的 98%（TLP 空间不足时会压缩行）
+            // 每行实际高度不得低于设计行高的 98%（TLP 空间不足时会压缩行）
             for (int i = 0; i < heights.Length; i++)
-                Assert.True(heights[i] >= 49,
-                    $"表格第 {i + 1} 行实际高度 {heights[i]}px 低于设计 50px（表格高度不足，行被压缩）");
+                Assert.True(heights[i] >= design - 1,
+                    $"表格第 {i + 1} 行实际高度 {heights[i]}px 低于设计 {design}px（表格高度不足，行被压缩）");
         });
         manager.Dispose();
     }
@@ -957,10 +959,10 @@ public class WeighEntryDialogTests
             Assert.True(arrowLeft + 8 <= picker.Width - 2,
                 $"箭头右缘 {arrowLeft + 8} 应落在框内（控件宽 {picker.Width}）");
 
-            // 编号框不遮盖省份框，且不越出车牌面板（输入列 264，面板左右 Margin 各 2 → 可用 260）
+            // 编号框不遮盖省份框，且不越出车牌面板（输入列 200，面板左右 Margin 各 2 → 可用 196）
             Assert.True(txt.Left > picker.Right,
                 $"编号框左缘 {txt.Left} 应大于省份框右缘 {picker.Right}（不得遮盖）");
-            Assert.True(txt.Right <= 260, $"编号框右缘 {txt.Right} 应 ≤ 260（面板可用宽）");
+            Assert.True(txt.Right <= 196, $"编号框右缘 {txt.Right} 应 ≤ 196（面板可用宽）");
         });
         manager.Dispose();
     }
