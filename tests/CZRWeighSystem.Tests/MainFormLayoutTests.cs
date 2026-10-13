@@ -527,9 +527,9 @@ public class MainFormLayoutTests
         });
     }
 
-    /// <summary>首页大屏重量：用户要求去掉黑底（背景无色，随工具栏白底）。</summary>
+    /// <summary>首页大屏重量：用户要求去掉黑底与四周黑框（背景无色、无边框）。</summary>
     [Fact]
-    public void 大屏重量_背景无色_不再黑底()
+    public void 大屏重量_背景无色且无边框_不再黑底黑框()
     {
         Db.Initialize();
         RunOnSta(() =>
@@ -538,6 +538,7 @@ public class MainFormLayoutTests
             var lbl = (Label)Fld(form, "_lblWeight");
             Assert.Equal(Color.Transparent, lbl.BackColor);
             Assert.NotEqual(Color.Black, lbl.BackColor);
+            Assert.Equal(BorderStyle.None, lbl.BorderStyle);   // 四周边框线也要去掉
         });
     }
 

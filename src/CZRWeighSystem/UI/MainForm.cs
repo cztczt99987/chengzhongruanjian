@@ -237,7 +237,7 @@ public class MainForm : Form
             TextAlign = ContentAlignment.MiddleCenter,
             Location = new Point(210, 6),
             Size = new Size(450, 104),
-            BorderStyle = BorderStyle.FixedSingle,
+            BorderStyle = BorderStyle.None,  // 无边框（去掉大屏四周的黑框线）
             BackColor = Color.Transparent,   // 无色背景（随工具栏白底），不再用黑底
         };
 
