@@ -88,7 +88,7 @@ public class WeighEntryDialogTests
 
     /// <summary>
     /// 票据表格不得压住下方司磅员框：行数增加时曾出现表格底与司磅员框顶间隙过小，
-    /// 用户高 DPI 环境缩放取整后表格底边框线盖住框顶。现间隙 24px，并要求 ≥16px 回归保护。
+    /// 用户高 DPI 环境缩放取整后表格底边框线盖住框顶。现间隙 18px，并要求 ≥16px 回归保护。
     /// </summary>
     [Fact]
     public void 布局_表格不压住司磅员框()
@@ -106,12 +106,12 @@ public class WeighEntryDialogTests
     }
 
     /// <summary>
-    /// 票据表格 8 行必须等高且完整渲染：表格高度由行内容自适应（AutoSize），若容不下全部行高，
+    /// 票据表格 6 行必须等高且完整渲染：表格高度由行内容自适应（AutoSize），若容不下全部行高，
     /// TableLayoutPanel 会压缩靠后的行（用户反馈"单价行下方显示不全"）。行高取自 TLP 实际布局，
-    /// 设计行高取自 RowStyles（紧凑版已由 50 缩到 38），不写死具体像素。
+    /// 设计行高取自 RowStyles（紧凑版 50 → 38 → 34；品种/单价移到右列后由 8 行压到 6 行）。
     /// </summary>
     [Fact]
-    public void 布局_表格八行等高完整渲染()
+    public void 布局_表格六行等高完整渲染()
     {
         WeighManager manager = new();
         RunOnSta(() =>
@@ -119,13 +119,44 @@ public class WeighEntryDialogTests
             using var dlg = new WeighEntryDialog(manager, isTare: true);
             var grid = Fld<TableLayoutPanel>(dlg, "_grid");
             int design = (int)grid.RowStyles[0].Height;
+            int rows = grid.RowCount;
             dlg.Show();   // 触发布局，GetRowHeights 才有值
             var heights = grid.GetRowHeights();
-            Assert.Equal(8, heights.Length);
+            Assert.Equal(rows, heights.Length);
             // 每行实际高度不得低于设计行高的 98%（TLP 空间不足时会压缩行）
             for (int i = 0; i < heights.Length; i++)
                 Assert.True(heights[i] >= design - 1,
                     $"表格第 {i + 1} 行实际高度 {heights[i]}px 低于设计 {design}px（表格高度不足，行被压缩）");
+        });
+        manager.Dispose();
+    }
+
+    /// <summary>
+    /// 品种与单价移到右列净重下方（用户要求：净重下面隔一个空行再放这两项），
+    /// 表格因此由 8 行压到 6 行；核对控件所在行列保证布局改动到位。
+    /// </summary>
+    [Fact]
+    public void 布局_品种与单价位于右列净重下方_中间空一行()
+    {
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+            var grid = Fld<TableLayoutPanel>(dlg, "_grid");
+            Assert.Equal(6, grid.RowCount);
+            dlg.Show();   // 触发布局，GetPositionFromControl 才有准确行列
+
+            // 净重（第 3 行，下标 2）→ 空行（下标 3）→ 品种（下标 4）/单价（下标 5）
+            Assert.Equal(2, grid.GetPositionFromControl(Fld<Label>(dlg, "_lblNetCell")).Row);
+            Assert.Equal(4, grid.GetPositionFromControl(Fld<TextBox>(dlg, "_txtVariety")).Row);
+            Assert.Equal(5, grid.GetPositionFromControl(Fld<TextBox>(dlg, "_txtUnitPrice")).Row);
+            Assert.Equal(3, grid.GetPositionFromControl(Fld<TextBox>(dlg, "_txtVariety")).Column);
+            Assert.Equal(3, grid.GetPositionFromControl(Fld<TextBox>(dlg, "_txtUnitPrice")).Column);
+
+            // 左列固定字段行：车牌(1)→地主姓名(2)→地主电话(3)→司机电话(4)→货主姓名(5)→货主电话(6)
+            Assert.Equal(3, grid.GetPositionFromControl(Fld<TextBox>(dlg, "_txtDriverPhone")).Row);
+            Assert.Equal(4, grid.GetPositionFromControl(Fld<TextBox>(dlg, "_txtCargoOwner")).Row);
+            Assert.Equal(5, grid.GetPositionFromControl(Fld<TextBox>(dlg, "_txtCargoOwnerPhone")).Row);
         });
         manager.Dispose();
     }

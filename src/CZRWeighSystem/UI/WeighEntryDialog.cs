@@ -6,8 +6,9 @@ namespace CZRWeighSystem.UI;
 /// <summary>
 /// 称重录入弹窗（仿老软件链式流程：确认 → 保存 → 打印 → 继续）。
 /// 点首页「空车去皮 / 重车过磅」弹出，左侧米黄票据按网格两列布局：
-/// 左列固定字段（车牌号码/地主姓名/地主电话/司机电话/货主姓名/货主电话/品种/单价），
-/// 右列实时毛/皮/净预览；右栏为四步链式按钮，按顺序逐步解锁：
+/// 左列固定字段（车牌号码/地主姓名/地主电话/司机电话/货主姓名/货主电话），
+/// 右列实时毛/皮/净预览，净重下方空一格后再放品种与单价（表格由 8 行压到 6 行）；
+/// 右栏为四步链式按钮，按顺序逐步解锁：
 /// 确认（校验车号/稳定并锁定读数）→ 保存（第一次称重或二次磅结算）→
 /// 打印（直接出单，不再弹"是否打印"）→ 继续（清空表单连续录入下一辆，窗口不关闭）。
 /// 地主姓名等固定字段以固定键写入记录 ext_json（无需改表，磅单模板可直接引用），
@@ -96,7 +97,7 @@ public class WeighEntryDialog : Form
         _isTare = isTare;
         Text = (isTare ? "空车去皮" : "重车过磅") + $"（本次按{(isTare ? "皮" : "毛")}重保存）";
         StartPosition = FormStartPosition.CenterParent;
-        Size = new Size(755, 554);   // 紧凑版：票据 470×492 + 右栏 226 宽，较原 970×705 整体收窄
+        Size = new Size(734, 452);   // 紧凑版：票据 470×390 + 右栏 205 宽，再压行高后的窗体
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
@@ -157,7 +158,7 @@ public class WeighEntryDialog : Form
         var ticket = new Panel
         {
             Location = new Point(12, 12),
-            Size = new Size(470, 492),   // 紧凑版：行高 38，整体较原 650×640 收窄压低
+            Size = new Size(470, 390),   // 紧凑版：表格压到 6 行后票据同步压低
             BackColor = Color.FromArgb(255, 255, 224),
             Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left,
         };
@@ -169,29 +170,29 @@ public class WeighEntryDialog : Form
             Font = new Font("Microsoft YaHei UI", 13F, FontStyle.Bold),
             TextAlign = ContentAlignment.MiddleCenter,
             Location = new Point(0, 6),
-            Size = new Size(470, 26),
+            Size = new Size(470, 24),
         });
         _lblTicketType = new Label
         {
             Text = (_isTare ? "皮重" : "毛重") + _cfg.SlipHeader,   // 票据副标题取综合设置的磅单抬头
             Font = new Font("Microsoft YaHei UI", 10F),
             TextAlign = ContentAlignment.MiddleCenter,
-            Location = new Point(0, 32),
-            Size = new Size(470, 22),
+            Location = new Point(0, 30),
+            Size = new Size(470, 20),
         };
         ticket.Controls.Add(_lblTicketType);
         ticket.Controls.Add(new Label
         {
             Text = DateTime.Now.ToString("yyyy 年 M 月 d 日"),
             AutoSize = true,
-            Location = new Point(18, 60),
+            Location = new Point(18, 54),
             Font = new Font("Microsoft YaHei UI", 9.5F, FontStyle.Bold),
         });
         _lblSerialNo = new Label
         {
             Text = "No：",
             AutoSize = true,
-            Location = new Point(250, 60),
+            Location = new Point(250, 54),
             Font = new Font("Microsoft YaHei UI", 9.5F, FontStyle.Bold),
         };
         ticket.Controls.Add(_lblSerialNo);
@@ -201,9 +202,9 @@ public class WeighEntryDialog : Form
         // 空间不足时 TLP 会压缩靠后的行（用户实机"单价行下方显示不全"即第 7 行被压）
         var grid = new TableLayoutPanel
         {
-            Location = new Point(18, 88),
+            Location = new Point(18, 80),
             ColumnCount = 4,
-            RowCount = 8,
+            RowCount = 6,
             CellBorderStyle = TableLayoutPanelCellBorderStyle.Single,
             BackColor = ticket.BackColor,
             AutoSize = true,
@@ -212,10 +213,10 @@ public class WeighEntryDialog : Form
         _grid = grid;   // 提为字段供布局测试断言（不压住下方司磅员框）
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 64));   // 字段名
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 200));  // 输入框（车牌行含省份下拉）
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 50));   // 重量名
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));  // 重量值
-        for (int i = 0; i < 8; i++)
-            grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 50));   // 重量名/品种/单价名
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));  // 重量值 + 品种/单价输入
+        for (int i = 0; i < 6; i++)
+            grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
 
         // 单元格控件统一留 1px 内边距：避免控件盖住 TableLayoutPanel 的网格线
         Label Head(string t) => new()
@@ -247,13 +248,13 @@ public class WeighEntryDialog : Form
 
         // 行1：车牌号码（省份简称下拉 + 编号手输，带当天历史自动补全）｜ 毛重
         grid.Controls.Add(Head("车牌号码"), 0, 0);
-        var platePanel = new Panel { Dock = DockStyle.Fill, BackColor = Color.White, Margin = new Padding(2, 4, 2, 4) };
+        var platePanel = new Panel { Dock = DockStyle.Fill, BackColor = Color.White, Margin = new Padding(2, 3, 2, 3) };
         // 省份选择器：点击弹出 8 列×4 行网格，避免 31 个省份拉成超长单列下拉
         _cboPrefix = new ProvincePicker
         {
             Font = new Font("Microsoft YaHei UI", 11F),
             Location = new Point(1, 1),
-            Size = new Size(64, 28),   // 宽度维持 64：文字可用宽 ≥ 2 倍单字宽，"黑"字不被右缘裁切
+            Size = new Size(64, 26),   // 宽度维持 64：文字可用宽 ≥ 2 倍单字宽，"黑"字不被右缘裁切
         };
         // 首项为"无省份"，默认选中综合设置的"默认省份"
         int idx = ProvincePicker.Items.IndexOf(_cfg.DefaultProvince);
@@ -261,7 +262,7 @@ public class WeighEntryDialog : Form
         _txtVehicle = new TextBox
         {
             Location = new Point(66, 1),    // 紧贴省份框右侧，避免遮盖
-            Size = new Size(128, 28),       // 66+128=194 ≤ 面板可用宽 196
+            Size = new Size(128, 26),       // 66+128=194 ≤ 面板可用宽 196
             Font = new Font("Microsoft YaHei UI", 11F),
             // 当天保存过的车牌：输入一半时在下拉中出现（按编号前缀建议）
             AutoCompleteMode = AutoCompleteMode.SuggestAppend,
@@ -293,28 +294,24 @@ public class WeighEntryDialog : Form
         _lblNetCell = ValueCell();
         grid.Controls.Add(_lblNetCell, 3, 2);
 
-        // 行4：司机电话（右列留空）
+        // 行4：司机电话（右列留空——净重与品种之间隔一个空行）
         grid.Controls.Add(Head("司机电话"), 0, 3);
         _txtDriverPhone = Input();
         grid.Controls.Add(_txtDriverPhone, 1, 3);
 
-        // 行5：货主姓名（右列留空）
+        // 行5：货主姓名 ｜ 品种（存记录 Goods 列）
         grid.Controls.Add(Head("货主姓名"), 0, 4);
         _txtCargoOwner = Input();
         grid.Controls.Add(_txtCargoOwner, 1, 4);
+        grid.Controls.Add(Head("品种"), 2, 4);
+        _txtVariety = Input();
+        grid.Controls.Add(_txtVariety, 3, 4);
 
-        // 行6：货主电话（ext_json 固定键；右列留空）
+        // 行6：货主电话（ext_json 固定键）｜ 单价（ext_json 固定键；只允许输入数字与小数点）
         grid.Controls.Add(Head("货主电话"), 0, 5);
         _txtCargoOwnerPhone = Input();
         grid.Controls.Add(_txtCargoOwnerPhone, 1, 5);
-
-        // 行7：品种（存记录 Goods 列；右列留空）
-        grid.Controls.Add(Head("品种"), 0, 6);
-        _txtVariety = Input();
-        grid.Controls.Add(_txtVariety, 1, 6);
-
-        // 行8：单价（ext_json 固定键；右列留空）——只允许输入数字与小数点
-        grid.Controls.Add(Head("单价"), 0, 7);
+        grid.Controls.Add(Head("单价"), 2, 5);
         _txtUnitPrice = Input();
         _txtUnitPrice.KeyPress += (_, e) =>
         {
@@ -322,7 +319,7 @@ public class WeighEntryDialog : Form
             if (!char.IsControl(e.KeyChar) && !char.IsDigit(e.KeyChar) && e.KeyChar != '.')
                 e.Handled = true;
         };
-        grid.Controls.Add(_txtUnitPrice, 1, 7);
+        grid.Controls.Add(_txtUnitPrice, 3, 5);
         ticket.Controls.Add(grid);
 
         // 用户手动改任一可回填字段 → 摘除其"自动填入"标记，之后换车号不再把它当旧车信息清掉
@@ -330,18 +327,18 @@ public class WeighEntryDialog : Form
             box.TextChanged += (_, _) => { if (!_autoFilling) _autoFilledFields.Remove(box); };
 
         // 表格下方：司磅员（当前登录用户，自动记录）。
-        // 框顶与表格底留 18px（8 行表格底约 401 → 框顶 419）：高 DPI 缩放取整会吃掉小间隙，
+        // 框顶与表格底留 18px（6 行表格底约 291 → 框顶 309）：高 DPI 缩放取整会吃掉小间隙，
         // 间隙过小时表格底边框线会压住框顶
         ticket.Controls.Add(new Label
         {
             Text = "司磅员：",
             AutoSize = true,
-            Location = new Point(18, 425),
+            Location = new Point(18, 314),
             Font = new Font("Microsoft YaHei UI", 9.5F, FontStyle.Bold),
         });
         _txtOperator = new TextBox
         {
-            Location = new Point(92, 419), Size = new Size(140, 30),
+            Location = new Point(92, 309), Size = new Size(140, 28),
             Font = new Font("Microsoft YaHei UI", 11F),
             ReadOnly = true, Text = AppSession.DisplayName,
         };
@@ -352,7 +349,7 @@ public class WeighEntryDialog : Form
         {
             Text = "",
             AutoSize = true,
-            Location = new Point(18, ticket.Height - 32),
+            Location = new Point(18, ticket.Height - 30),
             Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
             ForeColor = Color.FromArgb(0, 102, 204),
         };
@@ -369,7 +366,7 @@ public class WeighEntryDialog : Form
         {
             Text = "切 换",
             Location = new Point(494, 12),
-            Size = new Size(226, 32),
+            Size = new Size(205, 30),
             FlatStyle = FlatStyle.Flat,
             BackColor = Color.White,
             Font = new Font("Microsoft YaHei UI", 11F, FontStyle.Bold),
@@ -384,7 +381,7 @@ public class WeighEntryDialog : Form
             Font = new Font("Microsoft YaHei UI", 12F, FontStyle.Bold),
             ForeColor = Color.White,
             AutoSize = true,
-            Location = new Point(498, 48),
+            Location = new Point(498, 46),
         };
         Controls.Add(_lblPanelTitle);
 
@@ -396,8 +393,8 @@ public class WeighEntryDialog : Form
             BackColor = Color.Black,
             BorderStyle = BorderStyle.FixedSingle,
             TextAlign = ContentAlignment.MiddleCenter,
-            Location = new Point(494, 76),
-            Size = new Size(226, 58),
+            Location = new Point(494, 72),
+            Size = new Size(205, 54),
         };
         Controls.Add(_lblCurrent);
 
@@ -410,14 +407,14 @@ public class WeighEntryDialog : Form
         Label Val(int y) => new()
         {
             Text = "--", AutoSize = true,
-            Location = new Point(570, y),
+            Location = new Point(556, y),
             ForeColor = Color.FromArgb(255, 239, 130),
             Font = new Font("Microsoft YaHei UI", 9.5F, FontStyle.Bold),
         };
-        _lblLastWeightTitle = Info("上次重量：", 140);
-        _lblLastWeight = Val(140);
-        _lblLastTimeTitle = Info("上次时间：", 164);
-        _lblLastTime = Val(164);
+        _lblLastWeightTitle = Info("上次重量：", 132);
+        _lblLastWeight = Val(132);
+        _lblLastTimeTitle = Info("上次时间：", 154);
+        _lblLastTime = Val(154);
         Controls.AddRange([_lblLastWeightTitle, _lblLastWeight, _lblLastTimeTitle, _lblLastTime]);
         UpdateLastTareVisibility();   // 重车过磅模式不显示该区块
 
@@ -426,7 +423,7 @@ public class WeighEntryDialog : Form
         {
             Text = text,
             Location = new Point(494, y),
-            Size = new Size(226, h),
+            Size = new Size(205, h),
             FlatStyle = FlatStyle.Flat,
             Font = new Font("Microsoft YaHei UI", 12F, FontStyle.Bold),
         };
@@ -435,15 +432,15 @@ public class WeighEntryDialog : Form
             Text = "↓",
             TextAlign = ContentAlignment.MiddleCenter,
             Location = new Point(494, y),
-            Size = new Size(226, 14),
+            Size = new Size(205, 12),
             ForeColor = Color.Lime,
             Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold),
         };
 
-        _btnConfirm = ChainButton("确 认", 196, 38);
-        _btnSave = ChainButton("保 存", 252, 38);
-        _btnPrint = ChainButton("打 印", 308, 38);
-        _btnContinue = ChainButton("继 续", 364, 34);
+        _btnConfirm = ChainButton("确 认", 182, 36);
+        _btnSave = ChainButton("保 存", 234, 36);
+        _btnPrint = ChainButton("打 印", 286, 36);
+        _btnContinue = ChainButton("继 续", 338, 32);
         _btnConfirm.Click += (_, _) => Confirm();
         _btnSave.Click += (_, _) => DoSave();
         _btnPrint.Click += (_, _) => DoPrint();
@@ -453,8 +450,8 @@ public class WeighEntryDialog : Form
         var btnExit = new Button
         {
             Text = "退 出",
-            Location = new Point(494, 404),
-            Size = new Size(226, 28),
+            Location = new Point(494, 376),
+            Size = new Size(205, 26),
             FlatStyle = FlatStyle.Flat,
             BackColor = Color.FromArgb(235, 235, 235),
             Font = new Font("Microsoft YaHei UI", 11F, FontStyle.Bold),
@@ -462,11 +459,11 @@ public class WeighEntryDialog : Form
         btnExit.Click += (_, _) => { DialogResult = DialogResult.OK; Close(); };
 
         Controls.Add(_btnConfirm);
-        Controls.Add(Arrow(236));
+        Controls.Add(Arrow(220));
         Controls.Add(_btnSave);
-        Controls.Add(Arrow(292));
+        Controls.Add(Arrow(272));
         Controls.Add(_btnPrint);
-        Controls.Add(Arrow(348));
+        Controls.Add(Arrow(324));
         Controls.Add(_btnContinue);
         Controls.Add(btnExit);
     }
