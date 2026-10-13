@@ -67,6 +67,24 @@ public class BottomButtonLayoutTests
     }
 
     [Fact]
+    public void 登录窗体_账号密码初始为空_聚焦账号框()
+    {
+        RunOnSta(() =>
+        {
+            using var f = new LoginForm();
+            object Fld(string name) => typeof(LoginForm)
+                .GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(f)!;
+            var user = (TextBox)Fld("_txtUser");
+            var pwd = (TextBox)Fld("_txtPwd");
+
+            // 用户要求：不再预填账号/密码，留空让人手动输入
+            Assert.Equal("", user.Text);
+            Assert.Equal("", pwd.Text);
+            Assert.Same(user, f.ActiveControl);   // 聚焦账号框，便于直接输入
+        });
+    }
+
+    [Fact]
     public void 模板管理_最窄宽度下底部按钮栏九键完整可见()
     {
         RunOnSta(() =>

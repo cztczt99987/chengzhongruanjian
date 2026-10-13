@@ -1,4 +1,5 @@
 using CZRWeighSystem.Video;
+using System.Drawing.Drawing2D;
 
 namespace CZRWeighSystem.UI;
 
@@ -6,15 +7,18 @@ namespace CZRWeighSystem.UI;
 /// 视频监控弹窗（对应 PRD F7-01 多路预览）。
 /// 共享主界面 CameraManager 的画面源，仅作显示视图：
 /// 关闭窗体不停止取流，保存称重时的自动抓拍（F7-02）不受影响。
+/// focusCameraIndex 指定时只放大显示该路（首页单击某路画面进入单路大图），为空则平铺显示全部路数。
 /// </summary>
 public class VideoMonitorForm : Form
 {
     private readonly CameraManager _cameras;
+    private readonly int? _focusCameraIndex;
     private readonly List<(ICameraSource Src, Action Handler)> _bindings = [];
 
-    public VideoMonitorForm(CameraManager cameras)
+    public VideoMonitorForm(CameraManager cameras, int? focusCameraIndex = null)
     {
         _cameras = cameras;
+        _focusCameraIndex = focusCameraIndex;
         Text = "视频监控（保存称重时自动抓拍留证）";
         StartPosition = FormStartPosition.CenterParent;
         AutoScaleMode = AutoScaleMode.Dpi;   // 高 DPI 下避免文字截断
@@ -27,6 +31,10 @@ public class VideoMonitorForm : Form
         BuildUi();
         FormClosed += (_, _) => UnbindAll();
     }
+
+    /// <summary>按聚焦索引选择要显示的摄像头源；索引为空或非法时回退显示全部。</summary>
+    internal static IReadOnlyList<ICameraSource> SelectSources(IReadOnlyList<ICameraSource> all, int? focus)
+        => focus is int i && i >= 0 && i < all.Count ? new[] { all[i] } : all;
 
     private void BuildUi()
     {
@@ -42,7 +50,10 @@ public class VideoMonitorForm : Form
             return;
         }
 
-        var sources = _cameras.Sources;
+        var sources = SelectSources(_cameras.Sources, _focusCameraIndex);
+        if (sources.Count == 1)
+            Text = $"视频监控 - {sources[0].Name}";
+
         int count = sources.Count;
         int cols = count == 1 ? 1 : 2;
         int rows = (int)Math.Ceiling(count / (double)cols);
@@ -64,9 +75,18 @@ public class VideoMonitorForm : Form
             var pic = new PictureBox
             {
                 Dock = DockStyle.Fill,
-                SizeMode = PictureBoxSizeMode.Zoom,
-                BackColor = Color.Black,
-                Margin = new Padding(3),
+                SizeMode = PictureBoxSizeMode.Normal,   // 帧由 Paint 等比填满（不留黑边、不拉伸变形）
+                BackColor = SystemColors.Control,
+                Margin = new Padding(0),
+            };
+
+            // 帧画面等比缩放填满整个槽位（居中裁剪）：去掉画面四周的黑色留边
+            pic.Paint += (_, e) =>
+            {
+                if (src.CurrentFrame is not { } frame) return;
+                var rect = MainForm.FitCover(frame.Width, frame.Height, pic.ClientSize.Width, pic.ClientSize.Height);
+                e.Graphics.InterpolationMode = InterpolationMode.HighQualityBilinear;
+                e.Graphics.DrawImage(frame, rect);
             };
 
             // 摄像头名称角标（覆盖在画面左上角）
@@ -88,8 +108,7 @@ public class VideoMonitorForm : Form
                     _ = BeginInvoke(() =>
                     {
                         if (IsDisposed) return;
-                        pic.Image = src.CurrentFrame;
-                        pic.Refresh();
+                        pic.Invalidate();   // Paint 重新绘制当前帧
                     });
                 }
                 catch (ObjectDisposedException) { /* 窗体关闭瞬间的竞争，忽略 */ }

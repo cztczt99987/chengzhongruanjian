@@ -1,6 +1,8 @@
 using CZRWeighSystem.Core;
 using CZRWeighSystem.Database;
 using CZRWeighSystem.UI;
+using CZRWeighSystem.Utils;
+using CZRWeighSystem.Video;
 using System.Reflection;
 
 namespace CZRWeighSystem.Tests;
@@ -12,7 +14,8 @@ namespace CZRWeighSystem.Tests;
 ///    称重条（空车去皮｜大屏重量｜重车过磅）整组横向居中｜右快捷方式（计算器/退出），最小窗口宽度不重叠；
 ///    空/重车按钮带自卸车图标（空厢举升/满载货堆）；稳定/通讯指示横排于大屏重量下方并成组居中；
 /// 3. 今日称重统计面板悬浮于摄像头 3 顶部（贴画面区右上角），点击可竖直收起（仅剩标题条）/展开；
-/// 4. 底部称重记录列表条数选择框：20/50/70/100 可选，默认 20 条。
+/// 4. 底部称重记录列表条数选择框：20/50/70/100/今日全部 可选，默认 20 条；
+/// 5. 中部视频区已加大（底部记录列表相应压低），画面槽位无边距、无黑底（等比填满）。
 /// 注意：控件数据必须在窗体释放前的 STA 线程内采集（释放后子控件集合会被清空），
 /// STA 线程内的断言异常必须捕获回抛，否则会以未处理异常拖垮测试宿主。
 /// 与其他 MainForm 测试同集合串行执行：构造主界面会访问 SQLite 库，
@@ -470,5 +473,148 @@ public class MainFormLayoutTests
             Assert.Equal("100", s100.PageSizeDefaultText);
             Assert.True(s100.GridRowCount >= 25, $"切换 100 条后应显示更多记录：{s100.GridRowCount}");
         });
+    }
+
+    /// <summary>直接改写记录的 first_time（测试非今日记录场景用）。</summary>
+    private static void SetFirstTime(long id, DateTime time)
+    {
+        using var conn = Db.CreateConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "UPDATE t_weigh_record SET first_time=@t WHERE id=@id";
+        cmd.Add("@t", time.ToString("yyyy-MM-dd HH:mm:ss"));
+        cmd.Add("@id", id);
+        cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// 新增"今日全部"档位：选中后显示今日完整记录集（不限条数），且不混入非今日记录。
+    /// </summary>
+    [Fact]
+    public void 条数选择框_新增今日全部_选中显示今日全部记录()
+    {
+        Db.Initialize();
+        var repo = new WeighRecordRepository();
+        for (int i = 0; i < 25; i++)
+        {
+            repo.InsertFirstWeigh(new WeighRecord
+            {
+                ScaleNo = "93", VehicleNo = $"全{i:D3}{Guid.NewGuid().ToString("N")[..4]}",
+            });
+        }
+        // 一条改到 3 天前：不应出现在"今日全部"（按天过滤）
+        var oldVehicle = "旧" + Guid.NewGuid().ToString("N")[..6];
+        var oldRec = repo.InsertFirstWeigh(new WeighRecord { ScaleNo = "93", VehicleNo = oldVehicle });
+        SetFirstTime(oldRec.Id, DateTime.Today.AddDays(-3));
+
+        // 期望值取自仓储的"今日"查询（构造窗体前后数据库不再变化）
+        var expected = repo.Query(DateTime.Today, DateTime.Today, "", "", "", "").Count;
+
+        RunOnSta(() =>
+        {
+            using var form = new MainForm();
+            var combo = (ComboBox)Fld(form, "_cboPageSize");
+            var grid = (DataGridView)Fld(form, "_captureGrid");
+
+            Assert.Contains(MainForm.TodayAllPageSizeText, combo.Items.Cast<string>());
+
+            combo.SelectedIndex = combo.Items.IndexOf(MainForm.TodayAllPageSizeText);
+            Assert.Equal(expected, grid.Rows.Count);   // 今日全部 = 今日完整集合，不限条数
+            Assert.True(grid.Rows.Count > 20, $"今日全部应突破 20 条上限：{grid.Rows.Count}");
+
+            var vehicles = grid.Rows.Cast<DataGridViewRow>()
+                .Select(r => (string)r.Cells["VehicleNo"].Value!).ToList();
+            Assert.DoesNotContain(oldVehicle, vehicles);   // 3 天前的记录不混入今日
+        });
+    }
+
+    /// <summary>首页大屏重量：用户要求去掉黑底（背景无色，随工具栏白底）。</summary>
+    [Fact]
+    public void 大屏重量_背景无色_不再黑底()
+    {
+        Db.Initialize();
+        RunOnSta(() =>
+        {
+            using var form = new MainForm();
+            var lbl = (Label)Fld(form, "_lblWeight");
+            Assert.Equal(Color.Transparent, lbl.BackColor);
+            Assert.NotEqual(Color.Black, lbl.BackColor);
+        });
+    }
+
+    /// <summary>
+    /// 中部视频区加大（画面更大），底部记录列表相应压低变矮；两者不重叠。
+    /// </summary>
+    [Fact]
+    public void 中部视频区_已加大_底部记录列表变矮不重叠()
+    {
+        var s = BuildAndMeasure();
+        Assert.True(s.VideoBounds.Height > 380, $"视频区应加大，当前高度 {s.VideoBounds.Height}");
+        Assert.True(s.VideoBounds.Bottom <= s.CaptureBounds.Top,
+            $"视频区(底={s.VideoBounds.Bottom})与记录列表(顶={s.CaptureBounds.Top})重叠");
+        Assert.True(s.VideoBounds.Height > s.CaptureBounds.Height,
+            $"视频区应高于被压低的记录列表：视频 {s.VideoBounds.Height} / 记录 {s.CaptureBounds.Height}");
+    }
+
+    /// <summary>画面槽位去黑框：无边距（不再有黑色间隔）且浅底（不再用黑底）。</summary>
+    [Fact]
+    public void 首页视频槽位_无黑框_浅底无边距()
+    {
+        Db.Initialize();
+        RunOnSta(() =>
+        {
+            using var form = new MainForm();
+            var video = (GroupBox)Fld(form, "_videoPanel");
+            var table = Assert.IsType<TableLayoutPanel>(video.Controls[0]);
+            Assert.Equal(MainForm.MaxVideoTiles, table.Controls.Count);
+            foreach (Control tile in table.Controls)
+            {
+                Assert.Equal(new Padding(0), tile.Margin);
+                Assert.NotEqual(Color.Black, tile.BackColor);
+            }
+        });
+    }
+
+    /// <summary>
+    /// 画面等比缩放填满槽位（居中裁剪）：不留黑边、不拉伸变形；参数非法时返回空矩形。
+    /// </summary>
+    [Fact]
+    public void 画面填满槽位_覆盖且保持比例_居中裁剪()
+    {
+        var r = MainForm.FitCover(1920, 1080, 400, 300);
+        Assert.True(r.Width >= 400 && r.Height >= 300, $"填满槽位不得留边：{r}");
+        Assert.True(Math.Abs(r.Width / (double)r.Height - 1920.0 / 1080.0) < 0.02,
+            $"缩放应保持原比例不变形：{r.Width}x{r.Height}");
+        Assert.Equal((400 - r.Width) / 2, r.X);   // 居中裁剪
+        Assert.Equal((300 - r.Height) / 2, r.Y);
+        Assert.Equal(Rectangle.Empty, MainForm.FitCover(0, 100, 400, 300));
+    }
+
+    /// <summary>
+    /// 单击某路画面放大查看：按聚焦索引只显示该路，索引为空/非法时回退显示全部。
+    /// </summary>
+    [Fact]
+    public void 单击画面放大_按索引只显示该路_非法索引回退全部()
+    {
+        var all = new List<ICameraSource>
+        {
+            new SimulatedCameraSource("CAM1"),
+            new SimulatedCameraSource("CAM2"),
+            new SimulatedCameraSource("CAM3"),
+        };
+        try
+        {
+            Assert.Equal(3, VideoMonitorForm.SelectSources(all, null).Count);
+
+            var one = VideoMonitorForm.SelectSources(all, 1);
+            Assert.Single(one);
+            Assert.Equal("CAM2", one[0].Name);
+
+            Assert.Equal(3, VideoMonitorForm.SelectSources(all, 9).Count);    // 越界 → 全部
+            Assert.Equal(3, VideoMonitorForm.SelectSources(all, -1).Count);
+        }
+        finally
+        {
+            foreach (var s in all) s.Dispose();
+        }
     }
 }

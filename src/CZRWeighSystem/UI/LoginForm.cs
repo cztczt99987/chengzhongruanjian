@@ -48,7 +48,7 @@ public class LoginForm : Form
         var lblUser = new Label
         { Text = "账号：", AutoSize = true, Location = new Point(50, 105) };
         _txtUser = new TextBox
-        { Location = new Point(120, 100), Size = new Size(210, 28), Text = "admin" };
+        { Location = new Point(120, 100), Size = new Size(210, 28) };
 
         var lblPwd = new Label
         { Text = "密码：", AutoSize = true, Location = new Point(50, 150) };
@@ -56,13 +56,12 @@ public class LoginForm : Form
         {
             Location = new Point(120, 145),
             Size = new Size(210, 28),
-            Text = "111111",
             UseSystemPasswordChar = true,   // 密码掩码显示
         };
 
         _lblError = new Label
         {
-            Text = "",   // 初始不显示提示（默认账号密码已预填）；运行时用于显示验证中/错误消息
+            Text = "",   // 初始不显示提示；运行时用于显示验证中/错误消息
             ForeColor = Color.Gray,
             AutoSize = true,
             Location = new Point(120, 182),
@@ -95,7 +94,7 @@ public class LoginForm : Form
             Close();
         };
 
-        // 回车即提交（账号框回车跳到密码框）；打开时已填默认账号密码，直接回车即可登录
+        // 回车即提交（账号框回车跳到密码框）
         _txtUser.KeyDown += (_, e) =>
         {
             if (e.KeyCode == Keys.Enter) { _txtPwd.Focus(); e.SuppressKeyPress = true; }
@@ -109,7 +108,7 @@ public class LoginForm : Form
         { lblTitle, lblUser, _txtUser, lblPwd, _txtPwd, _lblError, _btnLogin, btnExit });
 
         AcceptButton = _btnLogin;          // 窗体级回车触发登录
-        ActiveControl = _txtPwd;           // 账号已预填，聚焦到密码框便于直接回车登录
+        ActiveControl = _txtUser;          // 账号/密码初始为空，聚焦账号框便于直接输入
     }
 
     /// <summary>执行登录验证。</summary>

@@ -8,8 +8,8 @@ namespace CZRWeighSystem.UI;
 /// 顶部为白色工具栏：左侧快捷方式（记录查询/报表统计/视频监控/基础资料），
 /// 中间为「空车去皮 / 重车过磅」手动选择按钮 + 大屏实时重量显示（稳定/通讯指示横排于大屏下方），
 /// 右侧为计算器/退出快捷方式；点击称重按钮弹出录入窗（首页不再放置信息录入区）；
-/// 中部为 3 个摄像头画面槽位（最多显示 3 路），摄像头 3 画面上悬浮自绘的今日称重统计卡片（与画面顶边齐平，点击可收起/展开）；
-/// 底部为称重记录列表（可选显示条数 20/50/70/100，双击未完成行带车号打开录入窗结算）。
+/// 中部为 3 个摄像头画面槽位（最多显示 3 路，单击某路画面放大查看该路），摄像头 3 画面上悬浮自绘的今日称重统计卡片（与画面顶边齐平，点击可收起/展开）；
+/// 底部为称重记录列表（可选显示条数 20/50/70/100/今日全部，双击未完成行带车号打开录入窗结算）。
 /// 布局采用纯代码方式构建。
 /// </summary>
 public class MainForm : Form
@@ -74,7 +74,9 @@ public class MainForm : Form
     // ===== 底部称重记录列表 =====
     private GroupBox _capturePanel = null!;
     private DataGridView _captureGrid = null!;
-    private ComboBox _cboPageSize = null!;   // 显示条数：20/50/70/100（默认 20）
+    private ComboBox _cboPageSize = null!;   // 显示条数：20/50/70/100/今日全部（默认 20）
+    /// <summary>条数下拉框"今日全部"选项（选中时显示今日全部记录，不限条数）。</summary>
+    internal const string TodayAllPageSizeText = "今日全部";
     private RadioButton _rdoKg = null!;      // 显示单位 kg（快速切换，写回 config.Unit）
     private RadioButton _rdoTon = null!;     // 显示单位 吨
     private readonly Database.WeighRecordRepository _recordRepo = new();
@@ -89,7 +91,7 @@ public class MainForm : Form
 
     // 布局参数：中部视频区、底部记录列表（顶部称重条下方直接是视频区）
     private const int CameraY = 172;     // 视频监控区 y（顶部称重条含稳定/通讯行底边 166 + 6）
-    private const int CameraH = 320;     // 视频监控区高度（固定）
+    private const int CameraH = 400;     // 视频监控区高度（固定；加大画面区、相应压低底部记录列表）
     private int _gridY = CameraY + CameraH + 34;   // 底部记录列表 y（中间留今日汇总行）
 
     // ===== 界面构建 =====
@@ -236,7 +238,7 @@ public class MainForm : Form
             Location = new Point(210, 6),
             Size = new Size(450, 104),
             BorderStyle = BorderStyle.FixedSingle,
-            BackColor = Color.Black,
+            BackColor = Color.Transparent,   // 无色背景（随工具栏白底），不再用黑底
         };
 
         _btnGross = NewButton("重车过磅", 715, 12, 170, 92, Color.White);
@@ -401,7 +403,7 @@ public class MainForm : Form
     {
         _videoPanel = new GroupBox
         {
-            Text = "视频监控（最多 3 路，双击画面打开大屏）",
+            Text = "视频监控（最多 3 路，单击画面放大查看该路）",
             Location = new Point(20, CameraY),
             Size = new Size(ClientSize.Width - 40, CameraH),   // 通栏铺满，统计面板悬浮其右上角
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
@@ -467,18 +469,28 @@ public class MainForm : Form
                 Text = $"摄像头 {index} 未配置\r\n请在菜单「视频 → 摄像头设置」中添加",
                 Dock = DockStyle.Fill,
                 TextAlign = ContentAlignment.MiddleCenter,
-                BackColor = Color.FromArgb(70, 70, 70),
-                ForeColor = Color.Gainsboro,
-                Margin = new Padding(2),
+                BackColor = SystemColors.Control,   // 浅底占位：不再用深灰/黑块
+                ForeColor = Color.Gray,
+                Margin = new Padding(0),
             };
         }
 
         var pic = new PictureBox
         {
             Dock = DockStyle.Fill,
-            SizeMode = PictureBoxSizeMode.Zoom,
-            BackColor = Color.Black,
-            Margin = new Padding(2),
+            SizeMode = PictureBoxSizeMode.Normal,   // 帧由 Paint 等比填满（不留黑边、不拉伸变形）
+            BackColor = SystemColors.Control,
+            Margin = new Padding(0),
+            Cursor = Cursors.Hand,
+        };
+
+        // 帧画面等比缩放填满整个槽位（居中裁剪）：去掉画面四周的黑色留边
+        pic.Paint += (_, e) =>
+        {
+            if (src.CurrentFrame is not { } frame) return;
+            var rect = FitCover(frame.Width, frame.Height, pic.ClientSize.Width, pic.ClientSize.Height);
+            e.Graphics.InterpolationMode = InterpolationMode.HighQualityBilinear;
+            e.Graphics.DrawImage(frame, rect);
         };
 
         // 摄像头名称角标（覆盖在画面左上角）
@@ -491,22 +503,22 @@ public class MainForm : Form
             ForeColor = Color.White,
         });
 
-        // 取流异常提示（长时间无画面时由 CheckVideoStall 显示，避免只看到黑屏不知原因）
+        // 取流异常提示（长时间无画面时由 CheckVideoStall 显示，避免只看到空画面不知原因）
         var hint = new Label
         {
             Text = "无画面：取流失败或超时\r\n请检查地址是否有效/已过期；萤石摄像头建议改用 RTMP 地址",
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleCenter,
-            BackColor = Color.Black,
-            ForeColor = Color.FromArgb(255, 210, 120),
+            BackColor = SystemColors.Control,
+            ForeColor = Color.Firebrick,
             Visible = false,
         };
         pic.Controls.Add(hint);
 
-        // 双击画面打开大屏监控弹窗（多路小画面时查看细节）
-        pic.DoubleClick += (_, _) =>
+        // 单击画面放大查看该路摄像头（大屏弹窗只显示点击的这一路）
+        pic.Click += (_, _) =>
         {
-            using var f = new VideoMonitorForm(_cameras);
+            using var f = new VideoMonitorForm(_cameras, index - 1);
             f.ShowDialog(this);
         };
 
@@ -519,9 +531,8 @@ public class MainForm : Form
                 _ = BeginInvoke(() =>
                 {
                     if (IsDisposed) return;
-                    pic.Image = src.CurrentFrame;
                     if (hint.Visible) hint.Visible = false;   // 画面恢复，撤掉异常提示
-                    pic.Refresh();
+                    pic.Invalidate();   // Paint 重新绘制当前帧
                 });
             }
             catch (ObjectDisposedException) { /* 窗体关闭瞬间的竞争，忽略 */ }
@@ -531,6 +542,19 @@ public class MainForm : Form
         _videoBindings.Add((src, (Action)OnFrame));
         _videoTiles.Add((src, pic, hint));
         return pic;
+    }
+
+    /// <summary>
+    /// 等比缩放填满槽位的目标矩形（居中裁剪，对应 CSS background-size: cover）：
+    /// 不拉伸变形、不留黑边；图片越小超出槽位的部分被裁掉。
+    /// </summary>
+    internal static Rectangle FitCover(int imgW, int imgH, int boxW, int boxH)
+    {
+        if (imgW <= 0 || imgH <= 0 || boxW <= 0 || boxH <= 0) return Rectangle.Empty;
+        double scale = Math.Max((double)boxW / imgW, (double)boxH / imgH);
+        int w = (int)Math.Ceiling(imgW * scale);
+        int h = (int)Math.Ceiling(imgH * scale);
+        return new Rectangle((boxW - w) / 2, (boxH - h) / 2, w, h);
     }
 
     /// <summary>各路画面是否长时间无帧（地址无效/过期/协议不支持时黑屏），显示提示并记录日志。</summary>
@@ -778,7 +802,7 @@ public class MainForm : Form
             }
         };
 
-        // 显示条数选择（20/50/70/100，默认 20）：置于表格上方预留条带内，紧贴面板右缘
+        // 显示条数选择（20/50/70/100/今日全部，默认 20）：置于表格上方预留条带内，紧贴面板右缘
         var lblPage = new Label
         {
             Text = "显示条数：",
@@ -795,7 +819,7 @@ public class MainForm : Form
             Size = new Size(120, 28),
             Anchor = AnchorStyles.Top | AnchorStyles.Right,
         };
-        _cboPageSize.Items.AddRange(["20", "50", "70", "100"]);
+        _cboPageSize.Items.AddRange(["20", "50", "70", "100", TodayAllPageSizeText]);
         _cboPageSize.SelectedIndexChanged += (_, _) => RefreshGrid();
         _cboPageSize.SelectedIndex = 0;   // 默认 20 条（赋值触发刷新，列表按 20 条加载）
 
@@ -876,9 +900,12 @@ public class MainForm : Form
     /// <summary>刷新称重记录列表（按选择的显示条数，新记录在前；未完成行标红提醒）。</summary>
     private void RefreshGrid()
     {
-        int pageSize = int.TryParse(_cboPageSize.Text, out int n) && n > 0 ? n : 20;
+        // "今日全部"=显示今天全部记录（不限条数）；其余档位只取前 N 条
+        IEnumerable<WeighRecord> records = _cboPageSize.Text == TodayAllPageSizeText
+            ? _recordRepo.Query(DateTime.Today, DateTime.Today, "", "", "", "")
+            : _recordRepo.Query(null, null, "", "", "", "").Take(SelectedPageSize());
         _captureGrid.Rows.Clear();
-        foreach (var r in _recordRepo.Query(null, null, "", "", "", "").Take(pageSize))
+        foreach (var r in records)
         {
             // 弹窗录入的扩展字段（地主/司机/货主）存 ext_json 固定键
             var ext = r.ParseExt();
@@ -914,6 +941,10 @@ public class MainForm : Form
 
         FitCaptureColumns();   // 填充后按实际内容/表头适配列宽（不足出横向滚动条）
     }
+
+    /// <summary>当前条数档位对应的条数（非数字档位如「今日全部」回退默认 20）。</summary>
+    private int SelectedPageSize() =>
+        int.TryParse(_cboPageSize.Text, out int n) && n > 0 ? n : 20;
 
     /// <summary>保存称重后自动抓拍（对应 PRD F7-02），返回存档路径数。</summary>
     private int CaptureFor(string serialNo)
