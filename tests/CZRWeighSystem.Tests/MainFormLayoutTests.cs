@@ -620,8 +620,64 @@ public class MainFormLayoutTests
     }
 
     /// <summary>
-    /// 首页单击某路画面：弹窗默认沉浸全屏（无边框最大化铺满整屏），Esc 退出依赖键盘预览；
-    /// 菜单入口的多路预览仍为普通窗口。
+    /// 记录行右键菜单（对应参考版式）：三项齐全、各带图标，并挂在称重记录列表上。
+    /// </summary>
+    [Fact]
+    public void 首页记录列表_右键菜单_提供当日记录打印预览过磅视图()
+    {
+        Db.Initialize();
+        RunOnSta(() =>
+        {
+            using var form = new MainForm();
+            var menu = (ContextMenuStrip)Fld(form, "_captureMenu");
+            var grid = (DataGridView)Fld(form, "_captureGrid");
+
+            Assert.Same(menu, grid.ContextMenuStrip);
+            var items = menu.Items.Cast<ToolStripItem>().ToList();
+            Assert.Equal(new[] { "当日记录", "打印预览", "过磅视图" }, items.Select(i => i.Text));
+            Assert.All(items, i => Assert.NotNull(i.Image));   // 参考图中三项均带图标
+        });
+    }
+
+    /// <summary>
+    /// 右键「当日记录」：以该行日期打开记录查询页，日期范围锁定当天且清空其它条件，结果只含该日记录。
+    /// </summary>
+    [Fact]
+    public void 首页右键当日记录_记录查询页只看该日记录()
+    {
+        Db.Initialize();
+        var repo = new WeighRecordRepository();
+        var day = DateTime.Today.AddDays(-7);   // 取非今天，便于区分"当天"与"近 30 天"默认范围
+        string dayVehicle = "当" + Guid.NewGuid().ToString("N")[..6];
+        string otherVehicle = "次" + Guid.NewGuid().ToString("N")[..6];
+        var dayRec = repo.InsertFirstWeigh(new WeighRecord { ScaleNo = "94", VehicleNo = dayVehicle });
+        SetFirstTime(dayRec.Id, day);
+        var otherRec = repo.InsertFirstWeigh(new WeighRecord { ScaleNo = "94", VehicleNo = otherVehicle });
+        SetFirstTime(otherRec.Id, day.AddDays(1));
+
+        RunOnSta(() =>
+        {
+            using var f = new RecordQueryForm(day);
+            object Fld(string name) => typeof(RecordQueryForm)
+                .GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(f)!;
+
+            Assert.Equal(day, ((DateTimePicker)Fld("_dtpFrom")).Value.Date);
+            Assert.Equal(day, ((DateTimePicker)Fld("_dtpTo")).Value.Date);
+
+            // 窗体未显示时不会触发 Load，手动执行查询以校验结果集
+            typeof(RecordQueryForm)
+                .GetMethod("DoQuery", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(f, null);
+            var grid = (DataGridView)Fld("_grid");
+            var vehicles = grid.Rows.Cast<DataGridViewRow>()
+                .Select(r => (string)r.Cells["VehicleNo"].Value!).ToList();
+            Assert.Contains(dayVehicle, vehicles);
+            Assert.DoesNotContain(otherVehicle, vehicles);
+        });
+    }
+
+    /// <summary>
+    /// 首页单击某路画面：弹窗默认沉浸全屏（无边框最大化铺满整屏），按 Esc 退出依赖键盘预览；
+    /// 菜单入口的多路预览仍为普通窗口；全屏内单击画面可退出（打开瞬间的残留点击除外）。
     /// </summary>
     [Fact]
     public void 单击画面全屏_无边框最大化_菜单入口保持普通窗口()
@@ -631,9 +687,23 @@ public class MainFormLayoutTests
         Assert.Equal(FormWindowState.Maximized, full.WindowState);
         Assert.Equal(FormStartPosition.Manual, full.StartPosition);
         Assert.True(full.KeyPreview);   // 按 Esc 退出全屏
+        Assert.Contains(full.Controls.OfType<Label>(), l => l.Text.Contains("单击画面退出全屏"));   // 退出提示
 
         using var normal = new VideoMonitorForm(new CameraManager());
         Assert.NotEqual(FormBorderStyle.None, normal.FormBorderStyle);
         Assert.NotEqual(FormWindowState.Maximized, normal.WindowState);
+        Assert.DoesNotContain(normal.Controls.OfType<Label>(), l => l.Text.Contains("退出全屏"));
+    }
+
+    /// <summary>全屏内单击退出：仅在打开后经过保护窗口才生效，避免首页双击的第二击"开了又立刻关"。</summary>
+    [Fact]
+    public void 全屏单击退出_忽略打开瞬间的残留点击()
+    {
+        var opened = new DateTime(2026, 10, 13, 12, 0, 0, DateTimeKind.Utc);
+        var guard = VideoMonitorForm.ExitClickGuard;
+
+        Assert.False(VideoMonitorForm.ShouldExitFullscreen(opened, opened.AddMilliseconds(50), guard));   // 双击第二击
+        Assert.True(VideoMonitorForm.ShouldExitFullscreen(opened, opened.Add(guard), guard));
+        Assert.True(VideoMonitorForm.ShouldExitFullscreen(opened, opened.AddSeconds(3), guard));
     }
 }

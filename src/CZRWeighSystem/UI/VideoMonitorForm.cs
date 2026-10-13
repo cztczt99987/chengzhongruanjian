@@ -9,14 +9,18 @@ namespace CZRWeighSystem.UI;
 /// 关闭窗体不停止取流，保存称重时的自动抓拍（F7-02）不受影响。
 /// focusCameraIndex 指定时只显示该路；为空则平铺显示全部路数（菜单入口的多路预览）。
 /// fullscreen=true 时以无边框全屏呈现，仅用于首页单击某路画面进入单路沉浸查看；
-/// 切换其他路需关闭弹窗后回首页点击对应画面。
+/// 全屏下单击画面或按 Esc 退出，切换其他路需关闭弹窗后回首页点击对应画面。
 /// </summary>
 public class VideoMonitorForm : Form
 {
     private readonly CameraManager _cameras;
     private readonly int? _focusCameraIndex;
     private readonly bool _fullscreen;
+    private readonly DateTime _openedUtc = DateTime.UtcNow;
     private readonly List<(ICameraSource Src, Action Handler)> _bindings = [];
+
+    /// <summary>打开瞬间的残留点击忽略窗口：在首页快速双击画面时，第二击会落进刚弹出的全屏窗，若响应会"开了又立刻关"。</summary>
+    internal static readonly TimeSpan ExitClickGuard = TimeSpan.FromMilliseconds(400);
 
     public VideoMonitorForm(CameraManager cameras, int? focusCameraIndex = null, bool fullscreen = false)
     {
@@ -63,12 +67,16 @@ public class VideoMonitorForm : Form
     private static Label BuildExitHint()
         => new()
         {
-            Text = "按 Esc 或双击画面退出全屏",
+            Text = "按 Esc 或单击画面退出全屏",
             AutoSize = true,
             BackColor = Color.FromArgb(140, 0, 0, 0),
             ForeColor = Color.White,
             Location = new Point(12, 12),
         };
+
+    /// <summary>全屏下单击画面是否应退出：打开后经过保护窗口（Guard）的单击才生效。</summary>
+    internal static bool ShouldExitFullscreen(DateTime openedUtc, DateTime now, TimeSpan guard)
+        => now - openedUtc >= guard;
 
     /// <summary>按聚焦索引选择要显示的摄像头源；索引为空或非法时回退显示全部。</summary>
     internal static IReadOnlyList<ICameraSource> SelectSources(IReadOnlyList<ICameraSource> all, int? focus)
@@ -137,9 +145,9 @@ public class VideoMonitorForm : Form
                 ForeColor = Color.White,
             });
 
-            // 全屏模式下双击画面退出（单击不切换路数：看其他路请关闭后回首页点击）
+            // 全屏模式下单击画面即退出全屏（弹窗内不切换路数：看其他路请关闭后回首页点击）
             if (_fullscreen)
-                pic.DoubleClick += (_, _) => Close();
+                pic.Click += (_, _) => { if (ShouldExitFullscreen(_openedUtc, DateTime.UtcNow, ExitClickGuard)) Close(); };
 
             // 帧刷新：可能来自非 UI 线程，转发到 UI 线程（窗体关闭后不再处理）
             void OnFrame()
