@@ -3,13 +3,14 @@ namespace CZRWeighSystem.UI;
 /// <summary>
 /// 车牌编号字母触摸面板（仿老软件：双击车牌编号框弹出）。
 /// 5 行 × 6 列：A~Z 共 26 个字母 + 挂/头/尾 3 个特殊项，红 ✕ 关闭。
-/// 点选字符只回调、不关闭面板，支持连续点选；Esc 或红 ✕ 关闭。
+/// 点选任一字符后回调并自动关闭面板——每个字符都靠"双击编号框 → 点一个字符 → 面板关闭"
+/// 完成；Esc 或红 ✕ 也可关闭。
 /// 面板按钮不获取焦点（ControlStyles.Selectable=false）：编号框始终保持输入焦点，
 /// 物理键盘可同时输入，光标位置由编号框自己维护。
 /// </summary>
 public class PlateKeypadForm : Form
 {
-    /// <summary>点选字符（字母或挂/头/尾）；面板不关闭，可连续回调。</summary>
+    /// <summary>点选字符（字母或挂/头/尾）；触发后面板即自动关闭。</summary>
     public event Action<string>? CharPicked;
 
     // 行序严格按老软件面板截图（✕ = 关闭，不是字母 X）
@@ -75,7 +76,11 @@ public class PlateKeypadForm : Form
                         Bounds = new Rectangle(x, y, CellW, CellH),
                         Name = "char_" + ch,
                     };
-                    btn.Click += (_, _) => CharPicked?.Invoke(ch);
+                    btn.Click += (_, _) =>
+                    {
+                        CharPicked?.Invoke(ch);
+                        Close();   // 选完一个字符即关闭面板，下次输入再双击编号框
+                    };
                     Controls.Add(btn);
                 }
             }

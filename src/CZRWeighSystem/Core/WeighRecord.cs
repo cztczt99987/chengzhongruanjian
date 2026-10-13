@@ -44,8 +44,11 @@ public class WeighRecord
     /// <summary>自定义字段值（JSON 对象，键=字段名；对应 t_weigh_record.ext_json）</summary>
     public string? ExtJson { get; set; }
 
-    /// <summary>一次磅保存时的重量（未配对阶段即当前称量值）</summary>
-    public double? FirstWeightKg => FirstTime.HasValue ? GrossKg : null;
+    /// <summary>一次磅保存时的重量（未配对阶段按操作模式暂存于毛重列或皮重列）</summary>
+    public double? FirstWeightKg => FirstTime.HasValue ? (GrossKg ?? TareKg) : null;
+
+    /// <summary>一次磅（未配对）重量是否存于皮重列（空车去皮先行时；重车过磅先行则为毛重列）</summary>
+    public bool FirstWeighIsTare => TareKg.HasValue && !GrossKg.HasValue;
 
     /// <summary>实收重量 = 净重 - 扣重（无扣重时即净重）</summary>
     public double? ReceivedKg => NetKg.HasValue ? NetKg - (DeductKg ?? 0) : null;

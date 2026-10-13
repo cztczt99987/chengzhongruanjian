@@ -183,7 +183,62 @@ public class WeighEntryDialogTests
         Assert.True(onSaved, "保存成功后未触发 OnSaved 回调");
         var record = _repo.Query(null, null, vehicle, "", "", "").Single();
         Assert.Equal("未完成", record.Status);
-        Assert.Equal(10000, record.GrossKg);   // 一次磅重量暂存 gross_kg
+        Assert.Null(record.GrossKg);           // 空车去皮：不写毛重列
+        Assert.Equal(10000, record.TareKg);    // 一次磅重量入皮重列（业务规则：空车去皮即皮重）
+    }
+
+    /// <summary>
+    /// 重车过磅一次磅：重量应入毛重列（与空车去皮入皮重列对称），皮重列留空。
+    /// </summary>
+    [Fact]
+    public void 重车过磅_无待配对记录_一次磅入毛重列()
+    {
+        string vehicle = NewVehicle("N");
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: false);
+            SilenceDialogs(dlg);
+            UseTestScaleNo();
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
+            PushStable(manager, 45000);
+            ConfirmAndSave(dlg);
+        });
+        manager.Dispose();
+
+        var record = _repo.Query(null, null, vehicle, "", "", "").Single();
+        Assert.Equal("未完成", record.Status);
+        Assert.Equal(45000, record.GrossKg);   // 重车过磅：重量入毛重列
+        Assert.Null(record.TareKg);
+    }
+
+    /// <summary>
+    /// 空车去皮先行（皮重入皮重列）→ 重车过磅配对：毛重=大值、皮重=小值、净重=差值。
+    /// 验证"一次磅按操作模式入列"调整后，配对结算结果仍正确（回归保护）。
+    /// </summary>
+    [Fact]
+    public void 空车去皮先行_配重车过磅_结算毛皮正确()
+    {
+        string vehicle = NewVehicle("P");
+        _repo.InsertFirstWeigh(new WeighRecord { ScaleNo = "92", VehicleNo = vehicle, TareKg = 15000 });
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: false);
+            SilenceDialogs(dlg);
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
+            PushStable(manager, 45000);
+            ConfirmAndSave(dlg);
+        });
+        manager.Dispose();
+
+        var record = _repo.Query(null, null, vehicle, "", "", "").Single();
+        Assert.Equal("已完成", record.Status);
+        Assert.Equal(45000, record.GrossKg);   // 毛重 = 大值
+        Assert.Equal(15000, record.TareKg);    // 皮重 = 小值（一次磅存入皮重列的值）
+        Assert.Equal(30000, record.NetKg);
     }
 
     [Fact]
@@ -393,7 +448,8 @@ public class WeighEntryDialogTests
 
         var record = _repo.Query(null, null, vehicle, "", "", "").Single();
         Assert.Equal("未完成", record.Status);
-        Assert.Equal(200, record.GrossKg);   // 入库为确认锁定的 0.2 吨，而非归零后的 0
+        Assert.Null(record.GrossKg);         // 空车去皮：不写毛重列
+        Assert.Equal(200, record.TareKg);    // 入库为确认锁定的 0.2 吨（皮重列），而非归零后的 0
     }
 
     /// <summary>二次磅同样按确认锁定值结算：确认后归零再保存仍得出正确毛/皮/净。</summary>
@@ -1277,7 +1333,7 @@ public class WeighEntryDialogTests
     }
 
     [Fact]
-    public void 点面板字符_连续追加到编号框_面板保持打开()
+    public void 点面板字符_插入后自动关闭面板_再次双击可继续输入()
     {
         WeighManager manager = new();
         RunOnSta(() =>
@@ -1287,16 +1343,24 @@ public class WeighEntryDialogTests
             Fld<TextBox>(dlg, "_txtVehicle").Text = "";
 
             dlg.ShowKeypad();
-            var keypad = dlg.CurrentKeypad!;
-
-            ClickButton(KeypadBtn(keypad, "char_D"));
+            var first = dlg.CurrentKeypad;
+            Assert.True(first is not null, "第一次双击未弹出面板");
+            ClickButton(KeypadBtn(first!, "char_D"));
             Assert.Equal("D", Fld<TextBox>(dlg, "_txtVehicle").Text);
-            ClickButton(KeypadBtn(keypad, "char_挂"));
-            Assert.Equal("D挂", Fld<TextBox>(dlg, "_txtVehicle").Text);
+            // 点选一个字符后面板自动关闭，用户再次双击编号框才弹出下一个
+            Assert.True(dlg.CurrentKeypad is null, "点选字符后面板应自动关闭");
 
-            // 点选不关闭面板，可连续输入
-            Assert.Same(keypad, dlg.CurrentKeypad);
-            keypad.Close();
+            // 再次双击（ShowKeypad）→ 新面板，继续输入下一个字母
+            dlg.ShowKeypad();
+            var second = dlg.CurrentKeypad;
+            Assert.True(second is not null, "再次双击未弹出面板");
+            Assert.True(!second!.IsDisposed, "再次双击得到的是已释放的旧面板");
+            Assert.True(second.Controls.OfType<Button>().Any(b => b.Name == "char_E"),
+                "新面板缺少 char_E；现有按钮=" +
+                string.Join(",", second.Controls.OfType<Button>().Select(b => b.Name)));
+            ClickButton(KeypadBtn(second, "char_E"));
+            Assert.Equal("DE", Fld<TextBox>(dlg, "_txtVehicle").Text);
+            Assert.True(dlg.CurrentKeypad is null, "点选字符后面板应自动关闭");
         });
         manager.Dispose();
     }

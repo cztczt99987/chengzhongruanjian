@@ -923,8 +923,9 @@ public class MainForm : Form
                 ext.GetValueOrDefault("货主姓名", ""),
                 ext.GetValueOrDefault("货主电话", ""),
                 ext.GetValueOrDefault("单价", ""),
-                // 毛/皮/净：单位在表头，单元格只显示换算后的数字
-                _cfg.FormatWeightNumber(r.GrossKg ?? 0),
+                // 毛/皮/净：单位在表头，单元格只显示换算后的数字；
+                // 未配对的一次磅仅其入库列有值（空车去皮存皮重列、重车过磅存毛重列），其余列显示 "--"
+                r.GrossKg.HasValue ? _cfg.FormatWeightNumber(r.GrossKg.Value) : "--",
                 r.TareKg.HasValue ? _cfg.FormatWeightNumber(r.TareKg.Value) : "--",
                 r.NetKg.HasValue ? _cfg.FormatWeightNumber(r.NetKg.Value) : "--",
                 r.AmountYuan?.ToString("0.##") ?? "--",

@@ -270,9 +270,9 @@ public class WeighEntryDialog : Form
         };
         platePanel.Controls.Add(_cboPrefix);
         platePanel.Controls.Add(_txtVehicle);
-        // 老软件交互：双击编号框（字母位置）弹出 A-Z 触摸面板，选字母连续输入
+        // 老软件交互：双击编号框（字母位置）弹出 A-Z 触摸面板；点选一个字符后面板自动关闭
         _txtVehicle.DoubleClick += (_, _) => ShowKeypad();
-        new ToolTip().SetToolTip(_txtVehicle, "双击打开字母选择面板（可连续点选）");
+        new ToolTip().SetToolTip(_txtVehicle, "双击打开字母选择面板（点选一个字符后自动关闭）");
         grid.Controls.Add(platePanel, 1, 0);
         grid.Controls.Add(Head("毛重"), 2, 0);
         _lblGrossCell = ValueCell();
@@ -668,10 +668,11 @@ public class WeighEntryDialog : Form
             }
             else
             {
-                // 一次磅：重量暂存于 gross 列（配对时按大小归入毛或皮），展示在称重模式对应的行
-                string saved = _cfg.FormatWeight(_savedRecord.GrossKg ?? 0);
-                _lblGrossCell.Text = _isTare ? "--" : saved;
-                _lblTareCell.Text = _isTare ? saved : "--";
+                // 一次磅：重量按操作模式入库（空车去皮→皮重列、重车过磅→毛重列），
+                // 展示在该重量实际所在的列上；配对时再按大小归位毛/皮
+                double stored = _savedRecord.FirstWeightKg ?? 0;
+                _lblGrossCell.Text = _savedRecord.FirstWeighIsTare ? "--" : _cfg.FormatWeight(stored);
+                _lblTareCell.Text = _savedRecord.FirstWeighIsTare ? _cfg.FormatWeight(stored) : "--";
                 _lblNetCell.Text = "--";
                 _lblPairHint.Text = $"[{_savedRecord.VehicleNo}] 一次磅已保存，等待二次磅配对结算";
             }
@@ -682,20 +683,22 @@ public class WeighEntryDialog : Form
             // 确认已锁定读数：票面固定展示锁定值，不再跟随实时重量（车下磅归零也不变）；
             // 保存时按该锁定值入库（见 DoSave）
             string locked = _cfg.FormatWeight(_confirmedKg.Value);
-            string paired = _confirmedFirst != null
-                ? _cfg.FormatWeight(_confirmedFirst.GrossKg ?? 0) : "--";
-            if (_isTare)
+            // 已配对的一次磅按其入库列显示，本次锁定值进当前操作模式对应行
+            if (_confirmedFirst != null)
             {
-                _lblTareCell.Text = locked;
-                _lblGrossCell.Text = paired;
+                string paired = _cfg.FormatWeight(_confirmedFirst.FirstWeightKg ?? 0);
+                if (_confirmedFirst.FirstWeighIsTare) { _lblTareCell.Text = paired; _lblGrossCell.Text = "--"; }
+                else { _lblGrossCell.Text = paired; _lblTareCell.Text = "--"; }
             }
             else
             {
-                _lblGrossCell.Text = locked;
-                _lblTareCell.Text = paired;
+                _lblGrossCell.Text = "--";
+                _lblTareCell.Text = "--";
             }
+            if (_isTare) _lblTareCell.Text = locked;
+            else _lblGrossCell.Text = locked;
             _lblNetCell.Text = _confirmedFirst != null
-                ? _cfg.FormatWeight(Math.Abs((_confirmedFirst.GrossKg ?? 0) - _confirmedKg.Value))
+                ? _cfg.FormatWeight(Math.Abs((_confirmedFirst.FirstWeightKg ?? 0) - _confirmedKg.Value))
                 : "--";
 
             if (_confirmedFirst != null)
@@ -714,21 +717,24 @@ public class WeighEntryDialog : Form
             var first = no.Length == 0 ? null
                 : _manager.GetUnfinishedList().FirstOrDefault(r => r.VehicleNo == no);
 
-            // 票据右列毛/皮/净：实时值进本次行，已存一次磅进对侧行，配对且稳定时预览净重
+            // 票据右列毛/皮/净：本次实时值进当前操作模式对应行，
+            // 已存一次磅按其入库列显示，配对且稳定时预览净重
             string live = _cfg.FormatWeight(_manager.CurrentKg);
-            string saved = first != null ? _cfg.FormatWeight(first.GrossKg ?? 0) : "--";
-            if (_isTare)
+            if (first != null)
             {
-                _lblTareCell.Text = live;
-                _lblGrossCell.Text = saved;
+                string saved = _cfg.FormatWeight(first.FirstWeightKg ?? 0);
+                if (first.FirstWeighIsTare) { _lblTareCell.Text = saved; _lblGrossCell.Text = "--"; }
+                else { _lblGrossCell.Text = saved; _lblTareCell.Text = "--"; }
             }
             else
             {
-                _lblGrossCell.Text = live;
-                _lblTareCell.Text = saved;
+                _lblGrossCell.Text = "--";
+                _lblTareCell.Text = "--";
             }
+            if (_isTare) _lblTareCell.Text = live;
+            else _lblGrossCell.Text = live;
             _lblNetCell.Text = first != null && _manager.IsStable
-                ? _cfg.FormatWeight(Math.Abs((first.GrossKg ?? 0) - _manager.StableKg))
+                ? _cfg.FormatWeight(Math.Abs((first.FirstWeightKg ?? 0) - _manager.StableKg))
                 : "--";
 
             if (first != null)
@@ -846,10 +852,11 @@ public class WeighEntryDialog : Form
         else
         {
             // 第一次称重（品种存 Goods 列；扣重/备注已从表单移除，存 null）
+            // isTare：空车去皮→重量入皮重列、重车过磅→重量入毛重列
             var (ok, msg, newRecord) = _manager.SaveFirstWeigh(
                 no, _txtVariety.Text, null, null,
                 null, null, null,
-                null, _txtOperator.Text, ext, _confirmedKg);
+                null, _txtOperator.Text, ext, _confirmedKg, _isTare);
             if (!ok) { InfoBox(msg, "提示", false); return; }
 
             _savedRecord = newRecord;
@@ -938,7 +945,7 @@ public class WeighEntryDialog : Form
         _keypad.CharPicked += InsertPlateChar;
         _keypad.FormClosed += (_, _) => _keypad = null;
         _keypad.PlaceNear(_txtVehicle);
-        _keypad.Show(this);   // 非模态：编号框保持焦点，可连续点选
+        _keypad.Show(this);   // 非模态；点选一个字符后面板自动关闭，焦点交还编号框
     }
 
     /// <summary>

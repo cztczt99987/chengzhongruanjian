@@ -90,11 +90,12 @@ public class WeighManager : IDisposable
     /// </summary>
     /// <param name="vehicleNo">车号（必填）</param>
     /// <param name="deductKg">扣重（千克）：从净重中扣除的杂重</param>
+    /// <param name="isTare">本次是否为空车去皮（皮重）流程：true 时一次磅重量存皮重列，false 存毛重列</param>
     /// <returns>(是否成功, 提示消息, 保存的记录)</returns>
     public (bool Ok, string Message, WeighRecord? Record) SaveFirstWeigh(string vehicleNo, string? goods,
         string? senderCompany, string? receiverCompany, string? spec, string? batchNo, string? remark,
         double? deductKg, string? operatorName, Dictionary<string, string>? ext = null,
-        double? lockedWeightKg = null)
+        double? lockedWeightKg = null, bool isTare = false)
     {
         // ---- 入参校验 ----
         if (string.IsNullOrWhiteSpace(vehicleNo))
@@ -135,7 +136,10 @@ public class WeighManager : IDisposable
             Spec = spec?.Trim(),
             BatchNo = batchNo?.Trim(),
             Remark = remark?.Trim(),
-            GrossKg = weight.Value,          // 未配对阶段暂存一次磅重量
+            // 未配对阶段按本次操作模式入列：空车去皮→皮重列、重车过磅→毛重列（对应业务规则）；
+            // 二次磅结算时再依据数值大小归位，两种先后顺序均能正确区分毛重/皮重
+            GrossKg = isTare ? null : weight.Value,
+            TareKg = isTare ? weight.Value : null,
             DeductKg = deductKg,
             Operator = operatorName,
             ExtJson = WeighRecord.ExtToJson(ext),
@@ -162,8 +166,9 @@ public class WeighManager : IDisposable
         try
         {
             // 按收费分段计算应收金额（净重 = |一次重量 - 二次重量|；未启用收费时为 null 不计费）
+            // 一次磅重量可能暂存于毛重列（重车过磅先行）或皮重列（空车去皮先行），统一取 FirstWeightKg
             decimal? amountYuan = FeeCalculator.CalculateYuan(
-                Math.Abs((first.GrossKg ?? 0) - weight.Value), AppConfig.Current);
+                Math.Abs((first.FirstWeightKg ?? 0) - weight.Value), AppConfig.Current);
 
             var result = _repo.CompleteSecondWeigh(first.Id, weight.Value, deductKg, operatorName, amountYuan);
             _savedNeedsZero = true;

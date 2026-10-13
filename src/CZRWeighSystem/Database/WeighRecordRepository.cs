@@ -25,11 +25,11 @@ public class WeighRecordRepository
             INSERT INTO t_weigh_record
                 (serial_no, scale_no, vehicle_no, goods, sender_company, receiver_company,
                  deduct_kg, spec, batch_no, remark,
-                 gross_kg, first_time, operator, status, is_manual, ext_json, created_at)
+                 gross_kg, tare_kg, first_time, operator, status, is_manual, ext_json, created_at)
             VALUES
                 (@serial_no, @scale_no, @vehicle_no, @goods, @sender_company, @receiver_company,
                  @deduct_kg, @spec, @batch_no, @remark,
-                 @gross_kg, @first_time, @operator, @status, @is_manual, @ext_json, @created_at);
+                 @gross_kg, @tare_kg, @first_time, @operator, @status, @is_manual, @ext_json, @created_at);
             """ + Db.LastIdSql;
 
         using var cmd = conn.CreateCommand();
@@ -60,7 +60,7 @@ public class WeighRecordRepository
             if (first.Status != "未完成")
                 throw new InvalidOperationException("该记录已完成配对，不能重复结算");
 
-            double firstKg = first.GrossKg ?? 0;
+            double firstKg = first.FirstWeightKg ?? 0;    // 一次磅重量（可能暂存于毛重列或皮重列）
             first.GrossKg = Math.Max(firstKg, secondKg);   // 毛重 = 大值
             first.TareKg = Math.Min(firstKg, secondKg);    // 皮重 = 小值
             first.NetKg = Math.Abs(firstKg - secondKg);    // 净重 = 差值
@@ -432,6 +432,7 @@ public class WeighRecordRepository
         cmd.Add("@batch_no", r.BatchNo);
         cmd.Add("@remark", r.Remark);
         cmd.Add("@gross_kg", r.GrossKg);
+        cmd.Add("@tare_kg", r.TareKg);
         cmd.Add("@first_time", r.FirstTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "");
         cmd.Add("@operator", r.Operator);
         cmd.Add("@status", r.Status);
