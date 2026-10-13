@@ -618,4 +618,22 @@ public class MainFormLayoutTests
             foreach (var s in all) s.Dispose();
         }
     }
+
+    /// <summary>
+    /// 首页单击某路画面：弹窗默认沉浸全屏（无边框最大化铺满整屏），Esc 退出依赖键盘预览；
+    /// 菜单入口的多路预览仍为普通窗口。
+    /// </summary>
+    [Fact]
+    public void 单击画面全屏_无边框最大化_菜单入口保持普通窗口()
+    {
+        using var full = new VideoMonitorForm(new CameraManager(), 1, fullscreen: true);
+        Assert.Equal(FormBorderStyle.None, full.FormBorderStyle);
+        Assert.Equal(FormWindowState.Maximized, full.WindowState);
+        Assert.Equal(FormStartPosition.Manual, full.StartPosition);
+        Assert.True(full.KeyPreview);   // 按 Esc 退出全屏
+
+        using var normal = new VideoMonitorForm(new CameraManager());
+        Assert.NotEqual(FormBorderStyle.None, normal.FormBorderStyle);
+        Assert.NotEqual(FormWindowState.Maximized, normal.WindowState);
+    }
 }

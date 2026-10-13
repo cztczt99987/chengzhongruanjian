@@ -7,18 +7,22 @@ namespace CZRWeighSystem.UI;
 /// 视频监控弹窗（对应 PRD F7-01 多路预览）。
 /// 共享主界面 CameraManager 的画面源，仅作显示视图：
 /// 关闭窗体不停止取流，保存称重时的自动抓拍（F7-02）不受影响。
-/// focusCameraIndex 指定时只放大显示该路（首页单击某路画面进入单路大图），为空则平铺显示全部路数。
+/// focusCameraIndex 指定时只显示该路；为空则平铺显示全部路数（菜单入口的多路预览）。
+/// fullscreen=true 时以无边框全屏呈现，仅用于首页单击某路画面进入单路沉浸查看；
+/// 切换其他路需关闭弹窗后回首页点击对应画面。
 /// </summary>
 public class VideoMonitorForm : Form
 {
     private readonly CameraManager _cameras;
     private readonly int? _focusCameraIndex;
+    private readonly bool _fullscreen;
     private readonly List<(ICameraSource Src, Action Handler)> _bindings = [];
 
-    public VideoMonitorForm(CameraManager cameras, int? focusCameraIndex = null)
+    public VideoMonitorForm(CameraManager cameras, int? focusCameraIndex = null, bool fullscreen = false)
     {
         _cameras = cameras;
         _focusCameraIndex = focusCameraIndex;
+        _fullscreen = fullscreen;
         Text = "视频监控（保存称重时自动抓拍留证）";
         StartPosition = FormStartPosition.CenterParent;
         AutoScaleMode = AutoScaleMode.Dpi;   // 高 DPI 下避免文字截断
@@ -29,8 +33,42 @@ public class VideoMonitorForm : Form
         Font = new Font("Microsoft YaHei UI", 10F);
 
         BuildUi();
+
+        if (_fullscreen)
+        {
+            ApplyFullscreen(this);
+            KeyPreview = true;
+            KeyDown += (_, e) => { if (e.KeyCode == Keys.Escape) Close(); };
+            var exitHint = BuildExitHint();
+            Controls.Add(exitHint);
+            exitHint.BringToFront();   // 浮在平铺画面之上
+        }
+
         FormClosed += (_, _) => UnbindAll();
     }
+
+    /// <summary>
+    /// 沉浸全屏：无边框铺满画面所在显示器（覆盖任务栏），配合 Esc / 双击画面退出。
+    /// </summary>
+    internal static void ApplyFullscreen(Form form)
+    {
+        form.FormBorderStyle = FormBorderStyle.None;
+        form.StartPosition = FormStartPosition.Manual;
+        form.Bounds = Screen.FromPoint(Cursor.Position).Bounds;   // 多显示器时落在当前点击的那块屏
+        form.WindowState = FormWindowState.Maximized;
+        form.MinimumSize = Size.Empty;
+    }
+
+    /// <summary>全屏退出提示（浮在画面上方，不影响观看）。</summary>
+    private static Label BuildExitHint()
+        => new()
+        {
+            Text = "按 Esc 或双击画面退出全屏",
+            AutoSize = true,
+            BackColor = Color.FromArgb(140, 0, 0, 0),
+            ForeColor = Color.White,
+            Location = new Point(12, 12),
+        };
 
     /// <summary>按聚焦索引选择要显示的摄像头源；索引为空或非法时回退显示全部。</summary>
     internal static IReadOnlyList<ICameraSource> SelectSources(IReadOnlyList<ICameraSource> all, int? focus)
@@ -98,6 +136,10 @@ public class VideoMonitorForm : Form
                 BackColor = Color.FromArgb(120, 0, 0, 0),
                 ForeColor = Color.White,
             });
+
+            // 全屏模式下双击画面退出（单击不切换路数：看其他路请关闭后回首页点击）
+            if (_fullscreen)
+                pic.DoubleClick += (_, _) => Close();
 
             // 帧刷新：可能来自非 UI 线程，转发到 UI 线程（窗体关闭后不再处理）
             void OnFrame()

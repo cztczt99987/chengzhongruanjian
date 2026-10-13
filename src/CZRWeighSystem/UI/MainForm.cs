@@ -403,7 +403,7 @@ public class MainForm : Form
     {
         _videoPanel = new GroupBox
         {
-            Text = "视频监控（最多 3 路，单击画面放大查看该路）",
+            Text = "视频监控（最多 3 路，单击画面全屏查看该路）",
             Location = new Point(20, CameraY),
             Size = new Size(ClientSize.Width - 40, CameraH),   // 通栏铺满，统计面板悬浮其右上角
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
@@ -515,10 +515,10 @@ public class MainForm : Form
         };
         pic.Controls.Add(hint);
 
-        // 单击画面放大查看该路摄像头（大屏弹窗只显示点击的这一路）
+        // 单击画面进入沉浸全屏，只显示点击的这一路（看其他路需关闭后回首页点击对应画面）
         pic.Click += (_, _) =>
         {
-            using var f = new VideoMonitorForm(_cameras, index - 1);
+            using var f = new VideoMonitorForm(_cameras, index - 1, fullscreen: true);
             f.ShowDialog(this);
         };
 
