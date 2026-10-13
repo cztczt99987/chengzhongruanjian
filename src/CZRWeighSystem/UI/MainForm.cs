@@ -75,6 +75,7 @@ public class MainForm : Form
     private GroupBox _capturePanel = null!;
     private DataGridView _captureGrid = null!;
     private ComboBox _cboPageSize = null!;   // 显示条数：20/50/70/100/今日全部（默认 20）
+    private ContextMenuStrip _captureMenu = null!;   // 记录行右键菜单：当日记录/打印预览/过磅视图
     /// <summary>条数下拉框"今日全部"选项（选中时显示今日全部记录，不限条数）。</summary>
     internal const string TodayAllPageSizeText = "今日全部";
     private RadioButton _rdoKg = null!;      // 显示单位 kg（快速切换，写回 config.Unit）
@@ -730,7 +731,7 @@ public class MainForm : Form
         int gridH = Math.Max(120, ClientSize.Height - 34 - _gridY);
         _capturePanel = new GroupBox
         {
-            Text = "称重记录（双击未完成行带车号结算）",
+            Text = "称重记录（双击未完成行结算，右键更多操作）",
             Location = new Point(20, _gridY),
             Size = new Size(ClientSize.Width - 40, gridH),
             Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
@@ -801,6 +802,8 @@ public class MainForm : Form
                 OpenWeighEntry(isTare: false, prefillVehicle: r.VehicleNo);
             }
         };
+
+        BuildRecordContextMenu();   // 记录行右键菜单（当日记录/打印预览/过磅视图）
 
         // 显示条数选择（20/50/70/100/今日全部，默认 20）：置于表格上方预留条带内，紧贴面板右缘
         var lblPage = new Label
@@ -945,6 +948,64 @@ public class MainForm : Form
     /// <summary>当前条数档位对应的条数（非数字档位如「今日全部」回退默认 20）。</summary>
     private int SelectedPageSize() =>
         int.TryParse(_cboPageSize.Text, out int n) && n > 0 ? n : 20;
+
+    // ---------- 记录行右键菜单（对应参考版式：当日记录 / 打印预览 / 过磅视图） ----------
+    /// <summary>为称重记录列表挂右键菜单：右键先选中该行，再按菜单项操作。</summary>
+    private void BuildRecordContextMenu()
+    {
+        _captureMenu = new ContextMenuStrip();
+        _captureMenu.Items.Add("当日记录", ShortcutIcon.Draw("daily", 16), (_, _) => OpenDailyRecords());
+        _captureMenu.Items.Add("打印预览", ShortcutIcon.Draw("printer", 16), (_, _) => PrintPreviewSelected());
+        _captureMenu.Items.Add("过磅视图", ShortcutIcon.Draw("camera", 16), (_, _) => ShowSelectedCaptures());
+        _captureGrid.ContextMenuStrip = _captureMenu;
+
+        // 右键即选中光标所在行（菜单动作作用于该行）；右键空白处则取消选中
+        _captureGrid.CellMouseDown += (_, e) =>
+        {
+            if (e.Button != MouseButtons.Right) return;
+            _captureGrid.ClearSelection();
+            if (e.RowIndex < 0) return;
+            _captureGrid.CurrentCell = _captureGrid.Rows[e.RowIndex].Cells[0];
+            _captureGrid.Rows[e.RowIndex].Selected = true;
+        };
+    }
+
+    /// <summary>当前选中的记录（未选中返回 null）。</summary>
+    private WeighRecord? SelectedRecord => _captureGrid.CurrentRow?.Tag as WeighRecord;
+
+    /// <summary>右键-当日记录：打开记录查询页并只看该记录当天的全部记录。</summary>
+    private void OpenDailyRecords()
+    {
+        if (SelectedRecord is not { } r) { WarnNoRecordSelected(); return; }
+        using var f = new RecordQueryForm(r.FirstTime?.Date ?? DateTime.Today);
+        f.ShowDialog(this);
+    }
+
+    /// <summary>右键-打印预览：预览该条记录的磅单（不耗纸）。</summary>
+    private void PrintPreviewSelected()
+    {
+        if (SelectedRecord is not { } r) { WarnNoRecordSelected(); return; }
+        Report.PoundTicketPrinter.PrintPreview(r);
+    }
+
+    /// <summary>右键-过磅视图：查看该次过磅的抓拍存证图片（对应 PRD F7-03）。</summary>
+    private void ShowSelectedCaptures()
+    {
+        if (SelectedRecord is not { } r) { WarnNoRecordSelected(); return; }
+        var files = Video.CameraManager.FindCaptures(r.SerialNo);
+        if (files.Count == 0)
+        {
+            MessageBox.Show($"记录 {r.SerialNo} 没有抓拍图片\n（抓拍图片保存在 exe 目录 captures/ 下）",
+                "抓拍查询", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        using var f = new CaptureViewForm(r.SerialNo, files);
+        f.ShowDialog(this);
+    }
+
+    private static void WarnNoRecordSelected() =>
+        MessageBox.Show("请先在称重记录上点击右键选择一条记录", "提示",
+            MessageBoxButtons.OK, MessageBoxIcon.Warning);
 
     /// <summary>保存称重后自动抓拍（对应 PRD F7-02），返回存档路径数。</summary>
     private int CaptureFor(string serialNo)

@@ -3,9 +3,11 @@ using System.Drawing.Drawing2D;
 namespace CZRWeighSystem.UI;
 
 /// <summary>
-/// 顶部工具栏快捷方式图标（纯代码绘制的彩色扁平风、透明背景）：
-/// 记录查询=文档放大镜、报表统计=柱状图、视频监控=显示器、基础资料=数据库、
-/// 计算器=计算器、退出=电源键。统一 64×64 画布与圆角语言，按目标尺寸等比缩放。
+/// 界面图标（纯代码绘制的彩色扁平风、透明背景）：
+/// 顶部工具栏快捷方式——记录查询=文档放大镜、报表统计=柱状图、视频监控=显示器、基础资料=数据库、
+/// 计算器=计算器、退出=电源键；
+/// 记录列表右键菜单——当日记录=列表、打印预览=打印机、过磅视图=摄像机。
+/// 统一 64×64 画布与圆角语言，按目标尺寸等比缩放。
 /// </summary>
 internal static class ShortcutIcon
 {
@@ -33,6 +35,9 @@ internal static class ShortcutIcon
             case "base": DrawBase(g); break;
             case "calc": DrawCalc(g); break;
             case "exit": DrawExit(g); break;
+            case "daily": DrawDaily(g); break;
+            case "printer": DrawPrinter(g); break;
+            case "camera": DrawCamera(g); break;
             default: throw new ArgumentException($"未知快捷图标：{name}", nameof(name));
         }
         return bmp;
@@ -144,6 +149,63 @@ internal static class ShortcutIcon
         // 圆环缺口朝上（GDI+ 角度 0=右、顺时针：340° 起扫 220°，缺口 200°→340° 经过顶部 270°）
         g.DrawArc(pen, 12, 12, 40, 40, 340, 220);
         g.DrawLine(pen, 32, 8, 32, 30);
+    }
+
+    /// <summary>当日记录：蓝框列表（表头 + 三行数据）。</summary>
+    private static void DrawDaily(Graphics g)
+    {
+        using var card = RoundedRect(8, 6, 48, 52, 5);
+        using var paper = new SolidBrush(Paper);
+        g.FillPath(paper, card);
+        using var border = new Pen(Blue, 3);
+        g.DrawPath(border, card);
+        using var head = new SolidBrush(Blue);
+        g.FillRectangle(head, 14, 13, 36, 8);
+        using var line = new SolidBrush(Color.FromArgb(126, 136, 150));
+        for (int i = 0; i < 3; i++)
+            g.FillRectangle(line, 14, 27 + i * 9, 36, 3);
+    }
+
+    /// <summary>打印预览：灰色打印机 + 进出纸。</summary>
+    private static void DrawPrinter(Graphics g)
+    {
+        // 进纸（上方白纸）
+        using var top = new SolidBrush(Paper);
+        g.FillRectangle(top, 18, 4, 28, 14);
+        using var topLine = new SolidBrush(Color.FromArgb(150, 160, 172));
+        g.FillRectangle(topLine, 22, 8, 20, 2);
+        g.FillRectangle(topLine, 22, 12, 14, 2);
+        // 机身
+        using var body = RoundedRect(6, 18, 52, 26, 4);
+        using var bb = new SolidBrush(Color.FromArgb(74, 84, 98));
+        g.FillPath(bb, body);
+        // 出纸（下方白纸）
+        using var outc = new SolidBrush(Paper);
+        g.FillRectangle(outc, 16, 40, 32, 18);
+        using var outLine = new SolidBrush(Color.FromArgb(126, 136, 150));
+        g.FillRectangle(outLine, 20, 46, 24, 2);
+        g.FillRectangle(outLine, 20, 51, 18, 2);
+        // 状态灯
+        using var led = new SolidBrush(Green);
+        g.FillEllipse(led, 46, 23, 6, 6);
+    }
+
+    /// <summary>过磅视图：蓝色摄像机（机身 + 镜头 + 支座）。</summary>
+    private static void DrawCamera(Graphics g)
+    {
+        using var body = RoundedRect(10, 18, 34, 24, 4);
+        using var bb = new LinearGradientBrush(new Rectangle(10, 18, 34, 24),
+            Color.FromArgb(74, 148, 224), BlueDark, 90f);
+        g.FillPath(bb, body);
+        // 镜头
+        using var lens = new SolidBrush(Color.FromArgb(30, 52, 84));
+        g.FillRectangle(lens, 44, 22, 10, 16);
+        using var ring = new Pen(Color.FromArgb(200, 214, 230), 2);
+        g.DrawRectangle(ring, 44, 22, 10, 16);
+        // 支座
+        using var mount = new SolidBrush(BlueDark);
+        g.FillRectangle(mount, 22, 42, 8, 8);
+        g.FillRectangle(mount, 12, 50, 28, 5);
     }
 
     /// <summary>圆角矩形路径。</summary>

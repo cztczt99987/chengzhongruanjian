@@ -27,7 +27,11 @@ public class RecordQueryForm : Form
     private DataGridView _grid = null!;         // 结果表格
     private Label _lblSummary = null!;          // 合计信息
 
-    public RecordQueryForm()
+    /// <param name="presetDate">
+    /// 预置查询日期（首页记录行右键「当日记录」传入该行日期）：日期范围锁定为当天，
+    /// 并清空车号/货物/单位条件、状态复位为"全部"，即只看该日全部记录；为空则默认近 30 天。
+    /// </param>
+    public RecordQueryForm(DateTime? presetDate = null)
     {
         Text = "称重记录查询";
         StartPosition = FormStartPosition.CenterParent;
@@ -39,6 +43,17 @@ public class RecordQueryForm : Form
         BuildCondition();
         BuildGrid();
         BuildBottom();
+
+        if (presetDate is { } d)
+        {
+            _dtpFrom.Value = d.Date;
+            _dtpTo.Value = d.Date;
+            _txtVehicle.Clear();
+            _txtGoods.Clear();
+            _txtCompany.Clear();
+            _cboStatus.SelectedIndex = 0;
+            Text = $"称重记录查询 - {d:yyyy-MM-dd} 当日记录";
+        }
 
         Load += (_, _) => DoQuery();   // 打开即默认查询（近 30 天）
     }
