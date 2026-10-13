@@ -403,6 +403,48 @@ public class MainFormLayoutTests
         });
     }
 
+    /// <summary>
+    /// 记录列表条带新增「刷新」按钮：位于称重记录面板内、随面板右上角锚定，
+    /// 点击后按当前条数档位重新查询数据库刷新下方列表（列表被清空后点刷新可恢复）。
+    /// </summary>
+    [Fact]
+    public void 记录列表_新增刷新按钮_点击重新加载列表()
+    {
+        Db.Initialize();
+        var repo = new WeighRecordRepository();
+        string vehicle = "刷" + Guid.NewGuid().ToString("N")[..6];
+        repo.InsertFirstWeigh(new WeighRecord
+        {
+            ScaleNo = "95", VehicleNo = vehicle, FirstTime = DateTime.Now, Status = "未完成",
+        });
+
+        RunOnSta(() =>
+        {
+            using var form = new MainForm();
+            var panel = (GroupBox)Fld(form, "_capturePanel");
+            var grid = (DataGridView)Fld(form, "_captureGrid");
+            var btn = (Button)Fld(form, "_btnRefresh");
+
+            Assert.Same(panel, btn.Parent);                                  // 位于称重记录面板内
+            Assert.Equal("刷 新", btn.Text);
+            Assert.True(btn.Anchor.HasFlag(AnchorStyles.Top) && btn.Anchor.HasFlag(AnchorStyles.Right),
+                "刷新按钮应随面板右上角锚定");
+            Assert.True(btn.Bottom <= grid.Top,
+                $"刷新按钮(底边={btn.Bottom})与表格(顶边={grid.Top})重叠，会被表格压住");
+
+            static bool Has(DataGridView g, string v) => g.Rows.Cast<DataGridViewRow>()
+                .Any(r => (string)r.Cells["VehicleNo"].Value! == v);
+            Assert.True(Has(grid, vehicle), "构造后列表应已加载该记录");
+
+            grid.Rows.Clear();                                               // 模拟列表被清空/数据已过期
+            Assert.Empty(grid.Rows);
+            // 窗体未显示时 PerformClick 不触发（CanSelect=false）→ 直接触发 Click 事件
+            typeof(Control).GetMethod("OnClick", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .Invoke(btn, [EventArgs.Empty]);
+            Assert.True(Has(grid, vehicle), "点击刷新后应从数据库重新加载记录列表");
+        });
+    }
+
     [Fact]
     public void 底部记录列表_表头与内容单行完整展示_窄窗出横向滚动()
     {

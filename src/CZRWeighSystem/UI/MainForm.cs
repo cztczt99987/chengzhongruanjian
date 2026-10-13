@@ -75,6 +75,7 @@ public class MainForm : Form
     private GroupBox _capturePanel = null!;
     private DataGridView _captureGrid = null!;
     private ComboBox _cboPageSize = null!;   // 显示条数：20/50/70/100/今日全部（默认 20）
+    private Button _btnRefresh = null!;      // 记录列表「刷新」按钮：按当前条数档位重新查询刷新列表
     private ContextMenuStrip _captureMenu = null!;   // 记录行右键菜单：当日记录/打印预览/过磅视图
     /// <summary>条数下拉框"今日全部"选项（选中时显示今日全部记录，不限条数）。</summary>
     internal const string TodayAllPageSizeText = "今日全部";
@@ -846,15 +847,27 @@ public class MainForm : Form
         _rdoKg.CheckedChanged += (_, _) => SwitchUnit("kg");
         _rdoTon.CheckedChanged += (_, _) => SwitchUnit("t");
 
+        // 刷新按钮（位于单位/条数左侧）：点击按当前条数档位重新查询数据库，刷新下方记录列表
+        _btnRefresh = new Button
+        {
+            Text = "刷 新",
+            Size = new Size(70, 28),
+            Location = new Point(_capturePanel.Width - 466, 16),
+            FlatStyle = FlatStyle.Flat,
+            Anchor = AnchorStyles.Top | AnchorStyles.Right,
+        };
+        _btnRefresh.Click += (_, _) => RefreshGrid();
+
         _capturePanel.Controls.Add(_captureGrid);
         _capturePanel.Controls.Add(lblPage);
         _capturePanel.Controls.Add(_cboPageSize);
-        _capturePanel.Controls.AddRange([_rdoKg, _rdoTon]);
+        _capturePanel.Controls.AddRange([_rdoKg, _rdoTon, _btnRefresh]);
         // 表格先加入 → 处于 z 序前层，会把后加入的控件压住；显式置前保证条数选择框始终可见
         lblPage.BringToFront();
         _cboPageSize.BringToFront();
         _rdoKg.BringToFront();
         _rdoTon.BringToFront();
+        _btnRefresh.BringToFront();
         Controls.Add(_capturePanel);
     }
 
