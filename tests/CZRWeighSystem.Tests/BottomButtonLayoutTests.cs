@@ -1,3 +1,4 @@
+using CZRWeighSystem.Database;
 using CZRWeighSystem.UI;
 using System.Reflection;
 
@@ -7,7 +8,9 @@ namespace CZRWeighSystem.Tests;
 /// 底部按钮布局回归测试：收费功能设置与登录窗体的底部按钮曾被上方
 /// AutoSize 说明/提示文字压住（高 DPI 下文字更高，遮挡更明显）。
 /// 锁定规则：上方文字底边不得低于按钮顶边，按钮须完整落在窗体客户区内。
+/// 与窗体测试同集合串行执行：登录窗体构造时会读取用户表填充账号下拉框。
 /// </summary>
+[Collection("数据库顺序")]
 public class BottomButtonLayoutTests
 {
     /// <summary>在 STA 线程上执行测试体（WinForms 控件只能在 STA 线程访问）。</summary>
@@ -49,6 +52,7 @@ public class BottomButtonLayoutTests
     {
         RunOnSta(() =>
         {
+            Db.Initialize();   // 与 Program.Main 启动顺序一致：先建表再创建登录框（幂等）
             using var f = new LoginForm();
             var lbl = (Label)typeof(LoginForm).GetField("_lblError",
                 BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(f)!;
@@ -67,20 +71,23 @@ public class BottomButtonLayoutTests
     }
 
     [Fact]
-    public void 登录窗体_账号密码初始为空_聚焦账号框()
+    public void 登录窗体_账号改为下拉框列出全部用户_仅需填密码()
     {
         RunOnSta(() =>
         {
+            Db.Initialize();   // 与 Program.Main 启动顺序一致：先建表再创建登录框（幂等）
             using var f = new LoginForm();
             object Fld(string name) => typeof(LoginForm)
                 .GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(f)!;
-            var user = (TextBox)Fld("_txtUser");
+            var combo = (ComboBox)Fld("_cboUser");
             var pwd = (TextBox)Fld("_txtPwd");
 
-            // 用户要求：不再预填账号/密码，留空让人手动输入
-            Assert.Equal("", user.Text);
+            // 用户要求：账号改为下拉框形式，下拉里是全部用户，用户只需填密码
+            Assert.Equal(ComboBoxStyle.DropDownList, combo.DropDownStyle);   // 只能选择，不能手输
+            Assert.Equal(new UserRepository().GetAll().Count, combo.Items.Count);
+            Assert.True(combo.SelectedIndex >= 0, "下拉框应默认选中一个账号");
             Assert.Equal("", pwd.Text);
-            Assert.Same(user, f.ActiveControl);   // 聚焦账号框，便于直接输入
+            Assert.Same(pwd, f.ActiveControl);   // 账号已选好，焦点直接落在密码框
         });
     }
 

@@ -5,17 +5,18 @@ namespace CZRWeighSystem.UI;
 
 /// <summary>
 /// 登录窗体（对应 PRD 5.1 登录与用户管理）。
-/// 账号密码登录；连续错误 5 次锁定 10 分钟（F1-01）；
-/// 首次登录使用初始密码时强制修改（第 3 章说明）。
+/// 账号从下拉框选择全部用户、用户只需手工输入密码（2026-10-14 用户要求）；
+/// 连续错误 5 次锁定 10 分钟（F1-01）；首次登录使用初始密码时强制修改（第 3 章说明）。
 /// </summary>
 public class LoginForm : Form
 {
     private readonly UserRepository _repo = new();
 
-    private TextBox _txtUser = null!;     // 账号
-    private TextBox _txtPwd = null!;      // 密码
-    private Label _lblError = null!;      // 错误提示
-    private Button _btnLogin = null!;     // 登录按钮
+    private ComboBox _cboUser = null!;        // 账号（下拉选择全部用户）
+    private readonly List<User> _users = [];  // 与下拉项一一对应：SelectedIndex 即本列表索引
+    private TextBox _txtPwd = null!;          // 密码
+    private Label _lblError = null!;          // 错误提示
+    private Button _btnLogin = null!;         // 登录按钮
 
     public LoginForm()
     {
@@ -47,8 +48,13 @@ public class LoginForm : Form
 
         var lblUser = new Label
         { Text = "账号：", AutoSize = true, Location = new Point(50, 105) };
-        _txtUser = new TextBox
-        { Location = new Point(120, 100), Size = new Size(210, 28) };
+        _cboUser = new ComboBox
+        {
+            Location = new Point(120, 100),
+            Size = new Size(210, 28),
+            DropDownStyle = ComboBoxStyle.DropDownList,   // 只能从列表选择，避免手工输入不存在的账号
+        };
+        LoadUsers();
 
         var lblPwd = new Label
         { Text = "密码：", AutoSize = true, Location = new Point(50, 150) };
@@ -95,7 +101,7 @@ public class LoginForm : Form
         };
 
         // 回车即提交（账号框回车跳到密码框）
-        _txtUser.KeyDown += (_, e) =>
+        _cboUser.KeyDown += (_, e) =>
         {
             if (e.KeyCode == Keys.Enter) { _txtPwd.Focus(); e.SuppressKeyPress = true; }
         };
@@ -105,10 +111,25 @@ public class LoginForm : Form
         };
 
         Controls.AddRange(new Control[]
-        { lblTitle, lblUser, _txtUser, lblPwd, _txtPwd, _lblError, _btnLogin, btnExit });
+        { lblTitle, lblUser, _cboUser, lblPwd, _txtPwd, _lblError, _btnLogin, btnExit });
 
         AcceptButton = _btnLogin;          // 窗体级回车触发登录
-        ActiveControl = _txtUser;          // 账号/密码初始为空，聚焦账号框便于直接输入
+        ActiveControl = _txtPwd;           // 账号已从下拉框选好，焦点直接落在密码框：用户只需填密码
+    }
+
+    /// <summary>
+    /// 把全部用户填入账号下拉框（账号只从下拉选择，密码由用户手工输入）。
+    /// 默认选中第一个「启用」账号，找不到时回退到第一项。
+    /// </summary>
+    private void LoadUsers()
+    {
+        _users.AddRange(_repo.GetAll());
+        foreach (var u in _users)
+            _cboUser.Items.Add(u.Username);
+
+        _cboUser.SelectedIndex = _users.FindIndex(u => u.Enabled);
+        if (_cboUser.SelectedIndex < 0 && _users.Count > 0)
+            _cboUser.SelectedIndex = 0;
     }
 
     /// <summary>执行登录验证。</summary>
@@ -117,7 +138,14 @@ public class LoginForm : Form
         _lblError.ForeColor = Color.Gray;
         _lblError.Text = "正在验证...";
 
-        var result = _repo.Login(_txtUser.Text, _txtPwd.Text);
+        if (_cboUser.SelectedIndex < 0)
+        {
+            _lblError.ForeColor = Color.Red;
+            _lblError.Text = "请选择账号";
+            return;
+        }
+
+        var result = _repo.Login(_users[_cboUser.SelectedIndex].Username, _txtPwd.Text);
 
         if (!result.Ok)
         {

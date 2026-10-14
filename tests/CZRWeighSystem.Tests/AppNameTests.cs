@@ -41,6 +41,7 @@ public class AppNameTests
         bool hasTitleLabel = false;
         var thread = new Thread(() =>
         {
+            Db.Initialize();   // 与 Program.Main 启动顺序一致：先建表再创建登录框（构造时会读用户表填充账号下拉框）
             using var form = new LoginForm();
             caption = form.Text;
             hasTitleLabel = form.Controls.Cast<Control>()
