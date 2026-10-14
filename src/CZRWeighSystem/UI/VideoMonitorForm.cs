@@ -3,23 +3,19 @@ using CZRWeighSystem.Video;
 namespace CZRWeighSystem.UI;
 
 /// <summary>
-/// 视频监控弹窗（对应 PRD F7-01 多路预览）。
+/// 视频监控弹窗（对应 PRD F7-01 多路预览）：平铺显示全部路数，仅供菜单入口 /「视频监控」快捷方式使用。
 /// 共享主界面 CameraManager 的画面源，仅作显示视图：
 /// 关闭窗体不停止取流，保存称重时的自动抓拍（F7-02）不受影响。
-/// focusCameraIndex 指定时只显示该路（首页单击画面放大该路）；为空则平铺显示全部路数（菜单入口的多路预览）。
-/// 均为带边框的普通窗口：首页放大时不占满屏幕、且以非模态打开，
-/// 放大后仍可继续点击首页的「空车去皮 / 重车过磅」按钮。
+/// 首页单击某路画面放大走内联方案（MainForm.ToggleCameraZoom），不再开这个弹窗。
 /// </summary>
 public class VideoMonitorForm : Form
 {
     private readonly CameraManager _cameras;
-    private readonly int? _focusCameraIndex;
     private readonly List<(ICameraSource Src, Action Handler)> _bindings = [];
 
-    public VideoMonitorForm(CameraManager cameras, int? focusCameraIndex = null)
+    public VideoMonitorForm(CameraManager cameras)
     {
         _cameras = cameras;
-        _focusCameraIndex = focusCameraIndex;
         Text = "视频监控（保存称重时自动抓拍留证）";
         StartPosition = FormStartPosition.CenterParent;
         AutoScaleMode = AutoScaleMode.Dpi;   // 高 DPI 下避免文字截断
@@ -33,10 +29,6 @@ public class VideoMonitorForm : Form
 
         FormClosed += (_, _) => UnbindAll();
     }
-
-    /// <summary>按聚焦索引选择要显示的摄像头源；索引为空或非法时回退显示全部。</summary>
-    internal static IReadOnlyList<ICameraSource> SelectSources(IReadOnlyList<ICameraSource> all, int? focus)
-        => focus is int i && i >= 0 && i < all.Count ? new[] { all[i] } : all;
 
     private void BuildUi()
     {
@@ -52,9 +44,7 @@ public class VideoMonitorForm : Form
             return;
         }
 
-        var sources = SelectSources(_cameras.Sources, _focusCameraIndex);
-        if (sources.Count == 1)
-            Text = $"视频监控 - {sources[0].Name}";
+        var sources = _cameras.Sources;
 
         int count = sources.Count;
         int cols = count == 1 ? 1 : 2;

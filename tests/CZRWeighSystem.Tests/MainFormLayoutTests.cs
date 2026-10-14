@@ -632,33 +632,56 @@ public class MainFormLayoutTests
         Assert.Equal(Rectangle.Empty, MainForm.FitCover(0, 100, 400, 300));
     }
 
+    /// <summary>测试注入摄像头源（不启动取流）：直接写入 CameraManager 的私有源列表。</summary>
+    private static void InjectSources(MainForm form, params string[] names)
+    {
+        var cameras = (CameraManager)Fld(form, "_cameras");
+        var list = (List<ICameraSource>)typeof(CameraManager)
+            .GetField("_sources", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(cameras)!;
+        foreach (var n in names) list.Add(new SimulatedCameraSource(n));
+    }
+
     /// <summary>
-    /// 单击某路画面放大查看：按聚焦索引只显示该路，索引为空/非法时回退显示全部。
+    /// 首页单击某路画面 = 在首页内联放大（不弹窗）：放大面板铺满"视频监控区 + 今日汇总行 + 称重记录"
+    /// 整块区域（用户截图红框），再次单击同一路还原；未配置的路（索引越界）不改动当前放大态。
     /// </summary>
     [Fact]
-    public void 单击画面放大_按索引只显示该路_非法索引回退全部()
+    public void 首页单击画面_内联放大_覆盖视频区与记录列表_再次点击还原()
     {
-        var all = new List<ICameraSource>
+        Db.Initialize();
+        RunOnSta(() =>
         {
-            new SimulatedCameraSource("CAM1"),
-            new SimulatedCameraSource("CAM2"),
-            new SimulatedCameraSource("CAM3"),
-        };
-        try
-        {
-            Assert.Equal(3, VideoMonitorForm.SelectSources(all, null).Count);
+            using var form = new MainForm();
+            InjectSources(form, "CAM1", "CAM2", "CAM3");
 
-            var one = VideoMonitorForm.SelectSources(all, 1);
-            Assert.Single(one);
-            Assert.Equal("CAM2", one[0].Name);
+            var video = (GroupBox)Fld(form, "_videoPanel");
+            var capture = (GroupBox)Fld(form, "_capturePanel");
+            var zoom = (GroupBox)Fld(form, "_videoZoomPanel");
 
-            Assert.Equal(3, VideoMonitorForm.SelectSources(all, 9).Count);    // 越界 → 全部
-            Assert.Equal(3, VideoMonitorForm.SelectSources(all, -1).Count);
-        }
-        finally
-        {
-            foreach (var s in all) s.Dispose();
-        }
+            Assert.Equal(-1, (int)Fld(form, "_enlargedCameraIndex"));   // 初始：3 路平铺
+
+            // 覆盖范围：与视频区同左缘同宽，顶边=视频区顶边，底边=记录列表底边（含今日汇总行）
+            var region = form.ZoomRegion();
+            Assert.Equal(video.Left, region.Left);
+            Assert.Equal(video.Right, region.Right);
+            Assert.Equal(video.Top, region.Top);
+            Assert.Equal(capture.Bottom, region.Bottom);
+
+            form.ToggleCameraZoom(1);                                   // 放大第 2 路
+            Assert.Equal(1, (int)Fld(form, "_enlargedCameraIndex"));
+            Assert.Equal(region, zoom.Bounds);                          // 铺满红框范围
+            Assert.Contains("CAM2", zoom.Text);
+
+            form.ToggleCameraZoom(1);                                   // 再次点击同一路 → 还原
+            Assert.Equal(-1, (int)Fld(form, "_enlargedCameraIndex"));
+
+            form.ToggleCameraZoom(1);                                   // 再放大
+            Assert.Equal(1, (int)Fld(form, "_enlargedCameraIndex"));
+            form.ToggleCameraZoom(9);                                   // 越界索引（未配置的路）：不改动
+            Assert.Equal(1, (int)Fld(form, "_enlargedCameraIndex"));
+            form.ToggleCameraZoom(-1);
+            Assert.Equal(1, (int)Fld(form, "_enlargedCameraIndex"));
+        });
     }
 
     /// <summary>
@@ -718,22 +741,40 @@ public class MainFormLayoutTests
     }
 
     /// <summary>
-    /// 首页单击某路画面：以带边框的普通窗口放大该路，不再进入无边框全屏（2026-10-14 用户要求
-    /// "点击放大时不要全屏，放大之后也要能点击皮重和毛重的按钮"）；首页以非模态 Show 打开该窗口
-    /// （见 MainForm.ShowCameraPopup），故放大期间「空车去皮 / 重车过磅」按钮仍可点击；
-    /// 菜单入口的多路预览同为普通窗口。
+    /// 首页放大改为内联面板（不再弹窗）：放大视图与视频区同锚定、默认隐藏、画面角标提示"单击画面还原"；
+    /// 菜单入口的多路预览仍为普通带边框窗口（非全屏、无 Esc 退出）。
     /// </summary>
     [Fact]
-    public void 首页放大画面_为普通窗口而非全屏()
+    public void 首页放大_为内联面板而非全屏弹窗()
     {
-        using var popup = new VideoMonitorForm(new CameraManager(), 1);
-        Assert.NotEqual(FormBorderStyle.None, popup.FormBorderStyle);        // 带边框，非无边框
-        Assert.NotEqual(FormWindowState.Maximized, popup.WindowState);       // 不最大化铺满屏幕
-        Assert.False(popup.KeyPreview);                                      // 不再有 Esc 退出全屏
-        Assert.DoesNotContain(popup.Controls.OfType<Label>(), l => l.Text.Contains("退出全屏"));
+        Db.Initialize();
+        RunOnSta(() =>
+        {
+            using var form = new MainForm();
+            var zoom = (GroupBox)Fld(form, "_videoZoomPanel");
+            Assert.StartsWith("视频监控", zoom.Text);
+            Assert.True(zoom.Anchor.HasFlag(AnchorStyles.Top | AnchorStyles.Bottom
+                | AnchorStyles.Left | AnchorStyles.Right), "放大视图应随窗口伸缩");
+            var pic = (PictureBox)Fld(form, "_zoomPic");
+            Assert.Contains(pic.Controls.OfType<Label>(), l => l.Text.Contains("单击画面还原"));
+        });
 
         using var multi = new VideoMonitorForm(new CameraManager());
-        Assert.NotEqual(FormBorderStyle.None, multi.FormBorderStyle);
+        Assert.NotEqual(FormBorderStyle.None, multi.FormBorderStyle);      // 菜单多路预览：带边框普通窗口
         Assert.NotEqual(FormWindowState.Maximized, multi.WindowState);
+        Assert.False(multi.KeyPreview);
+    }
+
+    /// <summary>
+    /// 放大开启后的短时间内忽略还原点击：首页双击画面时第二击会落在刚铺开的大画面上，
+    /// 若响应会"放大又立刻还原"（保护窗 400ms）。
+    /// </summary>
+    [Fact]
+    public void 放大还原点击保护窗_开启后短时间内不响应()
+    {
+        var opened = new DateTime(2026, 10, 14, 12, 0, 0, DateTimeKind.Utc);
+        Assert.False(MainForm.ShouldRestoreZoom(opened, opened.AddMilliseconds(50), MainForm.ZoomClickGuard));
+        Assert.True(MainForm.ShouldRestoreZoom(opened, opened + MainForm.ZoomClickGuard, MainForm.ZoomClickGuard));
+        Assert.True(MainForm.ShouldRestoreZoom(opened, opened.AddSeconds(2), MainForm.ZoomClickGuard));
     }
 }

@@ -37,9 +37,20 @@ public class MainForm : Form
     private DateTime _videoBoundUtc = DateTime.UtcNow;   // 本批画面的绑定时间（判断"从未出过画面"）
     private static readonly TimeSpan VideoStallTimeout = TimeSpan.FromSeconds(30);
 
-    // 首页单击画面弹出的单路放大窗口（非模态普通窗口；同一路不重复开窗，换路时先关旧窗）
-    private VideoMonitorForm? _cameraPopup;
-    private int _cameraPopupIndex = -1;
+    // 首页单击画面后的内联放大视图（不弹窗：直接铺在首页主体区，放大画面再单击还原）
+    private GroupBox _videoZoomPanel = null!;
+    private PictureBox _zoomPic = null!;
+    private Video.ICameraSource? _zoomSrc;
+    private Action? _zoomFrameHandler;
+    private int _enlargedCameraIndex = -1;    // -1 = 3 路平铺；>=0 = 放大该路
+    private DateTime _zoomOpenedUtc;          // 放大开启时间（忽略双击的第二击）
+
+    /// <summary>放大开启后的短时间内忽略点击：首页双击画面时第二击会落在刚铺开的大画面上，若响应会"放大又立刻还原"。</summary>
+    internal static readonly TimeSpan ZoomClickGuard = TimeSpan.FromMilliseconds(400);
+
+    /// <summary>单击放大画面是否应还原：仅在开启后经过保护窗口的单击才生效。</summary>
+    internal static bool ShouldRestoreZoom(DateTime openedUtc, DateTime now, TimeSpan guard)
+        => now - openedUtc >= guard;
 
     /// <summary>首页画面槽位数量（最多同时显示 3 路摄像头画面）。</summary>
     internal const int MaxVideoTiles = 3;
@@ -128,6 +139,7 @@ public class MainForm : Form
         BuildVideoPanel();
         BuildStatsPanel();
         BuildCapturePanel();
+        BuildVideoZoomPanel();   // 内联放大视图（默认隐藏；放最后加入，保证能压在记录列表之上）
         BuildStatusBar();
         LayoutTopBar();          // 初始化顶部称重条居中
         LayoutStatsPanel();      // 初始化统计面板展开态并贴齐右缘
@@ -409,7 +421,7 @@ public class MainForm : Form
     {
         _videoPanel = new GroupBox
         {
-            Text = "视频监控（最多 3 路，单击画面全屏查看该路）",
+            Text = "视频监控（最多 3 路，单击画面放大查看该路）",
             Location = new Point(20, CameraY),
             Size = new Size(ClientSize.Width - 40, CameraH),   // 通栏铺满，统计面板悬浮其右上角
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
@@ -426,6 +438,7 @@ public class MainForm : Form
     /// </summary>
     private void FillVideoPanel()
     {
+        RestoreCameraZoom();   // 重建槽位时复位放大态（构造期 _enlargedCameraIndex=-1 早退）
         UnbindVideo();
         while (_videoPanel.Controls.Count > 0)
             _videoPanel.Controls[0].Dispose();
@@ -519,9 +532,9 @@ public class MainForm : Form
         };
         pic.Controls.Add(hint);
 
-        // 单击画面：以带边框的普通窗口放大该路（非模态 Show，不是全屏），
-        // 放大后仍可点击首页顶部的「空车去皮 / 重车过磅」按钮（2026-10-14 用户要求）。
-        pic.Click += (_, _) => ShowCameraPopup(index - 1);
+        // 单击画面：在首页内联放大该路（铺满视频区+汇总行+记录列表；再单击画面还原），
+        // 不弹窗，故放大期间首页顶部「空车去皮 / 重车过磅」照常可点（2026-10-14 用户要求）。
+        pic.Click += (_, _) => ToggleCameraZoom(index - 1);
 
         // 帧刷新：可能来自非 UI 线程，转发到 UI 线程（窗体关闭后不再处理）
         void OnFrame()
@@ -559,35 +572,105 @@ public class MainForm : Form
     }
 
     /// <summary>
-    /// 首页单击某路画面：以带边框的普通窗口放大该路（非模态，不占满屏幕），
-    /// 放大期间首页仍可操作（「空车去皮 / 重车过磅」按钮可点）。
-    /// 同一路重复点击只激活已有窗口，避免双击开出两个窗；换看另一路时先关旧窗再开新窗。
+    /// 首页画面放大/还原（内联，不弹窗）：把该路大画面铺在"视频监控区 + 今日汇总行 + 称重记录"整块区域上
+    /// （即用户截图红框范围），单击放大画面即还原。
+    /// 不使用弹窗，故放大期间首页顶部「空车去皮 / 重车过磅」按钮照常可点、其弹窗可正常填写
+    /// （2026-10-14 用户要求）。
     /// </summary>
-    private void ShowCameraPopup(int cameraIndex)
+    internal void ToggleCameraZoom(int cameraIndex)
     {
-        if (_cameraPopup is { IsDisposed: false })
+        if (_enlargedCameraIndex == cameraIndex)
         {
-            if (_cameraPopupIndex == cameraIndex)
-            {
-                _cameraPopup.Activate();
-                return;
-            }
-            _cameraPopup.Close();
+            RestoreCameraZoom();
+            return;
         }
+        var sources = _cameras.Sources;
+        if (cameraIndex < 0 || cameraIndex >= sources.Count) return;   // 槽位越界（未配置的路）不放大
+        ShowCameraZoom(sources[cameraIndex], cameraIndex);
+    }
 
-        var f = new VideoMonitorForm(_cameras, cameraIndex);
-        _cameraPopup = f;
-        _cameraPopupIndex = cameraIndex;
-        f.FormClosed += (_, _) =>
+    private void ShowCameraZoom(Video.ICameraSource src, int cameraIndex)
+    {
+        RestoreCameraZoom();                       // 先解绑上一路（若有）
+        _enlargedCameraIndex = cameraIndex;
+        _zoomSrc = src;
+        _zoomFrameHandler = () =>
         {
-            f.Dispose();
-            if (ReferenceEquals(_cameraPopup, f))
+            try
             {
-                _cameraPopup = null;
-                _cameraPopupIndex = -1;
+                if (!IsHandleCreated || IsDisposed) return;
+                _ = BeginInvoke(() => { if (!IsDisposed) _zoomPic.Invalidate(); });
             }
+            catch (ObjectDisposedException) { /* 窗体关闭瞬间的竞争，忽略 */ }
         };
-        f.Show(this);
+        src.PreviewFrameUpdated += _zoomFrameHandler;
+
+        _videoZoomPanel.Text = $"视频监控 - {src.Name}（单击画面还原）";
+        _videoZoomPanel.Bounds = ZoomRegion();
+        _videoZoomPanel.Visible = true;
+        _videoZoomPanel.BringToFront();            // 压在视频区/记录列表之上
+        _statsPanel.Visible = false;               // 统计卡片位于被覆盖区域内，隐藏之以免被 BringToFront 顶到放大画面上
+        _zoomPic.Invalidate();
+        _zoomOpenedUtc = DateTime.UtcNow;          // 双击第二击保护起点
+    }
+
+    /// <summary>还原为 3 路平铺（解绑放大画面的帧事件；平铺槽位自始至终未解绑，停滞检查不受影响）。</summary>
+    private void RestoreCameraZoom()
+    {
+        if (_enlargedCameraIndex < 0) return;
+        _enlargedCameraIndex = -1;
+        if (_zoomSrc != null && _zoomFrameHandler != null)
+            _zoomSrc.PreviewFrameUpdated -= _zoomFrameHandler;
+        _zoomSrc = null;
+        _zoomFrameHandler = null;
+        _videoZoomPanel.Visible = false;
+        _statsPanel.Visible = true;
+    }
+
+    /// <summary>放大视图覆盖的区域：与"视频监控区"同左缘同宽，从视频区顶边直到记录列表底边。</summary>
+    internal Rectangle ZoomRegion() => new(
+        20, CameraY, ClientSize.Width - 40, Math.Max(200, ClientSize.Height - 34 - CameraY));
+
+    /// <summary>首页内联放大视图（默认隐藏，单击某路画面时显示）。</summary>
+    private void BuildVideoZoomPanel()
+    {
+        _zoomPic = new PictureBox
+        {
+            Dock = DockStyle.Fill,
+            SizeMode = PictureBoxSizeMode.Normal,   // 帧由 Paint 等比填满（不留黑边、不拉伸变形）
+            BackColor = Color.Black,
+        };
+        _zoomPic.Paint += (_, e) =>
+        {
+            if (_zoomSrc?.CurrentFrame is not { } frame) return;
+            DrawFrameFit(e.Graphics, frame, _zoomPic.ClientSize);
+        };
+        // 单击放大画面即还原（打开瞬间的残留点击忽略：首页双击的第二击）
+        _zoomPic.Click += (_, _) =>
+        {
+            if (ShouldRestoreZoom(_zoomOpenedUtc, DateTime.UtcNow, ZoomClickGuard)) RestoreCameraZoom();
+        };
+        _zoomPic.Controls.Add(new Label
+        {
+            Text = " 单击画面还原 ",
+            AutoSize = true,
+            Location = new Point(8, 8),
+            BackColor = Color.FromArgb(140, 0, 0, 0),
+            ForeColor = Color.White,
+        });
+
+        _videoZoomPanel = new GroupBox
+        {
+            Text = "视频监控",
+            BackColor = Color.Black,
+            ForeColor = Color.White,
+            Location = new Point(20, CameraY),
+            Size = ZoomRegion().Size,
+            Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+            Visible = false,
+        };
+        _videoZoomPanel.Controls.Add(_zoomPic);
+        Controls.Add(_videoZoomPanel);
     }
 
     /// <summary>
