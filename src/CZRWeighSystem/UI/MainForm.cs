@@ -39,12 +39,15 @@ public class MainForm : Form
 
     // 首页单击画面后的内联放大视图（不弹窗：直接铺在首页主体区，放大画面再单击还原）
     private GroupBox _videoZoomPanel = null!;
-    private PictureBox _zoomPic = null!;
-    private Video.ICameraSource? _zoomSrc;
-    private Action? _zoomFrameHandler;
-    private int _enlargedCameraIndex = -1;    // -1 = 3 路平铺；>=0 = 放大该路
+    private TableLayoutPanel? _zoomGrid;      // 放大画面表格：单路 1 列 / 双路 2 列（每次切换重建）
+    private readonly List<(Video.ICameraSource Src, Action Handler)> _zoomBindings = [];
+    private readonly List<ContextMenuStrip> _zoomMenus = [];   // 各画面块的右键菜单（重建时统一释放）
+    private int _enlargedCameraIndex = -1;    // -1 = 3 路平铺；>=0 = 放大该路（双路时为第一路）
+    private bool _zoomDual;                   // 放大视图是否双路展示（第二路不存在时黑屏占位）
     private DateTime _zoomOpenedUtc;          // 放大开启时间（忽略双击的第二击）
-    private ContextMenuStrip _zoomMenu = null!;   // 放大画面右键菜单：取消半屏/全屏放大/手动拍照
+
+    /// <summary>放大视图当前是否处于双路展示（测试用）。</summary>
+    internal bool IsZoomDual => _zoomDual;
 
     /// <summary>放大开启后的短时间内忽略点击：首页双击画面时第二击会落在刚铺开的大画面上，若响应会"放大又立刻还原"。</summary>
     internal static readonly TimeSpan ZoomClickGuard = TimeSpan.FromMilliseconds(400);
@@ -199,6 +202,7 @@ public class MainForm : Form
         };
         FormClosing += (_, _) =>
         {
+            RestoreCameraZoom();
             UnbindVideo();
             _videoStallTimer.Dispose();
             _sync?.Dispose();
@@ -592,106 +596,211 @@ public class MainForm : Form
 
     private void ShowCameraZoom(Video.ICameraSource src, int cameraIndex)
     {
-        RestoreCameraZoom();                       // 先解绑上一路（若有）
+        RestoreCameraZoom();                       // 先复位上一次放大（若有）
         _enlargedCameraIndex = cameraIndex;
-        _zoomSrc = src;
-        _zoomFrameHandler = () =>
-        {
-            try
-            {
-                if (!IsHandleCreated || IsDisposed) return;
-                _ = BeginInvoke(() => { if (!IsDisposed) _zoomPic.Invalidate(); });
-            }
-            catch (ObjectDisposedException) { /* 窗体关闭瞬间的竞争，忽略 */ }
-        };
-        src.PreviewFrameUpdated += _zoomFrameHandler;
-
-        _videoZoomPanel.Text = $"视频监控 - {src.Name}（单击画面还原）";
+        _zoomDual = false;
         _videoZoomPanel.Bounds = ZoomRegion();
         _videoZoomPanel.Visible = true;
         _videoZoomPanel.BringToFront();            // 压在视频区/记录列表之上
         _statsPanel.Visible = false;               // 统计卡片位于被覆盖区域内，隐藏之以免被 BringToFront 顶到放大画面上
-        _zoomPic.Invalidate();
+        RebuildZoomGrid();
         _zoomOpenedUtc = DateTime.UtcNow;          // 双击第二击保护起点
     }
 
-    /// <summary>还原为 3 路平铺（解绑放大画面的帧事件；平铺槽位自始至终未解绑，停滞检查不受影响）。</summary>
+    /// <summary>还原为 3 路平铺（解绑放大画面的帧事件并释放画面表格；平铺槽位自始至终未解绑，停滞检查不受影响）。</summary>
     private void RestoreCameraZoom()
     {
         if (_enlargedCameraIndex < 0) return;
         _enlargedCameraIndex = -1;
-        if (_zoomSrc != null && _zoomFrameHandler != null)
-            _zoomSrc.PreviewFrameUpdated -= _zoomFrameHandler;
-        _zoomSrc = null;
-        _zoomFrameHandler = null;
+        _zoomDual = false;
+        ClearZoomGrid();
         _videoZoomPanel.Visible = false;
         _statsPanel.Visible = true;
     }
 
     /// <summary>
-    /// 右键「全屏放大」：从半屏放大切到该路的沉浸全屏（无边框铺满所在显示器，Esc/单击退出）。
-    /// 非模态打开：首页半屏状态保留，关掉全屏即回到半屏画面。
+    /// 放大画面单路 ↔ 双路切换（右键菜单）：双路 = 当前路 + 下一路；下一路未配置
+    /// （当前已是最后一路，或系统只配了一路）时第二块画面黑屏占位——用户要求不足两路也能双路展示。
+    /// </summary>
+    internal void ToggleZoomDual()
+    {
+        if (_enlargedCameraIndex < 0) return;
+        _zoomDual = !_zoomDual;
+        RebuildZoomGrid();
+    }
+
+    /// <summary>
+    /// 放大画面表格的唯一重建入口（首次放大与单/双路切换都走这里）：先解绑旧帧事件、
+    /// 释放旧表格与右键菜单，再按当前单/双路状态建新画面——切换不残留旧控件、不串帧。
+    /// </summary>
+    private void RebuildZoomGrid()
+    {
+        ClearZoomGrid();
+
+        var sources = _cameras.Sources;
+        // 要显示的画面块：(路数序号, 源)——第二路源为 null 表示黑屏占位
+        var tiles = new List<(int CamIndex, Video.ICameraSource? Src)>
+        {
+            (_enlargedCameraIndex, sources[_enlargedCameraIndex]),
+        };
+        if (_zoomDual)
+        {
+            int second = _enlargedCameraIndex + 1;
+            tiles.Add(second < sources.Count ? (second, (Video.ICameraSource?)sources[second]) : (second, null));
+        }
+
+        var grid = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = tiles.Count,
+            RowCount = 1,
+        };
+        for (int c = 0; c < tiles.Count; c++)
+            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / tiles.Count));
+        grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+        foreach (var (camIndex, src) in tiles)
+            grid.Controls.Add(BuildZoomTile(camIndex, src));
+        _videoZoomPanel.Controls.Add(grid);
+        _zoomGrid = grid;
+
+        string secondName = tiles.Count == 2 ? (tiles[1].Src?.Name ?? "未配置") : "";
+        _videoZoomPanel.Text = tiles.Count == 2
+            ? $"视频监控 - {tiles[0].Src!.Name} + {secondName}（双路；单击画面还原 / 右键更多操作）"
+            : $"视频监控 - {tiles[0].Src!.Name}（单击画面还原 / 右键更多操作）";
+    }
+
+    /// <summary>解绑放大画面帧事件、释放画面表格与右键菜单。</summary>
+    private void ClearZoomGrid()
+    {
+        foreach (var (src, handler) in _zoomBindings)
+            src.PreviewFrameUpdated -= handler;
+        _zoomBindings.Clear();
+        foreach (var m in _zoomMenus)
+        {
+            foreach (ToolStripItem item in m.Items) item.Image?.Dispose();
+            m.Dispose();
+        }
+        _zoomMenus.Clear();
+        if (_zoomGrid != null)
+        {
+            _videoZoomPanel.Controls.Remove(_zoomGrid);
+            _zoomGrid.Dispose();
+            _zoomGrid = null;
+        }
+    }
+
+    /// <summary>构建一块放大画面：src 非空=实时画面，null=黑屏占位（该路未配置摄像头）。</summary>
+    private PictureBox BuildZoomTile(int camIndex, Video.ICameraSource? src)
+    {
+        bool black = src == null;
+        var pic = new PictureBox
+        {
+            Dock = DockStyle.Fill,
+            SizeMode = PictureBoxSizeMode.Normal,   // 实时帧由 Paint 等比填满（不留黑边、不拉伸变形）
+            Margin = new Padding(0),
+            BackColor = Color.Black,
+        };
+
+        Label overlay;   // 左上角标：实时画面=摄像头名；黑屏块=居中"未配置"说明
+        if (src != null)
+        {
+            var live = src;
+            pic.Paint += (_, e) =>
+            {
+                if (live.CurrentFrame is not { } frame) return;
+                DrawFrameFit(e.Graphics, frame, pic.ClientSize);
+            };
+            overlay = new Label
+            {
+                Text = $" {live.Name} ",
+                AutoSize = true,
+                Location = new Point(8, 8),
+                BackColor = Color.FromArgb(140, 0, 0, 0),
+                ForeColor = Color.White,
+            };
+            // 帧刷新：可能来自非 UI 线程，转发到 UI 线程
+            void OnFrame()
+            {
+                try
+                {
+                    if (!IsHandleCreated || IsDisposed) return;
+                    _ = BeginInvoke(() => { if (!IsDisposed) pic.Invalidate(); });
+                }
+                catch (ObjectDisposedException) { /* 窗体关闭瞬间的竞争，忽略 */ }
+            }
+            live.PreviewFrameUpdated += OnFrame;
+            _zoomBindings.Add((live, (Action)OnFrame));
+        }
+        else
+        {
+            overlay = new Label
+            {
+                Text = "该路未配置摄像头",
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleCenter,
+                BackColor = Color.FromArgb(140, 0, 0, 0),
+                ForeColor = Color.White,
+            };
+        }
+        pic.Controls.Add(overlay);
+
+        // 单击画面（含黑屏块）即还原；打开瞬间的残留点击忽略（首页双击的第二击）
+        void OnClick(object? sender, EventArgs _)
+        {
+            if (ShouldRestoreZoom(_zoomOpenedUtc, DateTime.UtcNow, ZoomClickGuard)) RestoreCameraZoom();
+        }
+        pic.Click += OnClick;
+        overlay.Click += OnClick;
+
+        // 右键菜单：取消半屏 / 双路展示（单路展示）/ 全屏放大 / 手动拍照
+        var menu = new ContextMenuStrip();
+        menu.Items.Add("取消半屏", ShortcutIcon.Draw("shrink", 16), (_, _) => RestoreCameraZoom());
+        menu.Items.Add(_zoomDual ? "单路展示" : "双路展示",
+            ShortcutIcon.Draw(_zoomDual ? "shrink" : "dual", 16), (_, _) => ToggleZoomDual());
+        menu.Items.Add("全屏放大", ShortcutIcon.Draw("expand", 16), (_, _) => ZoomEnterFullscreen());
+        var shotItem = menu.Items.Add("手动拍照", ShortcutIcon.Draw("camera", 16),
+            (_, _) => ZoomManualPhoto(camIndex));
+        if (black) shotItem.Enabled = false;   // 黑屏块无摄像头可拍
+        _zoomMenus.Add(menu);
+        pic.ContextMenuStrip = menu;
+        overlay.ContextMenuStrip = menu;       // 角标是画面的子控件，不继承父级菜单
+        return pic;
+    }
+
+    /// <summary>
+    /// 右键「全屏放大」：从半屏放大切到沉浸全屏（无边框铺满所在显示器，Esc/单击退出），
+    /// 携带当前单/双路状态（双路且第二路未配置时全屏里同样黑屏占位）。非模态打开，关掉全屏回半屏。
     /// </summary>
     private void ZoomEnterFullscreen()
     {
         if (_enlargedCameraIndex < 0) return;
-        new VideoMonitorForm(_cameras, _enlargedCameraIndex, fullscreen: true).Show(this);
+        new VideoMonitorForm(_cameras, _enlargedCameraIndex, fullscreen: true, dual: _zoomDual).Show(this);
     }
 
-    /// <summary>右键「手动拍照」：抓拍当前放大的这一路存到 manualCaptures/yyyyMMdd/，结果在状态栏提示。</summary>
-    private void ZoomManualPhoto()
+    /// <summary>右键「手动拍照」：抓拍指定路存到 manualCaptures/yyyyMMdd/，结果在状态栏提示。</summary>
+    private void ZoomManualPhoto(int camIndex)
     {
         if (_enlargedCameraIndex < 0) return;
-        int idx = _enlargedCameraIndex;
-        string? file = _cameras.CaptureManual(idx);
+        if (camIndex < 0 || camIndex >= _cameras.Sources.Count)
+        {
+            SetState("该路未配置摄像头，无法拍照", false);
+            return;
+        }
+        string? file = _cameras.CaptureManual(camIndex);
+        var src = _cameras.Sources[camIndex];
         if (file != null)
             SetState($"手动拍照已保存：{System.IO.Path.GetFileName(file)}（manualCaptures 目录）", true);
         else
-            SetState($"{_zoomSrc?.Name ?? "摄像头"}暂无画面，无法拍照", false);
+            SetState($"{src.Name}暂无画面，无法拍照", false);
     }
 
     /// <summary>放大视图覆盖的区域：与"视频监控区"同左缘同宽，从视频区顶边直到记录列表底边。</summary>
     internal Rectangle ZoomRegion() => new(
         20, CameraY, ClientSize.Width - 40, Math.Max(200, ClientSize.Height - 34 - CameraY));
 
-    /// <summary>首页内联放大视图（默认隐藏，单击某路画面时显示）。</summary>
+    /// <summary>首页内联放大视图（默认隐藏，单击某路画面时显示；画面表格在放大时才构建）。</summary>
     private void BuildVideoZoomPanel()
     {
-        _zoomPic = new PictureBox
-        {
-            Dock = DockStyle.Fill,
-            SizeMode = PictureBoxSizeMode.Normal,   // 帧由 Paint 等比填满（不留黑边、不拉伸变形）
-            BackColor = Color.Black,
-        };
-        _zoomPic.Paint += (_, e) =>
-        {
-            if (_zoomSrc?.CurrentFrame is not { } frame) return;
-            DrawFrameFit(e.Graphics, frame, _zoomPic.ClientSize);
-        };
-        // 单击放大画面即还原（打开瞬间的残留点击忽略：首页双击的第二击）
-        _zoomPic.Click += (_, _) =>
-        {
-            if (ShouldRestoreZoom(_zoomOpenedUtc, DateTime.UtcNow, ZoomClickGuard)) RestoreCameraZoom();
-        };
-        var hint = new Label
-        {
-            Text = " 单击画面还原 / 右键更多操作 ",
-            AutoSize = true,
-            Location = new Point(8, 8),
-            BackColor = Color.FromArgb(140, 0, 0, 0),
-            ForeColor = Color.White,
-        };
-        _zoomPic.Controls.Add(hint);
-
-        // 右键菜单（对齐摄像头客户端半屏菜单）：取消半屏 / 全屏放大 / 手动拍照
-        _zoomMenu = new ContextMenuStrip();
-        _zoomMenu.Items.Add("取消半屏", ShortcutIcon.Draw("shrink", 16), (_, _) => RestoreCameraZoom());
-        _zoomMenu.Items.Add("全屏放大", ShortcutIcon.Draw("expand", 16), (_, _) => ZoomEnterFullscreen());
-        _zoomMenu.Items.Add("手动拍照", ShortcutIcon.Draw("camera", 16), (_, _) => ZoomManualPhoto());
-        // 菜单同时挂在画面与左上角提示标签上（标签是画面的子控件，不继承父级菜单）
-        _zoomPic.ContextMenuStrip = _zoomMenu;
-        hint.ContextMenuStrip = _zoomMenu;
-
         _videoZoomPanel = new GroupBox
         {
             Text = "视频监控",
@@ -702,7 +811,6 @@ public class MainForm : Form
             Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
             Visible = false,
         };
-        _videoZoomPanel.Controls.Add(_zoomPic);
         Controls.Add(_videoZoomPanel);
     }
 

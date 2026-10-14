@@ -769,37 +769,114 @@ public class MainFormLayoutTests
         });
     }
 
+    /// <summary>半屏放大画面表格中的画面块名称角标（黑屏块返回 null）。</summary>
+    private static List<string?> ZoomTileNames(MainForm form)
+    {
+        var grid = (TableLayoutPanel)Fld(form, "_zoomGrid")!;
+        return grid.Controls.OfType<PictureBox>().Select(p =>
+            p.Controls.OfType<Label>().Any(l => l.Dock == DockStyle.Fill)   // 黑屏块的说明标签为 Fill 居中
+                ? null
+                : p.Controls.OfType<Label>().First().Text.Trim()).ToList();
+    }
+
+    /// <summary>取半屏放大画面第 tileIndex 块右键菜单中指定文字的项。</summary>
+    private static ToolStripMenuItem ZoomMenuItem(MainForm form, int tileIndex, string text)
+    {
+        var grid = (TableLayoutPanel)Fld(form, "_zoomGrid")!;
+        var pic = (PictureBox)grid.Controls.OfType<PictureBox>().ElementAt(tileIndex);
+        return Assert.IsType<ToolStripMenuItem>(
+            pic.ContextMenuStrip!.Items.Cast<ToolStripItem>().First(i => i.Text == text));
+    }
+
     /// <summary>
-    /// 首页放大改为内联面板（不再全屏弹窗）：放大视图与视频区同锚定、默认隐藏、画面角标提示"单击画面还原"；
-    /// 放大画面右键菜单三项（取消半屏/全屏放大/手动拍照，对齐摄像头客户端）；
-    /// 菜单入口的多路预览仍为普通带边框窗口（非全屏、无 Esc 退出）。
+    /// 首页放大为内联面板（不再全屏弹窗）：放大视图与视频区同锚定、默认隐藏；放大后画面右键菜单
+    /// 四项（取消半屏/双路展示/全屏放大/手动拍照）；菜单入口的多路预览仍为普通带边框窗口。
     /// </summary>
     [Fact]
-    public void 首页放大_为内联面板_右键菜单三项()
+    public void 首页放大_为内联面板_右键菜单四项()
     {
         Db.Initialize();
         RunOnSta(() =>
         {
             using var form = new MainForm();
+            InjectSources(form, "CAM1", "CAM2");
             var zoom = (GroupBox)Fld(form, "_videoZoomPanel");
             Assert.StartsWith("视频监控", zoom.Text);
             Assert.True(zoom.Anchor.HasFlag(AnchorStyles.Top | AnchorStyles.Bottom
                 | AnchorStyles.Left | AnchorStyles.Right), "放大视图应随窗口伸缩");
-            var pic = (PictureBox)Fld(form, "_zoomPic");
-            Assert.Contains(pic.Controls.OfType<Label>(), l => l.Text.Contains("单击画面还原"));
 
-            // 右键菜单挂在画面上，三项齐全、顺序固定
-            var menu = (ContextMenuStrip)Fld(form, "_zoomMenu");
-            Assert.Same(menu, pic.ContextMenuStrip);
-            Assert.Equal(new[] { "取消半屏", "全屏放大", "手动拍照" },
-                menu.Items.Cast<ToolStripItem>().Select(i => i.Text));
-            Assert.All(menu.Items.Cast<ToolStripItem>(), i => Assert.NotNull(i.Image));
+            form.ToggleCameraZoom(0);
+            var grid = (TableLayoutPanel)Fld(form, "_zoomGrid")!;
+            var pic = Assert.Single(grid.Controls.OfType<PictureBox>());
+            Assert.Equal(new[] { "取消半屏", "双路展示", "全屏放大", "手动拍照" },
+                pic.ContextMenuStrip!.Items.Cast<ToolStripItem>().Select(i => i.Text));
+            Assert.All(pic.ContextMenuStrip.Items.Cast<ToolStripItem>(), i => Assert.NotNull(i.Image));
         });
 
         using var multi = new VideoMonitorForm(new CameraManager());
         Assert.NotEqual(FormBorderStyle.None, multi.FormBorderStyle);      // 菜单多路预览：带边框普通窗口
         Assert.NotEqual(FormWindowState.Maximized, multi.WindowState);
         Assert.False(multi.KeyPreview);
+    }
+
+    /// <summary>
+    /// 半屏放大右键「双路展示」：当前路 + 下一路左右并排（CAM1+CAM2），菜单项变「单路展示」，
+    /// 再点切回单路（不用先进全屏——2026-10-14 用户要求）。
+    /// </summary>
+    [Fact]
+    public void 半屏放大_双路展示_当前路与下一路并排_可切回()
+    {
+        Db.Initialize();
+        RunOnSta(() =>
+        {
+            using var form = new MainForm();
+            InjectSources(form, "CAM1", "CAM2", "CAM3");
+
+            form.ToggleCameraZoom(0);
+            Assert.False(form.IsZoomDual);
+            Assert.Equal(new[] { "CAM1" }, ZoomTileNames(form));
+
+            ZoomMenuItem(form, 0, "双路展示").PerformClick();
+            Assert.True(form.IsZoomDual);
+            Assert.Equal(new[] { "CAM1", "CAM2" }, ZoomTileNames(form));
+            Assert.Equal("单路展示", ZoomMenuItem(form, 0, "单路展示").Text);
+            Assert.Equal("单路展示", ZoomMenuItem(form, 1, "单路展示").Text);
+
+            ZoomMenuItem(form, 0, "单路展示").PerformClick();
+            Assert.False(form.IsZoomDual);
+            Assert.Equal(new[] { "CAM1" }, ZoomTileNames(form));
+        });
+    }
+
+    /// <summary>
+    /// 只配置一路摄像头时，半屏放大仍可「双路展示」：第二块黑屏占位并提示未配置，
+    /// 黑屏块的「手动拍照」置灰；黑屏块也能右键「单路展示 / 取消半屏」。
+    /// </summary>
+    [Fact]
+    public void 半屏放大_仅一路摄像头_双路展示第二块黑屏_拍照置灰()
+    {
+        Db.Initialize();
+        RunOnSta(() =>
+        {
+            using var form = new MainForm();
+            InjectSources(form, "CAM1");
+
+            form.ToggleCameraZoom(0);
+            ZoomMenuItem(form, 0, "双路展示").PerformClick();
+            Assert.True(form.IsZoomDual);
+
+            var names = ZoomTileNames(form);
+            Assert.Equal(2, names.Count);
+            Assert.Equal("CAM1", names[0]);
+            Assert.Null(names[1]);   // 第二块黑屏（无名称角标）
+
+            Assert.False(ZoomMenuItem(form, 1, "手动拍照").Enabled, "黑屏块的手动拍照应置灰");
+            Assert.True(ZoomMenuItem(form, 1, "单路展示").Enabled);
+            Assert.True(ZoomMenuItem(form, 1, "取消半屏").Enabled);
+
+            ZoomMenuItem(form, 1, "单路展示").PerformClick();
+            Assert.False(form.IsZoomDual);
+        });
     }
 
     /// <summary>
@@ -855,13 +932,14 @@ public class MainFormLayoutTests
         return cameras;
     }
 
-    /// <summary>全屏窗内读取当前各画面槽位的摄像头名称（名称角标文本，顺序即槽位顺序）。</summary>
-    private static List<string> TileNames(VideoMonitorForm fs)
+    /// <summary>全屏窗内读取当前各画面槽位的摄像头名称角标（黑屏占位块返回 null，顺序即槽位顺序）。</summary>
+    private static List<string?> TileNames(VideoMonitorForm fs)
     {
         var table = Assert.Single(fs.Controls.OfType<TableLayoutPanel>());
-        return table.Controls.OfType<PictureBox>()
-            .Select(p => p.Controls.OfType<Label>().First().Text.Trim())
-            .ToList();
+        return table.Controls.OfType<PictureBox>().Select(p =>
+            p.Controls.OfType<Label>().Any(l => l.Dock == DockStyle.Fill)   // 黑屏块说明标签为 Fill 居中
+                ? null
+                : p.Controls.OfType<Label>().First().Text.Trim()).ToList();
     }
 
     /// <summary>取第 tileIndex 个画面槽位右键菜单中指定文字的项。</summary>
@@ -888,12 +966,12 @@ public class MainFormLayoutTests
             RunOnSta(() =>
             {
                 using var fs = new VideoMonitorForm(cameras, 0, fullscreen: true);
-                Assert.Equal(new[] { "CAM1" }, TileNames(fs));
+                Assert.Equal(new string?[] { "CAM1" }, TileNames(fs));
                 Assert.False(fs.IsDual);
 
                 MenuItem(fs, 0, "双路展示").PerformClick();   // 切双路
                 Assert.True(fs.IsDual);
-                Assert.Equal(new[] { "CAM1", "CAM2" }, TileNames(fs));
+                Assert.Equal(new string?[] { "CAM1", "CAM2" }, TileNames(fs));
                 Assert.Contains("双路", fs.Text);
                 Assert.Equal("单路展示", MenuItem(fs, 0, "单路展示").Text);
                 Assert.Equal("单路展示", MenuItem(fs, 1, "单路展示").Text);
@@ -905,7 +983,7 @@ public class MainFormLayoutTests
 
                 MenuItem(fs, 0, "单路展示").PerformClick();   // 切回单路
                 Assert.False(fs.IsDual);
-                Assert.Equal(new[] { "CAM1" }, TileNames(fs));
+                Assert.Equal(new string?[] { "CAM1" }, TileNames(fs));
             });
         }
         finally
@@ -916,9 +994,9 @@ public class MainFormLayoutTests
         }
     }
 
-    /// <summary>最后一路双路展示时回绕到第一路：CAM3 + CAM1。</summary>
+    /// <summary>最后一路双路展示时没有"下一路"：第二块黑屏占位（不回绕）：CAM3 + 黑屏。</summary>
     [Fact]
-    public void 全屏_双路展示_最后一路回绕配对第一路()
+    public void 全屏_双路展示_最后一路第二块黑屏占位()
     {
         bool oldEnabled = AppConfig.Current.CameraEnabled;
         AppConfig.Current.CameraEnabled = true;
@@ -929,7 +1007,12 @@ public class MainFormLayoutTests
             {
                 using var fs = new VideoMonitorForm(cameras, 2, fullscreen: true);
                 MenuItem(fs, 0, "双路展示").PerformClick();
-                Assert.Equal(new[] { "CAM3", "CAM1" }, TileNames(fs));
+                Assert.Equal(new string?[] { "CAM3", null }, TileNames(fs));
+                Assert.Contains("未配置", fs.Text);
+                // 黑屏块的「手动拍照」置灰，但可切回单路 / 退出全屏
+                Assert.False(MenuItem(fs, 1, "手动拍照").Enabled);
+                Assert.True(MenuItem(fs, 1, "单路展示").Enabled);
+                Assert.True(MenuItem(fs, 1, "退出全屏").Enabled);
             });
         }
         finally
@@ -939,9 +1022,9 @@ public class MainFormLayoutTests
         }
     }
 
-    /// <summary>只配置了一路摄像头时，「双路展示」置灰不可点。</summary>
+    /// <summary>只配置一路摄像头时，「双路展示」仍可点击：第二块黑屏占位（用户要求不足两路也能双路）。</summary>
     [Fact]
-    public void 全屏_仅一路摄像头_双路展示置灰()
+    public void 全屏_仅一路摄像头_双路展示可点_第二块黑屏()
     {
         bool oldEnabled = AppConfig.Current.CameraEnabled;
         AppConfig.Current.CameraEnabled = true;
@@ -952,9 +1035,33 @@ public class MainFormLayoutTests
             {
                 using var fs = new VideoMonitorForm(cameras, 0, fullscreen: true);
                 var item = MenuItem(fs, 0, "双路展示");
-                Assert.False(item.Enabled, "只有一路摄像头时双路展示应置灰");
-                item.PerformClick();   // 点击无效，仍是单路
-                Assert.False(fs.IsDual);
+                Assert.True(item.Enabled, "不足两路也允许双路展示（第二块黑屏）");
+                item.PerformClick();
+                Assert.True(fs.IsDual);
+                Assert.Equal(new string?[] { "CAM1", null }, TileNames(fs));
+            });
+        }
+        finally
+        {
+            AppConfig.Current.CameraEnabled = oldEnabled;
+            cameras.Dispose();
+        }
+    }
+
+    /// <summary>半屏双路状态下进全屏：构造传入 dual=true，全屏窗打开即双路（含黑屏占位）。</summary>
+    [Fact]
+    public void 全屏放大_携带半屏双路状态_打开即双路()
+    {
+        bool oldEnabled = AppConfig.Current.CameraEnabled;
+        AppConfig.Current.CameraEnabled = true;
+        var cameras = BuildCameraManager(3);
+        try
+        {
+            RunOnSta(() =>
+            {
+                using var fs = new VideoMonitorForm(cameras, 1, fullscreen: true, dual: true);
+                Assert.True(fs.IsDual);
+                Assert.Equal(new string?[] { "CAM2", "CAM3" }, TileNames(fs));
             });
         }
         finally
