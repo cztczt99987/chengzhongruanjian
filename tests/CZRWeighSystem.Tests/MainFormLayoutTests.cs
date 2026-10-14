@@ -718,34 +718,22 @@ public class MainFormLayoutTests
     }
 
     /// <summary>
-    /// 首页单击某路画面：弹窗默认沉浸全屏（无边框最大化铺满整屏），按 Esc 退出依赖键盘预览；
-    /// 菜单入口的多路预览仍为普通窗口；全屏内单击画面可退出（打开瞬间的残留点击除外）。
+    /// 首页单击某路画面：以带边框的普通窗口放大该路，不再进入无边框全屏（2026-10-14 用户要求
+    /// "点击放大时不要全屏，放大之后也要能点击皮重和毛重的按钮"）；首页以非模态 Show 打开该窗口
+    /// （见 MainForm.ShowCameraPopup），故放大期间「空车去皮 / 重车过磅」按钮仍可点击；
+    /// 菜单入口的多路预览同为普通窗口。
     /// </summary>
     [Fact]
-    public void 单击画面全屏_无边框最大化_菜单入口保持普通窗口()
+    public void 首页放大画面_为普通窗口而非全屏()
     {
-        using var full = new VideoMonitorForm(new CameraManager(), 1, fullscreen: true);
-        Assert.Equal(FormBorderStyle.None, full.FormBorderStyle);
-        Assert.Equal(FormWindowState.Maximized, full.WindowState);
-        Assert.Equal(FormStartPosition.Manual, full.StartPosition);
-        Assert.True(full.KeyPreview);   // 按 Esc 退出全屏
-        Assert.Contains(full.Controls.OfType<Label>(), l => l.Text.Contains("单击画面退出全屏"));   // 退出提示
+        using var popup = new VideoMonitorForm(new CameraManager(), 1);
+        Assert.NotEqual(FormBorderStyle.None, popup.FormBorderStyle);        // 带边框，非无边框
+        Assert.NotEqual(FormWindowState.Maximized, popup.WindowState);       // 不最大化铺满屏幕
+        Assert.False(popup.KeyPreview);                                      // 不再有 Esc 退出全屏
+        Assert.DoesNotContain(popup.Controls.OfType<Label>(), l => l.Text.Contains("退出全屏"));
 
-        using var normal = new VideoMonitorForm(new CameraManager());
-        Assert.NotEqual(FormBorderStyle.None, normal.FormBorderStyle);
-        Assert.NotEqual(FormWindowState.Maximized, normal.WindowState);
-        Assert.DoesNotContain(normal.Controls.OfType<Label>(), l => l.Text.Contains("退出全屏"));
-    }
-
-    /// <summary>全屏内单击退出：仅在打开后经过保护窗口才生效，避免首页双击的第二击"开了又立刻关"。</summary>
-    [Fact]
-    public void 全屏单击退出_忽略打开瞬间的残留点击()
-    {
-        var opened = new DateTime(2026, 10, 13, 12, 0, 0, DateTimeKind.Utc);
-        var guard = VideoMonitorForm.ExitClickGuard;
-
-        Assert.False(VideoMonitorForm.ShouldExitFullscreen(opened, opened.AddMilliseconds(50), guard));   // 双击第二击
-        Assert.True(VideoMonitorForm.ShouldExitFullscreen(opened, opened.Add(guard), guard));
-        Assert.True(VideoMonitorForm.ShouldExitFullscreen(opened, opened.AddSeconds(3), guard));
+        using var multi = new VideoMonitorForm(new CameraManager());
+        Assert.NotEqual(FormBorderStyle.None, multi.FormBorderStyle);
+        Assert.NotEqual(FormWindowState.Maximized, multi.WindowState);
     }
 }

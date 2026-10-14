@@ -37,6 +37,10 @@ public class MainForm : Form
     private DateTime _videoBoundUtc = DateTime.UtcNow;   // 本批画面的绑定时间（判断"从未出过画面"）
     private static readonly TimeSpan VideoStallTimeout = TimeSpan.FromSeconds(30);
 
+    // 首页单击画面弹出的单路放大窗口（非模态普通窗口；同一路不重复开窗，换路时先关旧窗）
+    private VideoMonitorForm? _cameraPopup;
+    private int _cameraPopupIndex = -1;
+
     /// <summary>首页画面槽位数量（最多同时显示 3 路摄像头画面）。</summary>
     internal const int MaxVideoTiles = 3;
 
@@ -515,12 +519,9 @@ public class MainForm : Form
         };
         pic.Controls.Add(hint);
 
-        // 单击画面进入沉浸全屏，只显示点击的这一路（看其他路需关闭后回首页点击对应画面）
-        pic.Click += (_, _) =>
-        {
-            using var f = new VideoMonitorForm(_cameras, index - 1, fullscreen: true);
-            f.ShowDialog(this);
-        };
+        // 单击画面：以带边框的普通窗口放大该路（非模态 Show，不是全屏），
+        // 放大后仍可点击首页顶部的「空车去皮 / 重车过磅」按钮（2026-10-14 用户要求）。
+        pic.Click += (_, _) => ShowCameraPopup(index - 1);
 
         // 帧刷新：可能来自非 UI 线程，转发到 UI 线程（窗体关闭后不再处理）
         void OnFrame()
@@ -555,6 +556,38 @@ public class MainForm : Form
         int w = (int)Math.Ceiling(imgW * scale);
         int h = (int)Math.Ceiling(imgH * scale);
         return new Rectangle((boxW - w) / 2, (boxH - h) / 2, w, h);
+    }
+
+    /// <summary>
+    /// 首页单击某路画面：以带边框的普通窗口放大该路（非模态，不占满屏幕），
+    /// 放大期间首页仍可操作（「空车去皮 / 重车过磅」按钮可点）。
+    /// 同一路重复点击只激活已有窗口，避免双击开出两个窗；换看另一路时先关旧窗再开新窗。
+    /// </summary>
+    private void ShowCameraPopup(int cameraIndex)
+    {
+        if (_cameraPopup is { IsDisposed: false })
+        {
+            if (_cameraPopupIndex == cameraIndex)
+            {
+                _cameraPopup.Activate();
+                return;
+            }
+            _cameraPopup.Close();
+        }
+
+        var f = new VideoMonitorForm(_cameras, cameraIndex);
+        _cameraPopup = f;
+        _cameraPopupIndex = cameraIndex;
+        f.FormClosed += (_, _) =>
+        {
+            f.Dispose();
+            if (ReferenceEquals(_cameraPopup, f))
+            {
+                _cameraPopup = null;
+                _cameraPopupIndex = -1;
+            }
+        };
+        f.Show(this);
     }
 
     /// <summary>
