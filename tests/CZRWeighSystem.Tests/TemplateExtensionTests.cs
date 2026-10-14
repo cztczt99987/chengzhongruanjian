@@ -126,14 +126,15 @@ public class Code39Tests
 public class BuiltinTemplatesTests
 {
     [Fact]
-    public void 内置模板共1种_仅公平计量磅单三等分且名称唯一()
+    public void 内置模板共2种_名称唯一且纸样均登记()
     {
         var builtins = PrintTemplate.CreateBuiltins();
-        Assert.Equal(1, builtins.Count);
+        Assert.Equal(2, builtins.Count);
         Assert.Equal(builtins.Count, builtins.Select(t => t.Name).Distinct().Count());
-        // 2026-10 精简：仅保留公平计量磅单（三等分 241×93），标准/金额模板移除
-        Assert.Equal(1, builtins.Count(t => t.Category == "通用"));
+        // 2026-10 精简：公平计量磅单（三等分 241×93）+ 2026-10-14 新增热敏小票-58mm（58×135）
+        Assert.Equal(2, builtins.Count(t => t.Category == "通用"));
         Assert.Equal(1, builtins.Count(t => t.PaperKey == "241x93"));
+        Assert.Equal(1, builtins.Count(t => t.PaperKey == "58x135"));
         Assert.All(builtins, t =>
         {
             Assert.False(string.IsNullOrWhiteSpace(t.Name));
@@ -218,6 +219,88 @@ public class BuiltinTemplatesTests
         Assert.Equal($"内置_{t.Name}.json", PrintTemplate.BuiltinFileName(t));
         Assert.True(PrintTemplate.IsBuiltinFileName(PrintTemplate.BuiltinFileName(t)));
         Assert.False(PrintTemplate.IsBuiltinFileName("我的模板.json"));
+    }
+}
+
+/// <summary>
+/// 58mm 热敏小票模板回归（2026-10-14 用户提供实物小票照片：
+/// 要求小票版式，且字段内容与现有唯一模板「公平计量磅单-三等分」完全一致）。
+/// </summary>
+public class ThermalReceiptTemplateTests
+{
+    /// <summary>58mm 热敏纸打印头有效宽（384 点 / 203dpi ≈ 48mm）。</summary>
+    private const float PrintHeadWidthMm = 48f;
+
+    private static PrintTemplate Thermal =>
+        PrintTemplate.CreateBuiltins().Single(t => t.Name == "热敏小票-58mm");
+
+    private static string AllText(PrintTemplate t) =>
+        string.Join("\n", t.Elements.OfType<TextElement>().Select(e => e.Text));
+
+    [Fact]
+    public void 热敏小票_纸样为58x135_内容不超出打印头有效宽度()
+    {
+        var t = Thermal;
+        Assert.Equal("58x135", t.PaperKey);
+
+        var (paperW, paperH) = PoundTicketPrinter.PaperSizeMm(t.PaperKey);
+        Assert.InRange(paperW, 57.5f, 58.5f);
+        Assert.InRange(paperH, 134.5f, 135.5f);
+
+        // 58mm 纸两侧硬边距吃掉约 10mm，内容右缘超出打印头有效宽即被裁
+        float maxRight = t.Elements.Max(e => e.X + e.W);
+        Assert.True(maxRight <= PrintHeadWidthMm,
+            $"内容右缘 {maxRight:F1}mm 超过 58mm 纸打印头有效宽 {PrintHeadWidthMm}mm");
+
+        float maxBottom = t.Elements.Max(e => e.Y + e.H);
+        Assert.True(maxBottom <= paperH, $"内容底边 {maxBottom:F1}mm 超出纸张高 {paperH:F0}mm");
+    }
+
+    [Fact]
+    public void 热敏小票_字段与占位符与公平计量磅单完全一致()
+    {
+        // 用户要求：现有唯一模板里的内容，小票模板必须都有
+        var fairness = PrintTemplate.CreateBuiltins().Single(t => t.Name == "公平计量磅单-三等分");
+        var placeholders = System.Text.RegularExpressions.Regex
+            .Matches(AllText(fairness), @"\{[^}]+\}").Select(m => m.Value).Distinct().ToList();
+        Assert.NotEmpty(placeholders);
+
+        string thermalText = AllText(Thermal);
+        foreach (var ph in placeholders)
+            Assert.True(thermalText.Contains(ph), $"小票模板缺少占位符 {ph}");
+    }
+
+    [Fact]
+    public void 热敏小票_标签与联次标注齐全()
+    {
+        string text = AllText(Thermal);
+        // 单列字段标签（含品种取 {货物}、单价取 ext 固定键）
+        foreach (var label in new[]
+        {
+            "地主姓名", "地主电话", "车号", "司机电话", "品种", "货主电话", "货主姓名", "单价",
+            "毛重", "皮重", "净重", "毛重司磅", "皮重司磅",
+        })
+            Assert.Contains(label, text);
+        // 联次标注与三等分模板同义
+        foreach (var mark in new[] { "白联:存根", "红联:客户", "蓝联:司机" })
+            Assert.Contains(mark, text);
+    }
+
+    [Fact]
+    public void 热敏小票_单列标签列不与值列重叠()
+    {
+        // 每行标签元素右缘 ≤ 同行值元素左缘（窄纸两列不能压字）
+        var texts = Thermal.Elements.OfType<TextElement>().ToList();
+        var labels = texts.Where(e => e.X < 13f && e.W <= 12f).ToList();
+        Assert.True(labels.Count >= 11, $"标签元素数量不足：{labels.Count}");
+
+        foreach (var label in labels)
+        {
+            var value = texts.FirstOrDefault(v => Math.Abs(v.Y - label.Y) < 0.01f && v.X > label.X);
+            Assert.NotNull(value);
+            Assert.True(label.X + label.W <= value!.X,
+                $"标签「{label.Text}」右缘 {label.X + label.W:F1}mm 压到值列左缘 {value.X:F1}mm");
+        }
     }
 }
 

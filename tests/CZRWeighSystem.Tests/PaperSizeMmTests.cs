@@ -9,6 +9,7 @@ public class PaperSizeMmTests
     [InlineData("A4", 210.0, 297.0)]
     [InlineData("241x140", 241.0, 140.0)]
     [InlineData("241x93", 241.0, 93.0)]
+    [InlineData("58x135", 58.0, 135.0)]
     public void PaperSizeMm_尺寸换算正确(string key, double wMm, double hMm)
     {
         var (w, h) = PoundTicketPrinter.PaperSizeMm(key);

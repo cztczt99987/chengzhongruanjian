@@ -222,16 +222,16 @@ public class PrintTemplate
     /// <summary>是否为内置模板文件</summary>
     public static bool IsBuiltinFileName(string fileName) => fileName.StartsWith("内置_");
 
-    /// <summary>创建内置模板：标准磅单 / 金额磅单 两种样式 × A4、二等分（241×140）、
-    /// 三等分（241×93）、竖联（120×140）四种纸样，版式仿老软件过磅单（公司名抬头 + 类型 +
-    /// 字段网格：车牌/品种/地主/司机/货主 + 毛皮净），金额磅单额外含应收金额行。
-    /// 纸样命名按行业惯例：二等分 = 241 宽 × 11 英寸高均分两份（每联 140mm），
-    /// 三等分 = 均分三份（每联 93mm）。</summary>
+    /// <summary>创建内置模板：241×93 三等分连单（公平计量磅单-三等分）+
+    /// 58mm 热敏收银纸小票（热敏小票-58mm，内容与三等分模板一致、重排为单列标签/值版式）。
+    /// 纸样命名按行业惯例：三等分 = 241×11 英寸均分三份（每联 93mm）。</summary>
     public static List<PrintTemplate> CreateBuiltins()
     {
         var list = new List<PrintTemplate>();
         // 2026-10 精简内置模板库：仅保留公平计量磅单-三等分，其余标准/金额模板移除
         list.Add(BuildFairnessTemplate("公平计量磅单-三等分", "241x93"));
+        // 2026-10-14 新增：58mm 热敏小票（窄幅收银纸），供小票打印机使用
+        list.Add(BuildThermalReceiptTemplate("热敏小票-58mm", "58x135"));
         return list;
     }
 
@@ -376,6 +376,76 @@ public class PrintTemplate
         // 站点名称（综合设置可配，留空则不显示）+ 承诺文案（综合设置可配，超宽自动折行）
         t.Elements.Add(new TextElement { Text = "{站点名称}", X = x0, Y = 68.5f, W = right - x0, H = 4.5f, FontPt = 8, Bold = true });
         t.Elements.Add(new TextElement { Text = "{承诺}", X = x0, Y = 73.5f, W = right - x0, H = 16f, FontPt = 6.5f, Wrap = true });
+        return t;
+    }
+
+    /// <summary>
+    /// 生成"热敏小票-58mm"模板（58mm 窄幅热敏收银纸，单列"标签 + 值"版式）：
+    /// 内容与"公平计量磅单-三等分"完全一致，仅重排为小票形态——
+    /// 公司名抬头 + 磅单类型 + 第 N 次打印 + 日期/编号 + 单列字段网格
+    /// （地主姓名/地主电话/车号/司机电话/品种/货主电话/货主姓名/单价 + 毛重/皮重/净重）+
+    /// 毛重/皮重司磅行 + 白/红/蓝三联标注 + 站点名称 + 承诺行。
+    /// 58mm 纸打印头有效宽约 48mm，内容右缘收在 45mm 以内，避免驱动硬边距把右侧文字裁掉。
+    /// </summary>
+    private static PrintTemplate BuildThermalReceiptTemplate(string name, string paperKey)
+    {
+        var t = new PrintTemplate { Name = name, Category = "通用", PaperKey = paperKey, LayoutVersion = "1" };
+        const float x0 = 2f, right = 45f;
+        const float w = right - x0;              // 内容宽 43mm
+
+        // 抬头两行：公司名 + 磅单类型；文案较长时按元素宽度自动折行（窄纸放不下长抬头）
+        t.Elements.Add(new TextElement { Text = "{公司名称}", X = x0, Y = 2, W = w, H = 9, FontPt = 11, Bold = true, Align = TextAlign.Center, Wrap = true });
+        t.Elements.Add(new TextElement { Text = "{磅单抬头}", X = x0, Y = 11.5f, W = w, H = 8, FontPt = 9, Bold = true, Align = TextAlign.Center, Wrap = true });
+
+        t.Elements.Add(new TextElement { Text = "第{打印次数}次打印", X = x0, Y = 20, W = w, H = 4, FontPt = 6.5f, Align = TextAlign.Right });
+        t.Elements.Add(new TextElement { Text = "日期：{打印时间:yyyy年MM月dd日 HH:mm:ss}", X = x0, Y = 24.3f, W = w, H = 4, FontPt = 7 });
+        t.Elements.Add(new TextElement { Text = "编号：{流水号}", X = x0, Y = 28.6f, W = w, H = 4, FontPt = 7 });
+
+        t.Elements.Add(new LineElement { X = x0, Y = 33.2f, W = w, H = 0 });
+
+        // 单列字段（标签 11mm + 值 32mm）：人员/货物在前、重量在后；重量值加粗放大更醒目
+        const float gy = 34.4f, rowH = 4.6f, labelW = 11f;
+        var rows = new (string Label, string Value, bool Emphasis)[]
+        {
+            ("地主姓名", "{地主姓名}", false),
+            ("地主电话", "{地主电话}", false),
+            ("车号", "{车号}", false),
+            ("司机电话", "{司机电话}", false),
+            ("品种", "{货物}", false),
+            ("货主电话", "{货主电话}", false),
+            ("货主姓名", "{货主姓名}", false),
+            ("单价", "{单价}", false),
+            ("毛重", "{毛重:F2} {单位}", true),
+            ("皮重", "{皮重:F2} {单位}", true),
+            ("净重", "{净重:F2} {单位}", true),
+        };
+        for (int i = 0; i < rows.Length; i++)
+        {
+            float ry = gy + i * rowH;
+            t.Elements.Add(new TextElement { Text = rows[i].Label, X = x0, Y = ry, W = labelW, H = 4, FontPt = 8, Bold = true });
+            t.Elements.Add(new TextElement
+            {
+                Text = rows[i].Value, X = x0 + labelW, Y = ry, W = w - labelW, H = 4,
+                FontPt = rows[i].Emphasis ? 9 : 8, Bold = rows[i].Emphasis,
+            });
+        }
+
+        t.Elements.Add(new LineElement { X = x0, Y = 85.6f, W = w, H = 0 });
+
+        // 司磅行（公平计量站为先皮后毛流程：毛重取二次磅时间、皮重取一次磅时间）：
+        // 窄纸放不下"司磅员 + 完整时间"一行，拆成标签行与时间行两行
+        t.Elements.Add(new TextElement { Text = "毛重司磅：{司磅员}", X = x0, Y = 87, W = w, H = 4, FontPt = 7 });
+        t.Elements.Add(new TextElement { Text = "{二次磅时间:yyyy-MM-dd HH:mm:ss}", X = x0, Y = 90.8f, W = w, H = 4, FontPt = 7 });
+        t.Elements.Add(new TextElement { Text = "皮重司磅：{司磅员}", X = x0, Y = 94.6f, W = w, H = 4, FontPt = 7 });
+        t.Elements.Add(new TextElement { Text = "{一次磅时间:yyyy-MM-dd HH:mm:ss}", X = x0, Y = 98.4f, W = w, H = 4, FontPt = 7 });
+
+        // 联次标注（与三等分模板同义）：窄纸横排三等分
+        var marks = new[] { "白联:存根", "红联:客户", "蓝联:司机" };
+        for (int i = 0; i < marks.Length; i++)
+            t.Elements.Add(new TextElement { Text = marks[i], X = x0 + i * 14.5f, Y = 103f, W = 14f, H = 4, FontPt = 6.5f });
+
+        t.Elements.Add(new TextElement { Text = "{站点名称}", X = x0, Y = 107.5f, W = w, H = 8, FontPt = 7, Bold = true, Wrap = true });
+        t.Elements.Add(new TextElement { Text = "{承诺}", X = x0, Y = 116f, W = w, H = 14f, FontPt = 6.5f, Wrap = true });
         return t;
     }
 
