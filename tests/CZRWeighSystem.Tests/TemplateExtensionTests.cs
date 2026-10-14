@@ -131,10 +131,10 @@ public class BuiltinTemplatesTests
         var builtins = PrintTemplate.CreateBuiltins();
         Assert.Equal(2, builtins.Count);
         Assert.Equal(builtins.Count, builtins.Select(t => t.Name).Distinct().Count());
-        // 2026-10 精简：公平计量磅单（三等分 241×93）+ 2026-10-14 新增热敏小票-58mm（58×135）
+        // 2026-10 精简：公平计量磅单（三等分 241×93）+ 2026-10-14 新增热敏小票-58mm（58×145）
         Assert.Equal(2, builtins.Count(t => t.Category == "通用"));
         Assert.Equal(1, builtins.Count(t => t.PaperKey == "241x93"));
-        Assert.Equal(1, builtins.Count(t => t.PaperKey == "58x135"));
+        Assert.Equal(1, builtins.Count(t => t.PaperKey == "58x145"));
         Assert.All(builtins, t =>
         {
             Assert.False(string.IsNullOrWhiteSpace(t.Name));
@@ -238,14 +238,14 @@ public class ThermalReceiptTemplateTests
         string.Join("\n", t.Elements.OfType<TextElement>().Select(e => e.Text));
 
     [Fact]
-    public void 热敏小票_纸样为58x135_内容不超出打印头有效宽度()
+    public void 热敏小票_纸样为58x145_内容不超出打印头有效宽度()
     {
         var t = Thermal;
-        Assert.Equal("58x135", t.PaperKey);
+        Assert.Equal("58x145", t.PaperKey);
 
         var (paperW, paperH) = PoundTicketPrinter.PaperSizeMm(t.PaperKey);
         Assert.InRange(paperW, 57.5f, 58.5f);
-        Assert.InRange(paperH, 134.5f, 135.5f);
+        Assert.InRange(paperH, 144.5f, 145.5f);
 
         // 58mm 纸两侧硬边距吃掉约 10mm，内容右缘超出打印头有效宽即被裁
         float maxRight = t.Elements.Max(e => e.X + e.W);
@@ -300,6 +300,29 @@ public class ThermalReceiptTemplateTests
             Assert.NotNull(value);
             Assert.True(label.X + label.W <= value!.X,
                 $"标签「{label.Text}」右缘 {label.X + label.W:F1}mm 压到值列左缘 {value.X:F1}mm");
+        }
+    }
+
+    [Fact]
+    public void 热敏小票_折行元素高度足够两行()
+    {
+        // 渲染器坑（2026-10-14 抬头两行整段消失）：DrawText 在 Wrap=true 时布局框高 = 行高 × maxLines，
+        // 且 maxLines = (int)(H*pxPerMm/lineH)；当元素 H 仅够一行（maxLines 被算成 1）时
+        // GDI+ 用 LineLimit + GenericTypographic 会整段不渲染 → 文字完全消失（与对齐方式无关）。
+        // 故所有折行元素的 H 必须至少容下 2 行，此处按渲染器同一算法固化该约束。
+        const float pxPerMm = 96f / 25.4f;
+        using var bmp = new Bitmap(10, 10);
+        using var g = Graphics.FromImage(bmp);
+
+        foreach (var e in Thermal.Elements.OfType<TextElement>().Where(e => e.Wrap && e.H > 0))
+        {
+            using var f = new Font("Microsoft YaHei UI",
+                e.FontPt * 0.3528f * pxPerMm,
+                e.Bold ? FontStyle.Bold : FontStyle.Regular, GraphicsUnit.Pixel);
+            float lineH = Math.Max(1f, f.GetHeight(g));
+            int maxLines = Math.Max(1, (int)(e.H * pxPerMm / lineH));
+            Assert.True(maxLines >= 2,
+                $"折行元素「{e.Text}」H={e.H}mm 仅容 {maxLines} 行（{e.FontPt}pt，行高 {lineH / pxPerMm:F2}mm），GDI+ 将整段不渲染");
         }
     }
 }

@@ -231,7 +231,7 @@ public class PrintTemplate
         // 2026-10 精简内置模板库：仅保留公平计量磅单-三等分，其余标准/金额模板移除
         list.Add(BuildFairnessTemplate("公平计量磅单-三等分", "241x93"));
         // 2026-10-14 新增：58mm 热敏小票（窄幅收银纸），供小票打印机使用
-        list.Add(BuildThermalReceiptTemplate("热敏小票-58mm", "58x135"));
+        list.Add(BuildThermalReceiptTemplate("热敏小票-58mm", "58x145"));
         return list;
     }
 
@@ -393,18 +393,20 @@ public class PrintTemplate
         const float x0 = 2f, right = 45f;
         const float w = right - x0;              // 内容宽 43mm
 
-        // 抬头两行：公司名 + 磅单类型；文案较长时按元素宽度自动折行（窄纸放不下长抬头）
-        t.Elements.Add(new TextElement { Text = "{公司名称}", X = x0, Y = 2, W = w, H = 9, FontPt = 11, Bold = true, Align = TextAlign.Center, Wrap = true });
-        t.Elements.Add(new TextElement { Text = "{磅单抬头}", X = x0, Y = 11.5f, W = w, H = 8, FontPt = 9, Bold = true, Align = TextAlign.Center, Wrap = true });
+        // 抬头两行：公司名 + 磅单类型；文案较长时按元素宽度自动折行（窄纸放不下长抬头）。
+        // 注意：Wrap 元素高度须留足 2 行，否则 GDI+ 在布局框仅够一行时会整段不渲染
+        // （模板几何测试 ThermalReceiptTemplateTests.热敏小票_折行元素高度足够两行 已固化该约束）
+        t.Elements.Add(new TextElement { Text = "{公司名称}", X = x0, Y = 2, W = w, H = 11, FontPt = 11, Bold = true, Align = TextAlign.Center, Wrap = true });
+        t.Elements.Add(new TextElement { Text = "{磅单抬头}", X = x0, Y = 11.5f, W = w, H = 10, FontPt = 9, Bold = true, Align = TextAlign.Center, Wrap = true });
 
-        t.Elements.Add(new TextElement { Text = "第{打印次数}次打印", X = x0, Y = 20, W = w, H = 4, FontPt = 6.5f, Align = TextAlign.Right });
-        t.Elements.Add(new TextElement { Text = "日期：{打印时间:yyyy年MM月dd日 HH:mm:ss}", X = x0, Y = 24.3f, W = w, H = 4, FontPt = 7 });
-        t.Elements.Add(new TextElement { Text = "编号：{流水号}", X = x0, Y = 28.6f, W = w, H = 4, FontPt = 7 });
+        t.Elements.Add(new TextElement { Text = "第{打印次数}次打印", X = x0, Y = 23, W = w, H = 4, FontPt = 6.5f, Align = TextAlign.Right });
+        t.Elements.Add(new TextElement { Text = "日期：{打印时间:yyyy年MM月dd日 HH:mm:ss}", X = x0, Y = 27.3f, W = w, H = 4, FontPt = 7 });
+        t.Elements.Add(new TextElement { Text = "编号：{流水号}", X = x0, Y = 31.6f, W = w, H = 4, FontPt = 7 });
 
-        t.Elements.Add(new LineElement { X = x0, Y = 33.2f, W = w, H = 0 });
+        t.Elements.Add(new LineElement { X = x0, Y = 36.2f, W = w, H = 0 });
 
         // 单列字段（标签 11mm + 值 32mm）：人员/货物在前、重量在后；重量值加粗放大更醒目
-        const float gy = 34.4f, rowH = 4.6f, labelW = 11f;
+        const float gy = 37.4f, rowH = 4.6f, labelW = 11f;
         var rows = new (string Label, string Value, bool Emphasis)[]
         {
             ("地主姓名", "{地主姓名}", false),
@@ -430,22 +432,24 @@ public class PrintTemplate
             });
         }
 
-        t.Elements.Add(new LineElement { X = x0, Y = 85.6f, W = w, H = 0 });
+        // 网格底边 = 37.4 + 11×4.6 = 88.0，分隔线须落在其下方
+        t.Elements.Add(new LineElement { X = x0, Y = 88.8f, W = w, H = 0 });
 
         // 司磅行（公平计量站为先皮后毛流程：毛重取二次磅时间、皮重取一次磅时间）：
         // 窄纸放不下"司磅员 + 完整时间"一行，拆成标签行与时间行两行
-        t.Elements.Add(new TextElement { Text = "毛重司磅：{司磅员}", X = x0, Y = 87, W = w, H = 4, FontPt = 7 });
-        t.Elements.Add(new TextElement { Text = "{二次磅时间:yyyy-MM-dd HH:mm:ss}", X = x0, Y = 90.8f, W = w, H = 4, FontPt = 7 });
-        t.Elements.Add(new TextElement { Text = "皮重司磅：{司磅员}", X = x0, Y = 94.6f, W = w, H = 4, FontPt = 7 });
-        t.Elements.Add(new TextElement { Text = "{一次磅时间:yyyy-MM-dd HH:mm:ss}", X = x0, Y = 98.4f, W = w, H = 4, FontPt = 7 });
+        t.Elements.Add(new TextElement { Text = "毛重司磅：{司磅员}", X = x0, Y = 90.4f, W = w, H = 4, FontPt = 7 });
+        t.Elements.Add(new TextElement { Text = "{二次磅时间:yyyy-MM-dd HH:mm:ss}", X = x0, Y = 94.2f, W = w, H = 4, FontPt = 7 });
+        t.Elements.Add(new TextElement { Text = "皮重司磅：{司磅员}", X = x0, Y = 98.0f, W = w, H = 4, FontPt = 7 });
+        t.Elements.Add(new TextElement { Text = "{一次磅时间:yyyy-MM-dd HH:mm:ss}", X = x0, Y = 101.8f, W = w, H = 4, FontPt = 7 });
 
         // 联次标注（与三等分模板同义）：窄纸横排三等分
         var marks = new[] { "白联:存根", "红联:客户", "蓝联:司机" };
         for (int i = 0; i < marks.Length; i++)
-            t.Elements.Add(new TextElement { Text = marks[i], X = x0 + i * 14.5f, Y = 103f, W = 14f, H = 4, FontPt = 6.5f });
+            t.Elements.Add(new TextElement { Text = marks[i], X = x0 + i * 14.5f, Y = 106.4f, W = 14f, H = 4, FontPt = 6.5f });
 
-        t.Elements.Add(new TextElement { Text = "{站点名称}", X = x0, Y = 107.5f, W = w, H = 8, FontPt = 7, Bold = true, Wrap = true });
-        t.Elements.Add(new TextElement { Text = "{承诺}", X = x0, Y = 116f, W = w, H = 14f, FontPt = 6.5f, Wrap = true });
+        t.Elements.Add(new TextElement { Text = "{站点名称}", X = x0, Y = 111.6f, W = w, H = 8, FontPt = 7, Bold = true, Wrap = true });
+        // 承诺文案长约 112 字，窄纸折行后约 6 行（≈18mm），H 留足 23mm 保证整段打印不被裁
+        t.Elements.Add(new TextElement { Text = "{承诺}", X = x0, Y = 121.0f, W = w, H = 23f, FontPt = 6.5f, Wrap = true });
         return t;
     }
 
