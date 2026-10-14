@@ -73,6 +73,22 @@ public class CameraManager : IDisposable
     }
 
     /// <summary>
+    /// 手动拍照（首页放大画面/全屏画面的右键菜单）：抓拍指定路当前画面存到
+    /// manualCaptures/yyyyMMdd/HHmmss_fff_camN.jpg——与称重抓拍（captures，按流水号命名、
+    /// 供记录回查）分目录，人工拍的照片不会混进过磅记录的留证里。
+    /// </summary>
+    /// <param name="cameraIndex">摄像头路数序号（从 0 起，与 Sources 下标一致）</param>
+    /// <returns>已保存的图片路径；序号越界或暂无画面时返回 null</returns>
+    public string? CaptureManual(int cameraIndex)
+    {
+        if (cameraIndex < 0 || cameraIndex >= _sources.Count) return null;
+        string dir = Path.Combine(AppContext.BaseDirectory,
+            "manualCaptures", DateTime.Now.ToString("yyyyMMdd"));
+        string file = Path.Combine(dir, $"{DateTime.Now:HHmmss_fff}_cam{cameraIndex + 1}.jpg");
+        return _sources[cameraIndex].CaptureTo(file) ? file : null;
+    }
+
+    /// <summary>
     /// 黑匣子抓拍：保存全部摄像头当前画面到 blackbox/yyyyMMdd/（与称重抓拍分目录存证），
     /// 文件名 HHmmss_fff_camN.jpg。返回已保存的图片路径。
     /// </summary>

@@ -44,6 +44,7 @@ public class MainForm : Form
     private Action? _zoomFrameHandler;
     private int _enlargedCameraIndex = -1;    // -1 = 3 路平铺；>=0 = 放大该路
     private DateTime _zoomOpenedUtc;          // 放大开启时间（忽略双击的第二击）
+    private ContextMenuStrip _zoomMenu = null!;   // 放大画面右键菜单：取消半屏/全屏放大/手动拍照
 
     /// <summary>放大开启后的短时间内忽略点击：首页双击画面时第二击会落在刚铺开的大画面上，若响应会"放大又立刻还原"。</summary>
     internal static readonly TimeSpan ZoomClickGuard = TimeSpan.FromMilliseconds(400);
@@ -627,6 +628,28 @@ public class MainForm : Form
         _statsPanel.Visible = true;
     }
 
+    /// <summary>
+    /// 右键「全屏放大」：从半屏放大切到该路的沉浸全屏（无边框铺满所在显示器，Esc/单击退出）。
+    /// 非模态打开：首页半屏状态保留，关掉全屏即回到半屏画面。
+    /// </summary>
+    private void ZoomEnterFullscreen()
+    {
+        if (_enlargedCameraIndex < 0) return;
+        new VideoMonitorForm(_cameras, _enlargedCameraIndex, fullscreen: true).Show(this);
+    }
+
+    /// <summary>右键「手动拍照」：抓拍当前放大的这一路存到 manualCaptures/yyyyMMdd/，结果在状态栏提示。</summary>
+    private void ZoomManualPhoto()
+    {
+        if (_enlargedCameraIndex < 0) return;
+        int idx = _enlargedCameraIndex;
+        string? file = _cameras.CaptureManual(idx);
+        if (file != null)
+            SetState($"手动拍照已保存：{System.IO.Path.GetFileName(file)}（manualCaptures 目录）", true);
+        else
+            SetState($"{_zoomSrc?.Name ?? "摄像头"}暂无画面，无法拍照", false);
+    }
+
     /// <summary>放大视图覆盖的区域：与"视频监控区"同左缘同宽，从视频区顶边直到记录列表底边。</summary>
     internal Rectangle ZoomRegion() => new(
         20, CameraY, ClientSize.Width - 40, Math.Max(200, ClientSize.Height - 34 - CameraY));
@@ -650,14 +673,24 @@ public class MainForm : Form
         {
             if (ShouldRestoreZoom(_zoomOpenedUtc, DateTime.UtcNow, ZoomClickGuard)) RestoreCameraZoom();
         };
-        _zoomPic.Controls.Add(new Label
+        var hint = new Label
         {
-            Text = " 单击画面还原 ",
+            Text = " 单击画面还原 / 右键更多操作 ",
             AutoSize = true,
             Location = new Point(8, 8),
             BackColor = Color.FromArgb(140, 0, 0, 0),
             ForeColor = Color.White,
-        });
+        };
+        _zoomPic.Controls.Add(hint);
+
+        // 右键菜单（对齐摄像头客户端半屏菜单）：取消半屏 / 全屏放大 / 手动拍照
+        _zoomMenu = new ContextMenuStrip();
+        _zoomMenu.Items.Add("取消半屏", ShortcutIcon.Draw("shrink", 16), (_, _) => RestoreCameraZoom());
+        _zoomMenu.Items.Add("全屏放大", ShortcutIcon.Draw("expand", 16), (_, _) => ZoomEnterFullscreen());
+        _zoomMenu.Items.Add("手动拍照", ShortcutIcon.Draw("camera", 16), (_, _) => ZoomManualPhoto());
+        // 菜单同时挂在画面与左上角提示标签上（标签是画面的子控件，不继承父级菜单）
+        _zoomPic.ContextMenuStrip = _zoomMenu;
+        hint.ContextMenuStrip = _zoomMenu;
 
         _videoZoomPanel = new GroupBox
         {

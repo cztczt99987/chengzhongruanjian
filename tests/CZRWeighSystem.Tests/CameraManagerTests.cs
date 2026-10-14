@@ -19,6 +19,42 @@ public class CameraManagerTests
         Assert.Empty(sources);
     }
 
+    /// <summary>
+    /// 手动拍照（放大画面右键菜单）：存到独立的 manualCaptures/yyyyMMdd/ 目录（不与称重抓拍混放），
+    /// 文件名带 cam 序号；序号越界返回 null。
+    /// </summary>
+    [Fact]
+    public void CaptureManual_保存到manualCaptures目录_越界返回null()
+    {
+        var manager = new CameraManager();
+        string? saved = null;
+        try
+        {
+            var sources = (List<ICameraSource>)typeof(CameraManager)
+                .GetField("_sources", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+                .GetValue(manager)!;
+            sources.Add(new SimulatedCameraSource("CAM1"));   // 模拟源不启动也有现成帧可拍
+
+            Assert.Null(manager.CaptureManual(-1));
+            Assert.Null(manager.CaptureManual(9));
+
+            saved = manager.CaptureManual(0);
+            Assert.NotNull(saved);
+            Assert.True(File.Exists(saved), $"手动拍照文件应存在：{saved}");
+            Assert.Contains("manualCaptures", saved);
+            Assert.Contains(DateTime.Now.ToString("yyyyMMdd"), saved);
+            Assert.Contains("cam1", Path.GetFileName(saved));
+        }
+        finally
+        {
+            if (saved != null && File.Exists(saved))
+            {
+                Directory.Delete(Path.GetDirectoryName(saved)!, recursive: true);
+            }
+            manager.Dispose();
+        }
+    }
+
     [Fact]
     public void BuildSources_IpFilled_UsesRealSourceWithCustomName()
     {

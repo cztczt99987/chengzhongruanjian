@@ -632,6 +632,35 @@ public class MainFormLayoutTests
         Assert.Equal(Rectangle.Empty, MainForm.FitCover(0, 100, 400, 300));
     }
 
+    /// <summary>
+    /// 全屏窗口按聚焦索引只显示该路，索引为空/非法时回退显示全部。
+    /// </summary>
+    [Fact]
+    public void 全屏窗口_按索引只显示该路_非法索引回退全部()
+    {
+        var all = new List<ICameraSource>
+        {
+            new SimulatedCameraSource("CAM1"),
+            new SimulatedCameraSource("CAM2"),
+            new SimulatedCameraSource("CAM3"),
+        };
+        try
+        {
+            Assert.Equal(3, VideoMonitorForm.SelectSources(all, null).Count);
+
+            var one = VideoMonitorForm.SelectSources(all, 1);
+            Assert.Single(one);
+            Assert.Equal("CAM2", one[0].Name);
+
+            Assert.Equal(3, VideoMonitorForm.SelectSources(all, 9).Count);    // 越界 → 全部
+            Assert.Equal(3, VideoMonitorForm.SelectSources(all, -1).Count);
+        }
+        finally
+        {
+            foreach (var s in all) s.Dispose();
+        }
+    }
+
     /// <summary>测试注入摄像头源（不启动取流）：直接写入 CameraManager 的私有源列表。</summary>
     private static void InjectSources(MainForm form, params string[] names)
     {
@@ -741,11 +770,12 @@ public class MainFormLayoutTests
     }
 
     /// <summary>
-    /// 首页放大改为内联面板（不再弹窗）：放大视图与视频区同锚定、默认隐藏、画面角标提示"单击画面还原"；
+    /// 首页放大改为内联面板（不再全屏弹窗）：放大视图与视频区同锚定、默认隐藏、画面角标提示"单击画面还原"；
+    /// 放大画面右键菜单三项（取消半屏/全屏放大/手动拍照，对齐摄像头客户端）；
     /// 菜单入口的多路预览仍为普通带边框窗口（非全屏、无 Esc 退出）。
     /// </summary>
     [Fact]
-    public void 首页放大_为内联面板而非全屏弹窗()
+    public void 首页放大_为内联面板_右键菜单三项()
     {
         Db.Initialize();
         RunOnSta(() =>
@@ -757,6 +787,13 @@ public class MainFormLayoutTests
                 | AnchorStyles.Left | AnchorStyles.Right), "放大视图应随窗口伸缩");
             var pic = (PictureBox)Fld(form, "_zoomPic");
             Assert.Contains(pic.Controls.OfType<Label>(), l => l.Text.Contains("单击画面还原"));
+
+            // 右键菜单挂在画面上，三项齐全、顺序固定
+            var menu = (ContextMenuStrip)Fld(form, "_zoomMenu");
+            Assert.Same(menu, pic.ContextMenuStrip);
+            Assert.Equal(new[] { "取消半屏", "全屏放大", "手动拍照" },
+                menu.Items.Cast<ToolStripItem>().Select(i => i.Text));
+            Assert.All(menu.Items.Cast<ToolStripItem>(), i => Assert.NotNull(i.Image));
         });
 
         using var multi = new VideoMonitorForm(new CameraManager());
@@ -766,7 +803,49 @@ public class MainFormLayoutTests
     }
 
     /// <summary>
-    /// 放大开启后的短时间内忽略还原点击：首页双击画面时第二击会落在刚铺开的大画面上，
+    /// 右键「全屏放大」打开的单路全屏窗：无边框最大化、Esc/单击退出、画面右键菜单
+    /// （退出全屏/手动拍照），左上角有退出提示。
+    /// </summary>
+    [Fact]
+    public void 全屏放大_无边框单路画面_右键可退出与手动拍照()
+    {
+        bool oldEnabled = AppConfig.Current.CameraEnabled;
+        AppConfig.Current.CameraEnabled = true;   // 窗体据此决定显示画面还是"未启用"提示
+        var cameras = new CameraManager();
+        var src = new SimulatedCameraSource("CAM2");
+        try
+        {
+            ((List<ICameraSource>)typeof(CameraManager)
+                .GetField("_sources", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(cameras)!).Add(src);
+
+            RunOnSta(() =>
+            {
+                using var fs = new VideoMonitorForm(cameras, 1, fullscreen: true);
+                Assert.Equal(FormBorderStyle.None, fs.FormBorderStyle);
+                Assert.Equal(FormWindowState.Maximized, fs.WindowState);
+                Assert.True(fs.KeyPreview);
+                Assert.Equal("视频监控 - CAM2", fs.Text);
+                Assert.Contains(fs.Controls.OfType<Label>(), l => l.Text.Contains("退出全屏"));
+
+                // 唯一画面槽位的右键菜单：退出全屏 / 手动拍照（提示标签 BringToFront 后在最前，故按类型找画面表）
+                var table = Assert.Single(fs.Controls.OfType<TableLayoutPanel>());
+                var pic = Assert.IsType<PictureBox>(Assert.Single(table.Controls));
+                var menu = pic.ContextMenuStrip;
+                Assert.NotNull(menu);
+                Assert.Equal(new[] { "退出全屏", "手动拍照" },
+                    menu!.Items.Cast<ToolStripItem>().Select(i => i.Text));
+            });
+        }
+        finally
+        {
+            AppConfig.Current.CameraEnabled = oldEnabled;
+            src.Dispose();
+            cameras.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// 放大/全屏开启后的短时间内忽略退出点击：首页双击画面时第二击会落在刚铺开的大画面上，
     /// 若响应会"放大又立刻还原"（保护窗 400ms）。
     /// </summary>
     [Fact]
@@ -776,5 +855,7 @@ public class MainFormLayoutTests
         Assert.False(MainForm.ShouldRestoreZoom(opened, opened.AddMilliseconds(50), MainForm.ZoomClickGuard));
         Assert.True(MainForm.ShouldRestoreZoom(opened, opened + MainForm.ZoomClickGuard, MainForm.ZoomClickGuard));
         Assert.True(MainForm.ShouldRestoreZoom(opened, opened.AddSeconds(2), MainForm.ZoomClickGuard));
+        Assert.False(VideoMonitorForm.ShouldExitFullscreen(opened, opened.AddMilliseconds(50), VideoMonitorForm.ExitClickGuard));
+        Assert.True(VideoMonitorForm.ShouldExitFullscreen(opened, opened + VideoMonitorForm.ExitClickGuard, VideoMonitorForm.ExitClickGuard));
     }
 }

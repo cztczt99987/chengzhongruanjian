@@ -38,6 +38,8 @@ internal static class ShortcutIcon
             case "daily": DrawDaily(g); break;
             case "printer": DrawPrinter(g); break;
             case "camera": DrawCamera(g); break;
+            case "expand": DrawExpand(g, outward: true); break;    // 全屏放大
+            case "shrink": DrawExpand(g, outward: false); break;   // 取消半屏 / 退出全屏
             default: throw new ArgumentException($"未知快捷图标：{name}", nameof(name));
         }
         return bmp;
@@ -206,6 +208,38 @@ internal static class ShortcutIcon
         using var mount = new SolidBrush(BlueDark);
         g.FillRectangle(mount, 22, 42, 8, 8);
         g.FillRectangle(mount, 12, 50, 28, 5);
+    }
+
+    /// <summary>
+    /// 全屏放大/取消半屏：左上与右下两条对角箭头。outward=true 箭头指向屏幕两角（放大），
+    /// outward=false 箭头指向画面中心（收缩）。蓝线圆头，与其他彩色扁平图标同语言。
+    /// </summary>
+    private static void DrawExpand(Graphics g, bool outward)
+    {
+        using var pen = new Pen(Blue, 5) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        // 主对角线（左上 ↔ 中心附近 / 右下 ↔ 中心附近）
+        if (outward)
+        {
+            g.DrawLine(pen, 30, 30, 13, 13);
+            g.DrawLine(pen, 34, 34, 51, 51);
+            // 左上角箭头（端在 13,13）
+            g.DrawLine(pen, 13, 25, 13, 13);
+            g.DrawLine(pen, 13, 13, 25, 13);
+            // 右下角箭头（端在 51,51）
+            g.DrawLine(pen, 51, 39, 51, 51);
+            g.DrawLine(pen, 51, 51, 39, 51);
+        }
+        else
+        {
+            g.DrawLine(pen, 13, 13, 30, 30);
+            g.DrawLine(pen, 51, 51, 34, 34);
+            // 指向中心的箭头（端在 30,30）
+            g.DrawLine(pen, 18, 30, 30, 30);
+            g.DrawLine(pen, 30, 30, 30, 18);
+            // 指向中心的箭头（端在 34,34）
+            g.DrawLine(pen, 46, 34, 34, 34);
+            g.DrawLine(pen, 34, 34, 34, 46);
+        }
     }
 
     /// <summary>圆角矩形路径。</summary>
