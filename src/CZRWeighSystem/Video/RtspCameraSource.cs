@@ -125,9 +125,17 @@ public class RtspCameraSource : ICameraSource
                 return false;
             }
             Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
-            lock (frame)   // 与该位图写入互斥（抓拍发生在保存称重时，与显示线程竞争极少）
+            // GDI+ 同一图像不可被多线程并发使用（UI 绘制 / 取流写帧 / 抓拍三处都会用它）：
+            // 先在帧锁内拷贝一份像素，再在锁外编码存盘——既不与绘制冲突，也不长时间占住帧
+            // （2026-10-14 目标机反馈：抓拍存盘与首页绘制并发时抛 "Object is currently in use elsewhere"）
+            Bitmap copy;
+            lock (frame)
             {
-                frame.Save(filePath, System.Drawing.Imaging.ImageFormat.Jpeg);
+                copy = new Bitmap(frame);
+            }
+            using (copy)
+            {
+                copy.Save(filePath, System.Drawing.Imaging.ImageFormat.Jpeg);
             }
             Log.Info($"抓拍保存：{filePath}");
             return true;

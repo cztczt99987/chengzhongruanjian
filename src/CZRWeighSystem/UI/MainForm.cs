@@ -490,9 +490,7 @@ public class MainForm : Form
         pic.Paint += (_, e) =>
         {
             if (src.CurrentFrame is not { } frame) return;
-            var rect = FitCover(frame.Width, frame.Height, pic.ClientSize.Width, pic.ClientSize.Height);
-            e.Graphics.InterpolationMode = InterpolationMode.HighQualityBilinear;
-            e.Graphics.DrawImage(frame, rect);
+            DrawFrameFit(e.Graphics, frame, pic.ClientSize);
         };
 
         // 摄像头名称角标（覆盖在画面左上角）
@@ -557,6 +555,22 @@ public class MainForm : Form
         int w = (int)Math.Ceiling(imgW * scale);
         int h = (int)Math.Ceiling(imgH * scale);
         return new Rectangle((boxW - w) / 2, (boxH - h) / 2, w, h);
+    }
+
+    /// <summary>
+    /// 把帧画面等比缩放填满槽位（居中裁剪）绘制到目标画面（首页画面槽位与视频监控窗共用）。
+    /// 绘制期间持有帧位图锁：GDI+ 同一图像不可被多线程并发使用——后台抓拍存盘与取流写帧
+    /// 都在这把锁内，三者串行才不会抛 "Object is currently in use elsewhere"
+    /// （2026-10-14 目标机反馈：抓拍时 UI 绘制与存盘并发，弹出全局错误框）。
+    /// </summary>
+    internal static void DrawFrameFit(Graphics g, Image frame, Size box)
+    {
+        lock (frame)
+        {
+            var rect = FitCover(frame.Width, frame.Height, box.Width, box.Height);
+            g.InterpolationMode = InterpolationMode.HighQualityBilinear;
+            g.DrawImage(frame, rect);
+        }
     }
 
     /// <summary>各路画面是否长时间无帧（地址无效/过期/协议不支持时黑屏），显示提示并记录日志。</summary>

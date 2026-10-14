@@ -1,5 +1,4 @@
 using CZRWeighSystem.Video;
-using System.Drawing.Drawing2D;
 
 namespace CZRWeighSystem.UI;
 
@@ -130,9 +129,7 @@ public class VideoMonitorForm : Form
             pic.Paint += (_, e) =>
             {
                 if (src.CurrentFrame is not { } frame) return;
-                var rect = MainForm.FitCover(frame.Width, frame.Height, pic.ClientSize.Width, pic.ClientSize.Height);
-                e.Graphics.InterpolationMode = InterpolationMode.HighQualityBilinear;
-                e.Graphics.DrawImage(frame, rect);
+                MainForm.DrawFrameFit(e.Graphics, frame, pic.ClientSize);
             };
 
             // 摄像头名称角标（覆盖在画面左上角）

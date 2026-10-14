@@ -78,9 +78,15 @@ public class SimulatedCameraSource : ICameraSource
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
+            // 与该帧的 GDI+ 使用者（UI 绘制）互斥：先在锁内拷贝像素，再在锁外编码存盘
+            Bitmap copy;
             lock (_frame)
             {
-                _frame.Save(filePath, System.Drawing.Imaging.ImageFormat.Jpeg);
+                copy = new Bitmap(_frame);
+            }
+            using (copy)
+            {
+                copy.Save(filePath, System.Drawing.Imaging.ImageFormat.Jpeg);
             }
             Log.Info($"抓拍保存：{filePath}");
             return true;
