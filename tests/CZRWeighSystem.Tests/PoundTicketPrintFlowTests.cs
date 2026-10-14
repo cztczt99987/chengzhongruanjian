@@ -144,9 +144,27 @@ public class PoundTicketPrintFlowTests : IDisposable
     }
 
     [Fact]
-    public void 磅单预览打印_仅已完成结算的记录可打印()
+    public void 磅单打印_只称皮重的未完成记录也可打印()
     {
-        Assert.False(PoundTicketPrinter.CanPrint(new WeighRecord { Status = "未完成" }));
-        Assert.True(PoundTicketPrinter.CanPrint(new WeighRecord { Status = "已完成" }));
+        // 2026-10-14 用户要求：空车去皮只称了皮重的记录（未配对结算）也要能打印磅单
+        var tareOnly = new WeighRecord { Status = "未完成", TareKg = 11600, FirstTime = DateTime.Now };
+        Assert.True(PoundTicketPrinter.CanPrint(tareOnly));
+
+        // 重车过磅只称毛重的一次磅记录同样可打印
+        var grossOnly = new WeighRecord { Status = "未完成", GrossKg = 34600, FirstTime = DateTime.Now };
+        Assert.True(PoundTicketPrinter.CanPrint(grossOnly));
+
+        // 已完成结算记录仍可打印
+        Assert.True(PoundTicketPrinter.CanPrint(new WeighRecord
+        {
+            Status = "已完成", GrossKg = 34600, TareKg = 11600, NetKg = 23000,
+        }));
+
+        // 已作废记录不可打印；未完成记录（含空车去皮只称皮重）可打印
+        Assert.False(PoundTicketPrinter.CanPrint(new WeighRecord
+        {
+            Status = "已作废", GrossKg = 34600, TareKg = 11600,
+        }));
+        Assert.True(PoundTicketPrinter.CanPrint(new WeighRecord { Status = "未完成" }));
     }
 }

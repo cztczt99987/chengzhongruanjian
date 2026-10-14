@@ -389,7 +389,7 @@ public class RecordQueryForm : Form
         f.ShowDialog(this);
     }
 
-    /// <summary>补打选中记录的磅单（仅已完成记录，对应 PRD F5-04）。</summary>
+    /// <summary>补打选中记录的磅单（已完成或只称过一次的未完成记录；已作废记录除外）。</summary>
     private void Reprint()
     {
         if (_grid.CurrentRow?.Tag is not WeighRecord r)
@@ -398,9 +398,9 @@ public class RecordQueryForm : Form
                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
-        if (r.Status != "已完成")
+        if (!Report.PoundTicketPrinter.CanPrint(r))
         {
-            MessageBox.Show("只有已完成结算的记录才能打印磅单", "提示",
+            MessageBox.Show("已作废的记录不能打印磅单", "提示",
                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }

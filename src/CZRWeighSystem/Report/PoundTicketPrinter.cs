@@ -207,13 +207,13 @@ public static class PoundTicketPrinter
     /// <summary>
     /// 预览窗口「打 印」按钮动作：按当前版式直接打印到系统默认打印机
     /// （复用 <see cref="Print"/>：含打印次数上限校验、日志与"正在打印"提示）。
-    /// 仅已完成结算的记录可打印，与记录查询页「补打磅单」一致。
+    /// 可否打印由 <see cref="CanPrint"/> 判定，与记录查询页「补打磅单」一致。
     /// </summary>
     internal static void PrintFromPreview(WeighRecord r, Form owner)
     {
         if (!CanPrint(r))
         {
-            MessageBox.Show(owner, "只有已完成结算的记录才能打印磅单", "提示",
+            MessageBox.Show(owner, "已作废的记录不能打印磅单", "提示",
                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
@@ -222,8 +222,12 @@ public static class PoundTicketPrinter
         Print(r);
     }
 
-    /// <summary>只有已完成结算的记录才能打印磅单（与记录查询页「补打磅单」一致）。</summary>
-    internal static bool CanPrint(WeighRecord r) => r.Status == "已完成";
+    /// <summary>
+    /// 是否允许打印磅单：除已作废记录外均可打印——已完成结算的记录，以及只称过一次
+    /// （如空车去皮只称皮重、重车过磅只称毛重）的未完成记录都允许出单，
+    /// 未结算字段按 "-" 打印。
+    /// </summary>
+    internal static bool CanPrint(WeighRecord r) => r.Status != "已作废";
 
     /// <summary>
     /// 按给定画布直接渲染磅单内容（供验证工具做渲染自检）。
