@@ -7,20 +7,26 @@ namespace CZRWeighSystem.UI;
 /// 共享主界面 CameraManager 的画面源，仅作显示视图：
 /// 关闭窗体不停止取流，保存称重时的自动抓拍（F7-02）不受影响。
 /// focusCameraIndex 指定时只显示该路；fullscreen=true 时以无边框全屏呈现——
-/// 该组合仅用于首页放大画面右键菜单的「全屏放大」：全屏下单击画面或按 Esc 退出回首页，
-/// 右键可「退出全屏 / 手动拍照」。
+/// 该组合仅用于首页放大画面右键菜单的「全屏放大」。全屏内右键可：
+/// 退出全屏、双路展示（当前路 + 下一路左右并排，再次点击「单路展示」切回）、手动拍照
+/// （拍右键所在的那一路）；单击画面或按 Esc 退出回首页。
 /// </summary>
 public class VideoMonitorForm : Form
 {
     private readonly CameraManager _cameras;
-    private readonly int? _focusCameraIndex;
     private readonly bool _fullscreen;
     private readonly DateTime _openedUtc = DateTime.UtcNow;
     private readonly List<(ICameraSource Src, Action Handler)> _bindings = [];
+    private readonly List<ContextMenuStrip> _menus = [];   // 每次重建画面新建的右键菜单（重建时统一释放）
+
+    private readonly bool _showAll;    // 菜单入口：平铺全部路数（无右键菜单、不支持单/双路切换）
+    private int _primaryIndex;         // 单路/双路的第一路（Sources 全局序号）
+    private int? _secondIndex;         // 双路时的第二路序号；null = 单路
+    private TableLayoutPanel? _grid;
 
     private Label? _exitHint;                 // 全屏退出提示（手动拍照后临时改显保存结果）
     private System.Windows.Forms.Timer? _hintTimer;
-    private const string ExitHintText = "按 Esc / 单击画面或右键退出全屏";
+    private const string ExitHintText = "Esc / 单击画面退出全屏　右键：双路展示 · 手动拍照";
 
     /// <summary>打开瞬间的残留点击忽略窗口：在首页快速双击画面时，第二击会落进刚弹出的全屏窗，若响应会"开了又立刻关"。</summary>
     internal static readonly TimeSpan ExitClickGuard = TimeSpan.FromMilliseconds(400);
@@ -28,7 +34,6 @@ public class VideoMonitorForm : Form
     public VideoMonitorForm(CameraManager cameras, int? focusCameraIndex = null, bool fullscreen = false)
     {
         _cameras = cameras;
-        _focusCameraIndex = focusCameraIndex;
         _fullscreen = fullscreen;
         Text = "视频监控（保存称重时自动抓拍留证）";
         StartPosition = FormStartPosition.CenterParent;
@@ -38,6 +43,10 @@ public class VideoMonitorForm : Form
         Size = new Size(1200, 640);
         MinimumSize = new Size(640, 400);
         Font = new Font("Microsoft YaHei UI", 10F);
+
+        // focus 为空或越界 → 回退为"平铺全部"（菜单入口行为）
+        _showAll = focusCameraIndex is not int i || i < 0 || i >= cameras.Sources.Count;
+        _primaryIndex = _showAll ? 0 : focusCameraIndex!.Value;
 
         BuildUi();
 
@@ -55,6 +64,7 @@ public class VideoMonitorForm : Form
         {
             _hintTimer?.Stop();
             UnbindAll();
+            DisposeMenus();
         };
     }
 
@@ -103,96 +113,165 @@ public class VideoMonitorForm : Form
             return;
         }
 
-        var sources = SelectSources(_cameras.Sources, _focusCameraIndex);
-        if (sources.Count == 1)
-            Text = $"视频监控 - {sources[0].Name}";
+        RebuildGrid();
+    }
 
-        int count = sources.Count;
+    /// <summary>
+    /// 画面布局的唯一重建入口（初始构建与全屏内单路/双路切换都走这里）：
+    /// 先解绑旧画面帧事件并释放旧表格与右键菜单，再按当前模式建新表格——
+    /// 切换不残留旧控件、旧事件绑定，避免多路画面串帧。
+    /// </summary>
+    private void RebuildGrid()
+    {
+        UnbindAll();
+        DisposeMenus();
+        if (_grid != null)
+        {
+            Controls.Remove(_grid);
+            _grid.Dispose();
+            _grid = null;
+        }
+
+        var all = _cameras.Sources;
+        // 当前要显示的 (全局序号, 源)：菜单入口=全部；全屏=单路或双路
+        var tiles = new List<(int Index, ICameraSource Src)>();
+        if (_showAll)
+        {
+            for (int i = 0; i < all.Count; i++) tiles.Add((i, all[i]));
+        }
+        else
+        {
+            tiles.Add((_primaryIndex, all[_primaryIndex]));
+            if (_secondIndex is int s) tiles.Add((s, all[s]));
+        }
+
+        Text = _showAll
+            ? (tiles.Count == 1 ? $"视频监控 - {tiles[0].Src.Name}" : "视频监控（保存称重时自动抓拍留证）")
+            : (_secondIndex.HasValue
+                ? $"视频监控 - {tiles[0].Src.Name} + {tiles[1].Src.Name}（双路）"
+                : $"视频监控 - {tiles[0].Src.Name}");
+
+        int count = tiles.Count;
+        // 菜单入口：1 路单列、其余双列；全屏：单路单列、双路双列
         int cols = count == 1 ? 1 : 2;
         int rows = (int)Math.Ceiling(count / (double)cols);
 
-        var table = new TableLayoutPanel
+        _grid = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = cols,
             RowCount = rows,
         };
-        for (int i = 0; i < cols; i++)
-            table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / cols));
-        for (int i = 0; i < rows; i++)
-            table.RowStyles.Add(new RowStyle(SizeType.Percent, 100f / rows));
+        for (int c = 0; c < cols; c++)
+            _grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / cols));
+        for (int r = 0; r < rows; r++)
+            _grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100f / rows));
 
-        for (int i = 0; i < count; i++)
-        {
-            var src = sources[i];
-            var pic = new PictureBox
-            {
-                Dock = DockStyle.Fill,
-                SizeMode = PictureBoxSizeMode.Normal,   // 帧由 Paint 等比填满（不留黑边、不拉伸变形）
-                BackColor = SystemColors.Control,
-                Margin = new Padding(0),
-            };
+        foreach (var (camIndex, src) in tiles)
+            _grid.Controls.Add(BuildTile(camIndex, src));
 
-            // 帧画面等比缩放填满整个槽位（居中裁剪）：去掉画面四周的黑色留边
-            pic.Paint += (_, e) =>
-            {
-                if (src.CurrentFrame is not { } frame) return;
-                MainForm.DrawFrameFit(e.Graphics, frame, pic.ClientSize);
-            };
-
-            // 摄像头名称角标（覆盖在画面左上角）
-            pic.Controls.Add(new Label
-            {
-                Text = $" {src.Name} ",
-                AutoSize = true,
-                Location = new Point(4, 4),
-                BackColor = Color.FromArgb(120, 0, 0, 0),
-                ForeColor = Color.White,
-            });
-
-            // 全屏模式下单击画面即退出（全屏内不切换路数：看其他路请关闭后回首页点击）
-            if (_fullscreen)
-            {
-                pic.Click += (_, _) => { if (ShouldExitFullscreen(_openedUtc, DateTime.UtcNow, ExitClickGuard)) Close(); };
-                pic.ContextMenuStrip = BuildFullscreenMenu();   // 右键：退出全屏 / 手动拍照
-            }
-
-            // 帧刷新：可能来自非 UI 线程，转发到 UI 线程（窗体关闭后不再处理）
-            void OnFrame()
-            {
-                try
-                {
-                    if (!IsHandleCreated || IsDisposed) return;
-                    _ = BeginInvoke(() =>
-                    {
-                        if (IsDisposed) return;
-                        pic.Invalidate();   // Paint 重新绘制当前帧
-                    });
-                }
-                catch (ObjectDisposedException) { /* 窗体关闭瞬间的竞争，忽略 */ }
-            }
-
-            src.PreviewFrameUpdated += OnFrame;
-            _bindings.Add((src, OnFrame));
-            table.Controls.Add(pic);
-        }
-        Controls.Add(table);
+        Controls.Add(_grid);
+        _exitHint?.BringToFront();   // 重建后提示重新浮到最上层
     }
 
-    /// <summary>全屏画面右键菜单：退出全屏 / 手动拍照（对齐摄像头客户端「全屏放大」后的操作）。</summary>
-    private ContextMenuStrip BuildFullscreenMenu()
+    /// <summary>构建一块画面槽位（绑定帧事件；全屏模式下挂退出点击与右键菜单）。</summary>
+    private PictureBox BuildTile(int camIndex, ICameraSource src)
+    {
+        var pic = new PictureBox
+        {
+            Dock = DockStyle.Fill,
+            SizeMode = PictureBoxSizeMode.Normal,   // 帧由 Paint 等比填满（不留黑边、不拉伸变形）
+            BackColor = SystemColors.Control,
+            Margin = new Padding(0),
+        };
+
+        pic.Paint += (_, e) =>
+        {
+            if (src.CurrentFrame is not { } frame) return;
+            MainForm.DrawFrameFit(e.Graphics, frame, pic.ClientSize);
+        };
+
+        // 摄像头名称角标（覆盖在画面左上角）
+        var nameLabel = new Label
+        {
+            Text = $" {src.Name} ",
+            AutoSize = true,
+            Location = new Point(4, 4),
+            BackColor = Color.FromArgb(120, 0, 0, 0),
+            ForeColor = Color.White,
+        };
+        pic.Controls.Add(nameLabel);
+
+        if (_fullscreen)
+        {
+            // 单击画面即退出全屏（打开 400ms 内的残留点击忽略，避免首页双击第二击"开了又关"）
+            pic.Click += (_, _) => { if (ShouldExitFullscreen(_openedUtc, DateTime.UtcNow, ExitClickGuard)) Close(); };
+            var menu = BuildFullscreenMenu(camIndex);
+            pic.ContextMenuStrip = menu;
+            nameLabel.ContextMenuStrip = menu;   // 名称标签是画面的子控件，不继承父级菜单
+        }
+
+        // 帧刷新：可能来自非 UI 线程，转发到 UI 线程（窗体关闭后不再处理）
+        void OnFrame()
+        {
+            try
+            {
+                if (!IsHandleCreated || IsDisposed) return;
+                _ = BeginInvoke(() =>
+                {
+                    if (IsDisposed) return;
+                    pic.Invalidate();   // Paint 重新绘制当前帧
+                });
+            }
+            catch (ObjectDisposedException) { /* 窗体关闭瞬间的竞争，忽略 */ }
+        }
+
+        src.PreviewFrameUpdated += OnFrame;
+        _bindings.Add((src, OnFrame));
+        return pic;
+    }
+
+    /// <summary>全屏画面右键菜单：退出全屏 / 双路展示（单路展示）/ 手动拍照（作用于右键所在的那一路）。</summary>
+    private ContextMenuStrip BuildFullscreenMenu(int camIndex)
     {
         var menu = new ContextMenuStrip();
         menu.Items.Add("退出全屏", ShortcutIcon.Draw("shrink", 16), (_, _) => Close());
-        menu.Items.Add("手动拍照", ShortcutIcon.Draw("camera", 16), (_, _) => ManualShot());
+
+        bool dual = _secondIndex.HasValue;
+        var toggle = new ToolStripMenuItem(
+            dual ? "单路展示" : "双路展示",
+            ShortcutIcon.Draw(dual ? "shrink" : "dual", 16),
+            (_, _) => ToggleDual());
+        // 只有一路摄像头时无法双路（单路模式下置灰；双路模式下始终可切回）
+        if (!dual && _cameras.Sources.Count < 2) toggle.Enabled = false;
+        menu.Items.Add(toggle);
+
+        menu.Items.Add("手动拍照", ShortcutIcon.Draw("camera", 16), (_, _) => ManualShot(camIndex));
+        _menus.Add(menu);
         return menu;
     }
 
-    /// <summary>手动拍照当前这路：存到 manualCaptures，结果在左上角提示 2.5 秒（不弹窗打断观看）。</summary>
-    private void ManualShot()
+    /// <summary>
+    /// 单路 ↔ 双路切换：双路 = 当前路 + 下一路（最后一路回绕到第一路）；
+    /// 再次调用即切回单路。切换只重建画面表格，取流源不受影响。
+    /// </summary>
+    internal void ToggleDual()
     {
-        if (_focusCameraIndex is not int idx) return;
-        string? file = _cameras.CaptureManual(idx);
+        int count = _cameras.Sources.Count;
+        if (count < 2) return;
+        _secondIndex = _secondIndex.HasValue
+            ? null
+            : (_primaryIndex + 1) % count;
+        RebuildGrid();
+    }
+
+    /// <summary>全屏内当前是否处于双路展示（测试用）。</summary>
+    internal bool IsDual => _secondIndex.HasValue;
+
+    /// <summary>手动拍照指定路：存到 manualCaptures，结果在左上角提示 2.5 秒（不弹窗打断观看）。</summary>
+    private void ManualShot(int camIndex)
+    {
+        string? file = _cameras.CaptureManual(camIndex);
         FlashHint(file == null
             ? "暂无画面，无法拍照"
             : $"手动拍照已保存：{Path.GetFileName(file)}");
@@ -213,7 +292,18 @@ public class VideoMonitorForm : Form
         _hintTimer.Start();
     }
 
-    /// <summary>关闭窗体时解绑帧事件（摄像头由主界面管理，继续供抓拍使用）。</summary>
+    /// <summary>释放历次重建画面时创建的右键菜单及其图标（菜单不在 Controls 树里，需手动释放）。</summary>
+    private void DisposeMenus()
+    {
+        foreach (var m in _menus)
+        {
+            foreach (ToolStripItem item in m.Items) item.Image?.Dispose();
+            m.Dispose();
+        }
+        _menus.Clear();
+    }
+
+    /// <summary>关闭窗体/重建画面前解绑帧事件（摄像头由主界面管理，继续供抓拍使用）。</summary>
     private void UnbindAll()
     {
         foreach (var (src, handler) in _bindings)

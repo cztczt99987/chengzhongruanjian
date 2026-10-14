@@ -804,10 +804,10 @@ public class MainFormLayoutTests
 
     /// <summary>
     /// 右键「全屏放大」打开的单路全屏窗：无边框最大化、Esc/单击退出、画面右键菜单
-    /// （退出全屏/手动拍照），左上角有退出提示。
+    /// （退出全屏/双路展示/手动拍照），左上角有退出提示。
     /// </summary>
     [Fact]
-    public void 全屏放大_无边框单路画面_右键可退出与手动拍照()
+    public void 全屏放大_无边框单路画面_右键菜单三项()
     {
         bool oldEnabled = AppConfig.Current.CameraEnabled;
         AppConfig.Current.CameraEnabled = true;   // 窗体据此决定显示画面还是"未启用"提示
@@ -820,26 +820,146 @@ public class MainFormLayoutTests
 
             RunOnSta(() =>
             {
-                using var fs = new VideoMonitorForm(cameras, 1, fullscreen: true);
+                using var fs = new VideoMonitorForm(cameras, 0, fullscreen: true);
                 Assert.Equal(FormBorderStyle.None, fs.FormBorderStyle);
                 Assert.Equal(FormWindowState.Maximized, fs.WindowState);
                 Assert.True(fs.KeyPreview);
                 Assert.Equal("视频监控 - CAM2", fs.Text);
                 Assert.Contains(fs.Controls.OfType<Label>(), l => l.Text.Contains("退出全屏"));
 
-                // 唯一画面槽位的右键菜单：退出全屏 / 手动拍照（提示标签 BringToFront 后在最前，故按类型找画面表）
+                // 唯一画面槽位的右键菜单：退出全屏 / 双路展示 / 手动拍照（按类型找画面表：提示标签 BringToFront 后在最前）
                 var table = Assert.Single(fs.Controls.OfType<TableLayoutPanel>());
                 var pic = Assert.IsType<PictureBox>(Assert.Single(table.Controls));
                 var menu = pic.ContextMenuStrip;
                 Assert.NotNull(menu);
-                Assert.Equal(new[] { "退出全屏", "手动拍照" },
+                Assert.Equal(new[] { "退出全屏", "双路展示", "手动拍照" },
                     menu!.Items.Cast<ToolStripItem>().Select(i => i.Text));
+                Assert.All(menu.Items.Cast<ToolStripItem>(), i => Assert.NotNull(i.Image));
             });
         }
         finally
         {
             AppConfig.Current.CameraEnabled = oldEnabled;
             src.Dispose();
+            cameras.Dispose();
+        }
+    }
+
+    /// <summary>构造注入 N 路模拟摄像头的 CameraManager（不启动取流）。</summary>
+    private static CameraManager BuildCameraManager(int count)
+    {
+        var cameras = new CameraManager();
+        var list = (List<ICameraSource>)typeof(CameraManager)
+            .GetField("_sources", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(cameras)!;
+        for (int i = 1; i <= count; i++) list.Add(new SimulatedCameraSource($"CAM{i}"));
+        return cameras;
+    }
+
+    /// <summary>全屏窗内读取当前各画面槽位的摄像头名称（名称角标文本，顺序即槽位顺序）。</summary>
+    private static List<string> TileNames(VideoMonitorForm fs)
+    {
+        var table = Assert.Single(fs.Controls.OfType<TableLayoutPanel>());
+        return table.Controls.OfType<PictureBox>()
+            .Select(p => p.Controls.OfType<Label>().First().Text.Trim())
+            .ToList();
+    }
+
+    /// <summary>取第 tileIndex 个画面槽位右键菜单中指定文字的项。</summary>
+    private static ToolStripMenuItem MenuItem(VideoMonitorForm fs, int tileIndex, string text)
+    {
+        var table = Assert.Single(fs.Controls.OfType<TableLayoutPanel>());
+        var pic = (PictureBox)table.Controls.OfType<PictureBox>().ElementAt(tileIndex);
+        return Assert.IsType<ToolStripMenuItem>(pic.ContextMenuStrip!.Items.Cast<ToolStripItem>().First(i => i.Text == text));
+    }
+
+    /// <summary>
+    /// 全屏「双路展示」：当前路 + 下一路左右并排（CAM1+CAM2），菜单项变为「单路展示」；
+    /// 再点切回单路 CAM1；双路下对第二块画面「手动拍照」只拍 CAM2（文件名 cam2）。
+    /// </summary>
+    [Fact]
+    public void 全屏_双路展示_当前路与下一路并排_可切回_拍照只拍右键所在路()
+    {
+        bool oldEnabled = AppConfig.Current.CameraEnabled;
+        AppConfig.Current.CameraEnabled = true;
+        var cameras = BuildCameraManager(3);
+        string manualDir = Path.Combine(AppContext.BaseDirectory, "manualCaptures");
+        try
+        {
+            RunOnSta(() =>
+            {
+                using var fs = new VideoMonitorForm(cameras, 0, fullscreen: true);
+                Assert.Equal(new[] { "CAM1" }, TileNames(fs));
+                Assert.False(fs.IsDual);
+
+                MenuItem(fs, 0, "双路展示").PerformClick();   // 切双路
+                Assert.True(fs.IsDual);
+                Assert.Equal(new[] { "CAM1", "CAM2" }, TileNames(fs));
+                Assert.Contains("双路", fs.Text);
+                Assert.Equal("单路展示", MenuItem(fs, 0, "单路展示").Text);
+                Assert.Equal("单路展示", MenuItem(fs, 1, "单路展示").Text);
+
+                // 在第二块画面上手动拍照 → 只抓拍 CAM2（cam2 序号）
+                MenuItem(fs, 1, "手动拍照").PerformClick();
+                var files = Directory.GetFiles(Path.Combine(manualDir, DateTime.Now.ToString("yyyyMMdd")), "*_cam2.jpg");
+                Assert.NotEmpty(files);
+
+                MenuItem(fs, 0, "单路展示").PerformClick();   // 切回单路
+                Assert.False(fs.IsDual);
+                Assert.Equal(new[] { "CAM1" }, TileNames(fs));
+            });
+        }
+        finally
+        {
+            AppConfig.Current.CameraEnabled = oldEnabled;
+            cameras.Dispose();
+            if (Directory.Exists(manualDir)) Directory.Delete(manualDir, recursive: true);
+        }
+    }
+
+    /// <summary>最后一路双路展示时回绕到第一路：CAM3 + CAM1。</summary>
+    [Fact]
+    public void 全屏_双路展示_最后一路回绕配对第一路()
+    {
+        bool oldEnabled = AppConfig.Current.CameraEnabled;
+        AppConfig.Current.CameraEnabled = true;
+        var cameras = BuildCameraManager(3);
+        try
+        {
+            RunOnSta(() =>
+            {
+                using var fs = new VideoMonitorForm(cameras, 2, fullscreen: true);
+                MenuItem(fs, 0, "双路展示").PerformClick();
+                Assert.Equal(new[] { "CAM3", "CAM1" }, TileNames(fs));
+            });
+        }
+        finally
+        {
+            AppConfig.Current.CameraEnabled = oldEnabled;
+            cameras.Dispose();
+        }
+    }
+
+    /// <summary>只配置了一路摄像头时，「双路展示」置灰不可点。</summary>
+    [Fact]
+    public void 全屏_仅一路摄像头_双路展示置灰()
+    {
+        bool oldEnabled = AppConfig.Current.CameraEnabled;
+        AppConfig.Current.CameraEnabled = true;
+        var cameras = BuildCameraManager(1);
+        try
+        {
+            RunOnSta(() =>
+            {
+                using var fs = new VideoMonitorForm(cameras, 0, fullscreen: true);
+                var item = MenuItem(fs, 0, "双路展示");
+                Assert.False(item.Enabled, "只有一路摄像头时双路展示应置灰");
+                item.PerformClick();   // 点击无效，仍是单路
+                Assert.False(fs.IsDual);
+            });
+        }
+        finally
+        {
+            AppConfig.Current.CameraEnabled = oldEnabled;
             cameras.Dispose();
         }
     }

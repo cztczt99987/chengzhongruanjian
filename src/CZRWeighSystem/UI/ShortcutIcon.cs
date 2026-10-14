@@ -39,7 +39,8 @@ internal static class ShortcutIcon
             case "printer": DrawPrinter(g); break;
             case "camera": DrawCamera(g); break;
             case "expand": DrawExpand(g, outward: true); break;    // 全屏放大
-            case "shrink": DrawExpand(g, outward: false); break;   // 取消半屏 / 退出全屏
+            case "shrink": DrawExpand(g, outward: false); break;   // 取消半屏 / 退出全屏 / 单路展示
+            case "dual": DrawDual(g); break;                       // 双路展示（左右两块屏）
             default: throw new ArgumentException($"未知快捷图标：{name}", nameof(name));
         }
         return bmp;
@@ -240,6 +241,35 @@ internal static class ShortcutIcon
             g.DrawLine(pen, 46, 34, 34, 34);
             g.DrawLine(pen, 34, 34, 34, 46);
         }
+    }
+
+    /// <summary>
+    /// 双路展示：左右两块显示器（中间留缝），各带一个播放三角，蓝色扁平风。
+    /// </summary>
+    private static void DrawDual(Graphics g)
+    {
+        // 底座（两块屏共用一条底座线）
+        using var dark = new SolidBrush(BlueDark);
+        g.FillRectangle(dark, 16, 52, 32, 4);
+        g.FillRectangle(dark, 12, 55, 40, 3);
+        DrawOneScreen(g, 4, 10);
+        DrawOneScreen(g, 34, 10);
+    }
+
+    /// <summary>双屏中的一块：26 宽 40 高的蓝色屏幕 + 白色播放三角。</summary>
+    private static void DrawOneScreen(Graphics g, int x, int y)
+    {
+        using var screen = RoundedRect(x, y, 26, 40, 4);
+        using var frame = new LinearGradientBrush(new Rectangle(x, y, 26, 40),
+            Color.FromArgb(74, 148, 224), BlueDark, 90f);
+        g.FillPath(frame, screen);
+        using var inner = new SolidBrush(Color.FromArgb(20, 44, 78));
+        g.FillRectangle(inner, x + 3, y + 3, 20, 34);
+        using var play = new SolidBrush(Color.White);
+        g.FillPolygon(play, new[]
+        {
+            new Point(x + 10, y + 14), new Point(x + 10, y + 26), new Point(x + 19, y + 20),
+        });
     }
 
     /// <summary>圆角矩形路径。</summary>
