@@ -115,7 +115,8 @@ public class MainForm : Form
     // CameraY/CameraH 按窗口高度动态计算：画面区尽量撑大，底部记录列表保底 160px 不被压扁。
     private int CameraY => _menu.Height + TopPanelH + 6;   // 视频监控区 y（顶部称重条底边 + 6）
     private const int GridMinH = 160;   // 底部记录列表最小高度（画面再大也不压扁它）
-    private int CameraH => Math.Max(220, ClientSize.Height - 34 - CameraY - 34 - GridMinH);
+    private int _statusH = 22;          // 状态栏实际高度（BuildStatusBar 中实测，避免多留空隙）
+    private int CameraH => Math.Max(220, ClientSize.Height - _statusH - CameraY - 34 - GridMinH);
     private int GridY => CameraY + CameraH + 34;   // 底部记录列表 y（中间留今日汇总行）
 
     // ===== 界面构建 =====
@@ -427,7 +428,10 @@ public class MainForm : Form
         _videoPanel.Location = new Point(20, camY);
         _videoPanel.Size = new Size(ClientSize.Width - 40, camH);
         _lblTodaySummary.Top = camY + camH + 6;
-        _capturePanel.Top = GridY;            // = camY + camH + 34，高度由 Top|Bottom 锚定自动撑开
+        _capturePanel.Top = GridY;            // = camY + camH + 34
+        // 显式设定高度：capturePanel 锚定了 Top|Bottom，仅改 Top 会让高度按原底边余量错位撑出窗体；
+        // 这里按可用高度（状态栏 _statusH）重算，保证记录列表底边恰好贴合状态栏顶边、放大画面能完整覆盖
+        _capturePanel.Height = Math.Max(GridMinH, ClientSize.Height - _statusH - GridY);
         AlignStatsToVideo();
         if (_videoZoomPanel is { Visible: true })
             _videoZoomPanel.Bounds = ZoomRegion();
@@ -834,7 +838,7 @@ public class MainForm : Form
 
     /// <summary>放大视图覆盖的区域：与"视频监控区"同左缘同宽，从视频区顶边直到记录列表底边。</summary>
     internal Rectangle ZoomRegion() => new(
-        20, CameraY, ClientSize.Width - 40, Math.Max(200, ClientSize.Height - 34 - CameraY));
+        20, CameraY, ClientSize.Width - 40, Math.Max(200, ClientSize.Height - _statusH - CameraY));
 
     /// <summary>首页内联放大视图（默认隐藏，单击某路画面时显示；画面表格在放大时才构建）。</summary>
     private void BuildVideoZoomPanel()
@@ -1038,7 +1042,7 @@ public class MainForm : Form
         };
         Controls.Add(_lblTodaySummary);
 
-        int gridH = Math.Max(GridMinH, ClientSize.Height - 34 - GridY);
+        int gridH = Math.Max(GridMinH, ClientSize.Height - _statusH - GridY);
         _capturePanel = new GroupBox
         {
             Text = "称重记录（双击未完成行结算，右键更多操作）",
@@ -1587,6 +1591,7 @@ public class MainForm : Form
         _tsslTime = new ToolStripStatusLabel { Text = "" };
         _status.Items.AddRange(new ToolStripItem[] { _tsslSource, _tsslState, _tsslTime });
         Controls.Add(_status);
+        _statusH = _status.Height;   // 实测状态栏高度，供布局计算（避免多留空隙）
 
         // 每秒刷新时间显示与通讯指示（通讯中断靠超时检测，需要定时刷新）
         var timer = new System.Windows.Forms.Timer { Interval = 1000 };
