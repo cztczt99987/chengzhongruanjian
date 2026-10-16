@@ -428,10 +428,10 @@ public class MainForm : Form
         _videoPanel.Location = new Point(20, camY);
         _videoPanel.Size = new Size(ClientSize.Width - 40, camH);
         _lblTodaySummary.Top = camY + camH + 6;
-        _capturePanel.Top = GridY;            // = camY + camH + 34
-        // 显式设定高度：capturePanel 锚定了 Top|Bottom，仅改 Top 会让高度按原底边余量错位撑出窗体；
-        // 这里按可用高度（状态栏 _statusH）重算，保证记录列表底边恰好贴合状态栏顶边、放大画面能完整覆盖
-        _capturePanel.Height = Math.Max(GridMinH, ClientSize.Height - _statusH - GridY);
+        // 显式设定 Bounds（含高度）：capturePanel 仅锚定 Top|Left|Right，高度完全由这里控制，
+        // 保证不同分辨率/窗体大小下列表底边恰好贴合状态栏顶边、放大画面能完整覆盖
+        int capH = Math.Max(GridMinH, ClientSize.Height - _statusH - GridY);
+        _capturePanel.Bounds = new Rectangle(20, GridY, ClientSize.Width - 40, capH);
         AlignStatsToVideo();
         if (_videoZoomPanel is { Visible: true })
             _videoZoomPanel.Bounds = ZoomRegion();
@@ -1048,7 +1048,9 @@ public class MainForm : Form
             Text = "称重记录（双击未完成行结算，右键更多操作）",
             Location = new Point(20, GridY),
             Size = new Size(ClientSize.Width - 40, gridH),
-            Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+            // 仅锚定 Top|Left|Right：高度由 LayoutMain 显式计算，避免 Bottom 锚定在窗体缩放时
+            // 按旧底边余量撑高/压低，导致不同分辨率下列表底边错位（要么留大片空白、要么超出窗体）
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
         };
 
         _captureGrid = new DataGridView

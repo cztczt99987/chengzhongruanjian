@@ -5,8 +5,11 @@ using System.Reflection;
 namespace CZRWeighSystem.Tests;
 
 /// <summary>
-/// 放大视图布局回归：放大画面必须完整覆盖底部称重记录列表（此前 capturePanel 仅重设 Top、
-/// 高度靠 Top|Bottom 锚定，窗体放大后列表底边会撑出客户区，导致放大画面盖不住列表）。
+/// 放大视图与记录列表布局回归：
+/// 1. 放大画面必须完整覆盖底部称重记录列表；
+/// 2. 记录列表底边必须恰好贴合状态栏顶边（不超出客户区、也不留大片空白）；
+/// 3. 以上在不同分辨率/窗体尺寸下均成立（此前 capturePanel 锚定 Bottom，
+///    窗体缩放时按旧底边余量撑高/压低，导致小屏留空、大屏超出）。
 /// </summary>
 [Collection("数据库顺序")]
 public class MainFormZoomLayoutTests
@@ -24,25 +27,33 @@ public class MainFormZoomLayoutTests
         if (error != null) throw error;
     }
 
-    [Fact]
-    public void 放大视图_完整覆盖称重记录列表_不露出底部列表()
+    /// <summary>多种窗体尺寸（含接近最小值与常见分辨率）下列表底边与状态栏贴合、放大区覆盖列表。</summary>
+    [Theory]
+    [InlineData(1240, 780)]     // 最小窗口
+    [InlineData(1366, 768)]     // 常见笔记本
+    [InlineData(1600, 900)]
+    [InlineData(1920, 1080)]    // 全高清
+    [InlineData(2560, 1440)]    // 2K
+    public void 多分辨率_记录列表底边贴合状态栏_放大区完整覆盖(int w, int h)
     {
         Db.Initialize();
         RunOnSta(() =>
         {
             using var form = new MainForm();
-            form.ClientSize = new Size(1900, 1000);
+            form.ClientSize = new Size(w, h);
             form.PerformLayout();
 
-            var zoomRegion = form.ZoomRegion();
             var capture = (GroupBox)Fld(form, "_capturePanel");
+            var status = (StatusStrip)Fld(form, "_status");
+            var zoomRegion = form.ZoomRegion();
 
-            // 放大区域底边必须 ≥ 记录列表底边（放大画面能完整盖住列表）
-            Assert.True(zoomRegion.Bottom >= capture.Bottom,
-                $"放大区底边({zoomRegion.Bottom})应不小于记录列表底边({capture.Bottom})");
-            // 记录列表底边不得超出客户区（状态栏之上）
-            Assert.True(capture.Bottom <= form.ClientSize.Height,
-                $"记录列表底边({capture.Bottom})不得超出客户区({form.ClientSize.Height})");
+            int statusTop = form.ClientSize.Height - status.Height;
+            // 列表底边必须落在状态栏顶边附近（贴合，不超出也不大片留空）
+            Assert.True(Math.Abs(capture.Bottom - statusTop) <= 2,
+                $"[{w}x{h}] 列表底边({capture.Bottom})应贴合状态栏顶边({statusTop})");
+            // 放大区底边必须 ≥ 列表底边（放大画面能完整盖住列表）
+            Assert.True(zoomRegion.Bottom >= capture.Bottom - 1,
+                $"[{w}x{h}] 放大区底边({zoomRegion.Bottom})应不小于列表底边({capture.Bottom})");
         });
     }
 }
