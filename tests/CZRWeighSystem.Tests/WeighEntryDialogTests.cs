@@ -784,14 +784,14 @@ public class WeighEntryDialogTests
     }
 
     /// <summary>
-    /// 用户要求：毛重匹配时输入完车牌号，若该车有皮重信息，就把皮重显示在右侧"皮重"栏。
-    /// 未确认状态下即应显示（不必等到点确认），毛重/净重仍保持 "--"。
+    /// 已完成完整称重的车辆再次过磅是新的一次运输，票面皮重栏不应显示上次运输的皮重，
+    /// 未确认状态下毛/皮/净一律为 "--"（仅当有未完成的一次磅时才显示那次磅的重量）。
     /// </summary>
     [Fact]
-    public void 重车过磅_输入有历史皮重的车号_右侧皮重栏显示该皮重()
+    public void 重车过磅_输入已完成称重的车号_皮重栏不显示历史皮重()
     {
         string vehicle = NewVehicle("A");
-        SeedCompletedWithTare(vehicle, 10000, 30000);   // 本车皮重 10 吨
+        SeedCompletedWithTare(vehicle, 10000, 30000);   // 已完成：皮重 10 吨、毛重 30 吨
         WeighManager manager = new();
         RunOnSta(() =>
         {
@@ -800,8 +800,9 @@ public class WeighEntryDialogTests
             NoPrefix(dlg);
             Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
 
-            Assert.Equal(AppConfig.Current.FormatWeight(10000), Fld<Label>(dlg, "_lblTareCell").Text);
-            Assert.Equal("--", Fld<Label>(dlg, "_lblGrossCell").Text);   // 本次毛重未确认 → 不显示
+            // 已完成的车辆再次过磅：不显示上次的皮重
+            Assert.Equal("--", Fld<Label>(dlg, "_lblTareCell").Text);
+            Assert.Equal("--", Fld<Label>(dlg, "_lblGrossCell").Text);
             Assert.Equal("--", Fld<Label>(dlg, "_lblNetCell").Text);
         });
         manager.Dispose();
@@ -827,16 +828,15 @@ public class WeighEntryDialogTests
     }
 
     /// <summary>
-    /// 再换一辆有皮重的车：右侧皮重栏要跟着换成新车号的皮重
-    /// （GetLastTare 按车号缓存，车号变化必须重新取库）。
+    /// 已完成称重的车辆再次过磅，不管切换到哪辆车，皮重栏都不显示历史皮重（保持"--"）。
     /// </summary>
     [Fact]
-    public void 重车过磅_改车号_右侧皮重栏跟随换成本车皮重()
+    public void 重车过磅_改车号_已完成车辆皮重栏均保持横杠()
     {
         string v1 = NewVehicle("C");
         string v2 = NewVehicle("D");
-        SeedCompletedWithTare(v1, 10000, 30000);   // 车 1 皮重 10 吨
-        SeedCompletedWithTare(v2, 6500, 25000);    // 车 2 皮重 6.5 吨
+        SeedCompletedWithTare(v1, 10000, 30000);   // 车 1 已完成
+        SeedCompletedWithTare(v2, 6500, 25000);    // 车 2 已完成
         WeighManager manager = new();
         RunOnSta(() =>
         {
@@ -844,12 +844,12 @@ public class WeighEntryDialogTests
             SilenceDialogs(dlg);
             NoPrefix(dlg);
             Fld<TextBox>(dlg, "_txtVehicle").Text = v1;
-            Assert.Equal(AppConfig.Current.FormatWeight(10000), Fld<Label>(dlg, "_lblTareCell").Text);
+            Assert.Equal("--", Fld<Label>(dlg, "_lblTareCell").Text);
 
             Fld<TextBox>(dlg, "_txtVehicle").Text = v2;
-            Assert.Equal(AppConfig.Current.FormatWeight(6500), Fld<Label>(dlg, "_lblTareCell").Text);
+            Assert.Equal("--", Fld<Label>(dlg, "_lblTareCell").Text);
 
-            // 换成没有皮重的车 → 回到横杠
+            // 换成没有记录的车 → 也是横杠
             Fld<TextBox>(dlg, "_txtVehicle").Text = NewVehicle("E");
             Assert.Equal("--", Fld<Label>(dlg, "_lblTareCell").Text);
         });

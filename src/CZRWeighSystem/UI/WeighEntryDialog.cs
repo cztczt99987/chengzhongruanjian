@@ -756,12 +756,10 @@ public class WeighEntryDialog : Form
             _lblTareCell.Text = "--";
             _lblNetCell.Text = "--";
 
-            // 先填本车历史皮重（毛重匹配时操作员输入完车号就要看到它）；
-            // 若该车另有未完成记录，则用那条记录的重量覆盖——此时票面必须显示"即将配对结算"的那个值，
-            // 否则会与下方"A 有未完成的二次磅，保存时将自动配对结算"的提示自相矛盾。
+            // 仅当该车有未完成的一次磅时，才把那次磅的重量显示在对应栏（用于配对结算提示）。
+            // 已完成完整称重的车辆再次过磅是新的一次运输，不显示上次运输的皮重/毛重。
             // 未完成一次磅的重量按其实际类型填对应栏（一次磅是毛重→毛重栏、是皮重→皮重栏），
             // 不能一律塞进皮重栏（否则先称毛重、再去皮时，毛重值会被错误显示在皮重栏）。
-            ShowArchivedTare(no);
             if (first is { FirstWeightKg: { } pendingKg })
             {
                 if (first.FirstWeighIsTare)
@@ -772,7 +770,7 @@ public class WeighEntryDialog : Form
                 else
                 {
                     _lblGrossCell.Text = _cfg.FormatWeight(pendingKg);
-                    _lblTareCell.Text = "--";   // 未完成的是毛重：皮重栏不应残留历史皮重
+                    _lblTareCell.Text = "--";
                 }
             }
 
@@ -811,19 +809,6 @@ public class WeighEntryDialog : Form
     {
         if (grossKg == null || tareKg == null) return null;
         return grossKg.Value - tareKg.Value;
-    }
-
-    /// <summary>
-    /// 车号命中本车已完成皮重时，把该皮重填进票据右侧的"皮重"栏（未确认状态下的参考值）。
-    /// 毛重匹配（重车过磅）时，操作员输入完车号即能直接看到这辆车的皮重；
-    /// 无历史皮重（或车号为空）则保持初始化时清好的 "--"。
-    /// 注意：本方法只认"已完成"记录的历史皮重；若该车还有未完成记录，
-    /// 调用方需用那条记录的重量覆盖（见 UpdateWeight 未确认分支），否则显示值与配对提示矛盾。
-    /// </summary>
-    private void ShowArchivedTare(string no)
-    {
-        if (GetLastTare(no)?.TareKg is { } tareKg)
-            _lblTareCell.Text = _cfg.FormatWeight(tareKg);
     }
 
     /// <summary>毛/皮两个数值 → 净重单元格文本（任一为 null 时净重显示 "--"）。</summary>
