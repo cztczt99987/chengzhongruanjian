@@ -1325,6 +1325,38 @@ public class WeighEntryDialogTests
         manager.Dispose();
     }
 
+    /// <summary>
+    /// 用户要求：保存后不必先打印，直接点"继续"即可录下一辆车。
+    /// 保存后（step=2）继续按钮即解锁，跳过打印直接继续应能清空表单回到确认步。
+    /// </summary>
+    [Fact]
+    public void 保存后不打印_直接继续_表单清空且回到确认步()
+    {
+        string vehicle = NewVehicle("NP");
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: false);
+            SilenceDialogs(dlg);
+            UseTestScaleNo();
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
+            Fld<TextBox>(dlg, "_txtVariety").Text = "大豆";
+            PushStable(manager, 40000);
+
+            ConfirmAndSave(dlg);
+            Assert.Equal(2, Fld<int>(dlg, "_step"));   // 保存后停在打印步
+
+            // 不打印，直接继续 → 表单清空、回到确认步
+            Call(dlg, "DoContinue");
+            Assert.Equal(0, Fld<int>(dlg, "_step"));
+            Assert.Equal("", Fld<TextBox>(dlg, "_txtVehicle").Text);
+            Assert.Equal("", Fld<TextBox>(dlg, "_txtVariety").Text);
+            Assert.Null(Fld<WeighRecord?>(dlg, "_savedRecord"));
+        });
+        manager.Dispose();
+    }
+
     [Fact]
     public void 打印失败_停在打印步可重试_成功后解锁继续()
     {

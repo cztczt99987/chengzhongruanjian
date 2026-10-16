@@ -503,7 +503,8 @@ public class WeighEntryDialog : Form
     private static readonly Color BtnCurrent = Color.White;
     private static readonly Color BtnDone = Color.FromArgb(172, 226, 172);
 
-    /// <summary>切换流程阶段并刷新四个按钮的颜色（灰=未到达，白=当前步，绿=已完成）。</summary>
+    /// <summary>切换流程阶段并刷新四个按钮的颜色（灰=未到达，白=当前步，绿=已完成）。
+    /// 保存后（step≥2）"继续"按钮即解锁——打印为可选步骤，不打印也能直接录下一辆。</summary>
     private void SetStep(int step)
     {
         _step = step;
@@ -515,7 +516,7 @@ public class WeighEntryDialog : Form
         Style(_btnConfirm, step);
         Style(_btnSave, step - 1);
         Style(_btnPrint, step - 2);
-        Style(_btnContinue, step - 3);
+        Style(_btnContinue, step - 2);   // 保存后即可继续（不强制先打印）
     }
 
     /// <summary>"切换"按钮：皮重/毛重模式互换，同步刷新标题、背景色、票据副标题与右列预览，
@@ -938,7 +939,7 @@ public class WeighEntryDialog : Form
         _savedAny = true;      // 关窗时据此让首页刷新记录列表/统计
         OnRecordSaved?.Invoke();   // 保存成功立即通知首页刷新列表/统计（弹窗不关也能看到新记录）
         _lastTareKey = null;   // 保存后历史皮重可能变化，下次查询重新取库
-        SetStep(2);   // 保存完成 → 解锁"打印"
+        SetStep(2);   // 保存完成 → 解锁"打印"和"继续"（打印可选，不打印也能直接录下一辆）
         UpdateWeight();   // 立即把已存结果显示到票面（否则要等 200ms 定时器刷新）
     }
 
@@ -971,10 +972,11 @@ public class WeighEntryDialog : Form
         SetStep(3);   // 打印完成 → 解锁"继续"
     }
 
-    /// <summary>步骤4【继续】：清空表单与流程状态，窗口不关闭，连续录入下一辆。</summary>
+    /// <summary>步骤4【继续】：清空表单与流程状态，窗口不关闭，连续录入下一辆。
+    /// 保存后（step≥2）即可继续，不强制先打印——打印为可选步骤。</summary>
     private void DoContinue()
     {
-        if (_step != 3) return;
+        if (_step < 2) return;
 
         // 先清状态再清输入框：清空车号会触发 TextChanged → UpdateWeight，
         // 若 _savedRecord 尚未清空，已保存记录的结果会被重新画回票面。
