@@ -544,13 +544,13 @@ public class MainForm : Form
         var pic = new PictureBox
         {
             Dock = DockStyle.Fill,
-            SizeMode = PictureBoxSizeMode.Normal,   // 帧由 Paint 等比完整显示（不裁剪，日期/时间 OSD 可见）
-            BackColor = Color.Black,                 // 画面比例与槽位不一致时四周留黑边
+            SizeMode = PictureBoxSizeMode.Normal,   // 帧由 Paint 等比填满（底部对齐裁剪，日期 OSD 永不被裁）
+            BackColor = Color.Black,
             Margin = new Padding(0),
             Cursor = Cursors.Hand,
         };
 
-        // 帧画面等比缩放完整显示在槽位内（居中，可能留黑边）：保证摄像头自带日期/时间不被裁掉
+        // 帧画面等比缩放填满槽位（底部对齐）：不留黑边、不拉伸变形，画面底部日期/时间始终可见
         pic.Paint += (_, e) =>
         {
             if (src.CurrentFrame is not { } frame) return;
@@ -606,16 +606,18 @@ public class MainForm : Form
     }
 
     /// <summary>
-    /// 等比缩放完整显示在槽位内（居中，对应 CSS background-size: contain）：
-    /// 不拉伸变形、不裁剪；画面四周可能留黑边，但摄像头自带的日期/时间 OSD 不会被切掉。
+    /// 等比缩放填满槽位（底部对齐裁剪，对应 CSS background-size: cover + background-position: bottom center）：
+    /// 不拉伸变形、不留黑边；画面顶部和左右两侧可能被裁，但底部（摄像头自带的日期/时间 OSD）永不裁剪。
     /// </summary>
-    internal static Rectangle FitContain(int imgW, int imgH, int boxW, int boxH)
+    internal static Rectangle FitCoverBottom(int imgW, int imgH, int boxW, int boxH)
     {
         if (imgW <= 0 || imgH <= 0 || boxW <= 0 || boxH <= 0) return Rectangle.Empty;
-        double scale = Math.Min((double)boxW / imgW, (double)boxH / imgH);
-        int w = (int)Math.Round(imgW * scale);
-        int h = (int)Math.Round(imgH * scale);
-        return new Rectangle((boxW - w) / 2, (boxH - h) / 2, w, h);
+        double scale = Math.Max((double)boxW / imgW, (double)boxH / imgH);
+        int w = (int)Math.Ceiling(imgW * scale);
+        int h = (int)Math.Ceiling(imgH * scale);
+        int x = (boxW - w) / 2;     // 水平居中：左右两侧对称裁剪
+        int y = boxH - h;            // 底部对齐：日期在画面底部，永不裁剪；顶部多余部分裁掉
+        return new Rectangle(x, y, w, h);
     }
 
     /// <summary>
@@ -738,7 +740,7 @@ public class MainForm : Form
         var pic = new PictureBox
         {
             Dock = DockStyle.Fill,
-            SizeMode = PictureBoxSizeMode.Normal,   // 实时帧由 Paint 等比完整显示（不裁剪，日期/时间 OSD 可见）
+            SizeMode = PictureBoxSizeMode.Normal,   // 实时帧由 Paint 等比填满（底部对齐裁剪，日期 OSD 永不被裁）
             Margin = new Padding(0),
             BackColor = Color.Black,
         };
@@ -866,7 +868,7 @@ public class MainForm : Form
     {
         lock (frame)
         {
-            var rect = FitContain(frame.Width, frame.Height, box.Width, box.Height);
+            var rect = FitCoverBottom(frame.Width, frame.Height, box.Width, box.Height);
             g.InterpolationMode = InterpolationMode.HighQualityBilinear;
             g.DrawImage(frame, rect);
         }

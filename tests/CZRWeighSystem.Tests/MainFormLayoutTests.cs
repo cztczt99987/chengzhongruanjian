@@ -618,22 +618,21 @@ public class MainFormLayoutTests
     }
 
     /// <summary>
-    /// 画面等比缩放完整显示在槽位内（居中，contain）：不拉伸变形、不裁剪；
-    /// 画面四周可能留黑边，但摄像头自带的日期/时间 OSD 不会被切掉。参数非法时返回空矩形。
+    /// 画面等比缩放填满槽位（底部对齐裁剪）：不留黑边、不拉伸变形；
+    /// 画面顶部和左右两侧可能被裁，但底部（摄像头日期/时间 OSD）永不裁剪。参数非法时返回空矩形。
     /// </summary>
     [Fact]
-    public void 画面显示槽位_等比完整显示_不裁剪()
+    public void 画面填满槽位_底部对齐裁剪_日期不被裁()
     {
-        // 16:9 画面放入 4:3 槽位：画面更宽 → 宽度撑满槽位，上下留黑边，宽高比不变
-        var r = MainForm.FitContain(1920, 1080, 400, 300);
-        Assert.True(r.Width <= 400 && r.Height <= 300, $"完整显示不得超出槽位：{r}");
-        Assert.Equal(400, r.Width);    // 宽度撑满槽位
-        Assert.Equal(225, r.Height);   // 高度按比例缩放，上下留黑边
+        // 16:9 画面放入 4:3 槽位：画面更宽 → 高度撑满，左右两侧裁剪，底部对齐
+        var r = MainForm.FitCoverBottom(1920, 1080, 400, 300);
+        Assert.True(r.Width >= 400 && r.Height >= 300, $"填满槽位不得留边：{r}");
+        Assert.Equal(300, r.Height);    // 高度撑满槽位
         Assert.True(Math.Abs(r.Width / (double)r.Height - 1920.0 / 1080.0) < 0.02,
             $"缩放应保持原比例不变形：{r.Width}x{r.Height}");
-        Assert.Equal((400 - r.Width) / 2, r.X);   // 水平居中
-        Assert.Equal((300 - r.Height) / 2, r.Y);  // 垂直居中
-        Assert.Equal(Rectangle.Empty, MainForm.FitContain(0, 100, 400, 300));
+        Assert.Equal((400 - r.Width) / 2, r.X);   // 水平居中：左右对称裁剪
+        Assert.Equal(300 - r.Height, r.Y);        // 底部对齐：y = 槽位高 - 画面高（顶部被裁，底部不裁）
+        Assert.Equal(Rectangle.Empty, MainForm.FitCoverBottom(0, 100, 400, 300));
     }
 
     /// <summary>
