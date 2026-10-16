@@ -101,6 +101,28 @@ public class WeighRecordRepository
     }
 
     /// <summary>
+    /// 覆盖未完成一次磅的重量（同类型重复称重时使用：两次都是皮重→更新皮重列，两次都是毛重→更新毛重列）。
+    /// 不触发结算，记录仍为"未完成"状态。
+    /// </summary>
+    public WeighRecord OverwriteFirstWeight(long id, double weightKg, bool isTare)
+    {
+        using var conn = Db.CreateConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = isTare
+            ? "UPDATE t_weigh_record SET tare_kg=@kg, first_time=@time WHERE id=@id AND status='未完成'"
+            : "UPDATE t_weigh_record SET gross_kg=@kg, first_time=@time WHERE id=@id AND status='未完成'";
+        cmd.Add("@kg", weightKg);
+        cmd.Add("@time", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+        cmd.Add("@id", id);
+        int rows = cmd.ExecuteNonQuery();
+        if (rows == 0)
+            throw new InvalidOperationException("未找到未完成的一次磅记录，覆盖失败");
+
+        var updated = GetById(conn, id)!;
+        return updated;
+    }
+
+    /// <summary>
     /// 查询未完成的一次磅列表（对应主界面"一次磅未完成列表"）。
     /// </summary>
     public List<WeighRecord> GetUnfinishedList()
