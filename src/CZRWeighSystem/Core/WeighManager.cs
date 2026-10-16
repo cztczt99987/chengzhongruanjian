@@ -187,36 +187,6 @@ public class WeighManager : IDisposable
         }
     }
 
-    /// <summary>
-    /// 同类型重复称重时覆盖未完成一次磅的重量（不结算）。
-    /// 场景：已存一次皮重后再次空车去皮 → 覆盖皮重；已存一次毛重后再次重车过磅 → 覆盖毛重。
-    /// 只有两次称重类型不同（一次皮一次毛）时才走 SaveSecondWeigh 配对结算。
-    /// </summary>
-    public (bool Ok, string Message, WeighRecord? Record) OverwriteUnfinishedWeigh(
-        WeighRecord first, string? operatorName, double? lockedWeightKg = null)
-    {
-        var (weight, err) = ResolveWeight(lockedWeightKg);
-        if (weight == null) return (false, err!, null);
-        if (weight <= 0) return (false, "重量必须大于 0", null);
-
-        // 一次磅记录的类型决定更新哪一列（FirstWeighIsTare=true→皮重列，false→毛重列）
-        bool isTare = first.FirstWeighIsTare;
-        try
-        {
-            var updated = _repo.OverwriteFirstWeight(first.Id, weight.Value, isTare);
-            _savedNeedsZero = true;
-            Log.Info($"覆盖一次磅重量：{updated.SerialNo} 车号 {updated.VehicleNo} " +
-                     $"{(isTare ? "皮重" : "毛重")} {weight}kg");
-            string type = isTare ? "皮重" : "毛重";
-            return (true, $"已覆盖本次{type}：{updated.SerialNo}", updated);
-        }
-        catch (Exception ex)
-        {
-            Log.Error("覆盖一次磅重量失败", ex);
-            return (false, "覆盖失败：" + ex.Message, null);
-        }
-    }
-
     /// <summary>查询未完成一次磅列表。</summary>
     public List<WeighRecord> GetUnfinishedList() => _repo.GetUnfinishedList();
 

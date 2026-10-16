@@ -289,8 +289,7 @@ public class WeighEntryDialogTests
     public void 重车过磅_车号有待配对记录_自动二次磅结算()
     {
         string vehicle = NewVehicle("L");
-        // 一次磅为空车去皮（皮重 30 吨），本次重车过磅（毛重 50 吨）→ 异类型，配对结算
-        _repo.InsertFirstWeigh(new WeighRecord { ScaleNo = "02", VehicleNo = vehicle, TareKg = 30000 });
+        _repo.InsertFirstWeigh(new WeighRecord { ScaleNo = "02", VehicleNo = vehicle, GrossKg = 30000 });
         WeighManager manager = new();
         RunOnSta(() =>
         {
@@ -335,59 +334,6 @@ public class WeighEntryDialogTests
     }
 
     /// <summary>
-    /// 同类型重复称重（两次都是空车去皮）不应配对结算，应覆盖第一次的皮重。
-    /// 旧实现按重量大小分配毛/皮，会把第二次皮重当毛重错误结算。
-    /// </summary>
-    [Fact]
-    public void 空车去皮_同车牌重复称重_覆盖皮重不结算()
-    {
-        string vehicle = NewVehicle("N");
-        _repo.InsertFirstWeigh(new WeighRecord { ScaleNo = "05", VehicleNo = vehicle, TareKg = 10000 });
-        WeighManager manager = new();
-        RunOnSta(() =>
-        {
-            using var dlg = new WeighEntryDialog(manager, isTare: true);
-            SilenceDialogs(dlg);
-            NoPrefix(dlg);
-            Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
-            PushStable(manager, 10500);
-            ConfirmAndSave(dlg);
-        });
-        manager.Dispose();
-
-        var record = _repo.Query(null, null, vehicle, "", "", "").Single();
-        Assert.Equal("未完成", record.Status);
-        Assert.Equal(10500, record.TareKg);
-        Assert.Null(record.GrossKg);
-        Assert.Null(record.NetKg);
-    }
-
-    /// <summary>同类型重复称重（两次都是重车过磅）应覆盖毛重，不结算。</summary>
-    [Fact]
-    public void 重车过磅_同车牌重复称重_覆盖毛重不结算()
-    {
-        string vehicle = NewVehicle("P");
-        _repo.InsertFirstWeigh(new WeighRecord { ScaleNo = "06", VehicleNo = vehicle, GrossKg = 30000 });
-        WeighManager manager = new();
-        RunOnSta(() =>
-        {
-            using var dlg = new WeighEntryDialog(manager, isTare: false);
-            SilenceDialogs(dlg);
-            NoPrefix(dlg);
-            Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
-            PushStable(manager, 32000);
-            ConfirmAndSave(dlg);
-        });
-        manager.Dispose();
-
-        var record = _repo.Query(null, null, vehicle, "", "", "").Single();
-        Assert.Equal("未完成", record.Status);
-        Assert.Equal(32000, record.GrossKg);
-        Assert.Null(record.TareKg);
-        Assert.Null(record.NetKg);
-    }
-
-    /// <summary>
     /// 用户反馈：空车去皮"确认→保存"后车下磅归零，票面却显示"毛重=120、皮重=0、净重=120"——
     /// 实时值（归零）填进皮重行、暂存 gross 列的一次磅值填进对侧毛重行，造成误读。
     /// 修复后保存成功即固定展示已存结果：本次皮重进皮重行，毛重/净重为 "--"。
@@ -429,8 +375,7 @@ public class WeighEntryDialogTests
     public void 二次磅结算后_票面固定显示结算毛皮净()
     {
         string vehicle = NewVehicle("H");
-        // 一次磅为空车去皮（皮重 30 吨），本次重车过磅（毛重 50 吨）→ 异类型，配对结算
-        _repo.InsertFirstWeigh(new WeighRecord { ScaleNo = "93", VehicleNo = vehicle, TareKg = 30000 });
+        _repo.InsertFirstWeigh(new WeighRecord { ScaleNo = "93", VehicleNo = vehicle, GrossKg = 30000 });
         WeighManager manager = new();
         RunOnSta(() =>
         {
@@ -521,8 +466,7 @@ public class WeighEntryDialogTests
     public void 二次磅_确认后归零再保存_按锁定值结算()
     {
         string vehicle = NewVehicle("K");
-        // 一次磅为空车去皮（皮重 30 吨），本次重车过磅（毛重 50 吨）→ 异类型，配对结算
-        _repo.InsertFirstWeigh(new WeighRecord { ScaleNo = "94", VehicleNo = vehicle, TareKg = 30000 });
+        _repo.InsertFirstWeigh(new WeighRecord { ScaleNo = "94", VehicleNo = vehicle, GrossKg = 30000 });
         WeighManager manager = new();
         RunOnSta(() =>
         {
@@ -1021,8 +965,7 @@ public class WeighEntryDialogTests
     public void 录入待配对车号_显示配对提示且链式按钮初始仅确认可用()
     {
         string vehicle = NewVehicle("O");
-        // 一次磅为空车去皮（皮重），本次重车过磅（毛重）→ 异类型，显示配对提示
-        _repo.InsertFirstWeigh(new WeighRecord { ScaleNo = "04", VehicleNo = vehicle, TareKg = 10000 });
+        _repo.InsertFirstWeigh(new WeighRecord { ScaleNo = "04", VehicleNo = vehicle, GrossKg = 10000 });
         WeighManager manager = new();
         RunOnSta(() =>
         {

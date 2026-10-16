@@ -718,14 +718,13 @@ public class WeighEntryDialog : Form
             // 保存时按该锁定值入库（见 DoSave）
             double lockedKg = _confirmedKg.Value;
             double? firstKg = _confirmedFirst?.FirstWeightKg;
-            bool sameType = _confirmedFirst != null && _confirmedFirst.FirstWeighIsTare == _isTare;
 
-            // 本次锁定值进当前操作模式对应行；
-            // 只有异类型（一次皮一次毛）才把一次磅重量放到对侧行形成毛/皮对；
-            // 同类型重复称重只显示本次值（保存时覆盖，不配对）。
+            // 本次锁定值进当前操作模式对应行；已配对一次磅的重量按其实际类型进对侧行——
+            // 两项合起来才是毛/皮对，净重由两者之差算出（不能用"哪个大哪个是毛重"猜，
+            // 毛重<皮重时会把已存毛重误判成皮重）。
             double? grossKg = null, tareKg = null;
             if (_isTare) tareKg = lockedKg; else grossKg = lockedKg;
-            if (_confirmedFirst != null && !sameType && firstKg is { } f)
+            if (_confirmedFirst != null && firstKg is { } f)
             {
                 if (_confirmedFirst.FirstWeighIsTare) tareKg = f; else grossKg = f;
             }
@@ -738,9 +737,7 @@ public class WeighEntryDialog : Form
             if (_confirmedFirst != null)
             {
                 _lblSerialNo.Text = "No：" + _confirmedFirst.SerialNo;
-                _lblPairHint.Text = sameType
-                    ? $"[{no}] 已有同类型一次磅，保存时将覆盖上次重量"
-                    : $"[{no}] 有未完成的二次磅，保存时将自动配对结算";
+                _lblPairHint.Text = $"[{no}] 有未完成的二次磅，保存时将自动配对结算";
             }
             else
             {
@@ -903,28 +900,13 @@ public class WeighEntryDialog : Form
 
         if (_confirmedFirst != null)
         {
-            // 判断本次与一次磅是否同类型：
-            //   同类型（都是皮重或都是毛重）→ 覆盖一次磅重量，不结算（避免把第二次皮重当毛重配对）
-            //   异类型（一次皮一次毛）→ 二次磅配对结算
-            if (_confirmedFirst.FirstWeighIsTare == _isTare)
-            {
-                var (ok, msg, record) = _manager.OverwriteUnfinishedWeigh(
-                    _confirmedFirst, _txtOperator.Text, _confirmedKg);
-                if (!ok) { InfoBox(msg, "提示", false); return; }
+            // 二次磅结算（按确认锁定的读数结算，并按大小分配毛/皮）
+            var (ok, msg, record) = _manager.SaveSecondWeigh(
+                _confirmedFirst, null, _txtOperator.Text, _confirmedKg);
+            if (!ok) { InfoBox(msg, "提示", false); return; }
 
-                _savedRecord = record;
-                OnSaved?.Invoke(record!.SerialNo);
-            }
-            else
-            {
-                // 二次磅结算（按确认锁定的读数结算，并按大小分配毛/皮）
-                var (ok, msg, record) = _manager.SaveSecondWeigh(
-                    _confirmedFirst, null, _txtOperator.Text, _confirmedKg);
-                if (!ok) { InfoBox(msg, "提示", false); return; }
-
-                _savedRecord = record;
-                OnSaved?.Invoke(record!.SerialNo);
-            }
+            _savedRecord = record;
+            OnSaved?.Invoke(record!.SerialNo);
         }
         else
         {
