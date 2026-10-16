@@ -669,15 +669,17 @@ public class WeighEntryDialogTests
     /// <summary>
     /// 现场反馈：车号既有"已完成历史皮重"又有"未完成记录"时，票面应显示那次**未完成**记录的重量
     /// （它才是即将配对结算的值），而不是历史皮重——否则与"A 有未完成的二次磅，保存时将自动配对结算"
-    /// 的提示自相矛盾（截图实例：列表未完成记录皮重 0.18，弹窗却显示历史皮重 0.12）。
-    /// 未确认时毛重仍为 "--"（本次读数要确认后才有），故净重也还不显示。
+    /// 的提示自相矛盾。
+    /// 未完成一次磅是毛重（GrossKg=32310），所以应显示在毛重栏；皮重栏不应残留历史皮重（29.2 吨），
+    /// 否则"先称毛重、再去皮"时会把毛重值错误显示在皮重栏。
+    /// 未确认时本次读数尚未锁定，故净重也还不显示。
     /// </summary>
     [Fact]
-    public void 同时存在历史皮重与未完成记录_票面显示待配对的值而非历史皮重()
+    public void 同时存在历史皮重与未完成毛重_票面毛重栏显示待配对毛重()
     {
         string vehicle = NewVehicle("T");
         SeedCompletedWithTare(vehicle, 29200, 40000);   // 历史已完成：皮重 29.2 吨
-        _repo.InsertFirstWeigh(new WeighRecord { ScaleNo = "95", VehicleNo = vehicle, GrossKg = 32310 });   // 未完成：32.31 吨
+        _repo.InsertFirstWeigh(new WeighRecord { ScaleNo = "95", VehicleNo = vehicle, GrossKg = 32310 });   // 未完成：32.31 吨（毛重）
         WeighManager manager = new();
         RunOnSta(() =>
         {
@@ -688,9 +690,9 @@ public class WeighEntryDialogTests
             PushStable(manager, 12340);
             Call(dlg, "UpdateWeight");
 
-            // 未确认：显示待配对的 32.31 吨（不是历史皮重 29.2 吨）；毛重与净重仍不显示
-            Assert.Equal(AppConfig.Current.FormatWeight(32310), Fld<Label>(dlg, "_lblTareCell").Text);
-            Assert.Equal("--", Fld<Label>(dlg, "_lblGrossCell").Text);
+            // 未确认：待配对的是毛重 → 显示在毛重栏；皮重栏清空（不残留历史皮重）
+            Assert.Equal(AppConfig.Current.FormatWeight(32310), Fld<Label>(dlg, "_lblGrossCell").Text);
+            Assert.Equal("--", Fld<Label>(dlg, "_lblTareCell").Text);
             Assert.Equal("--", Fld<Label>(dlg, "_lblNetCell").Text);
             Assert.Contains("未完成的二次磅", Fld<Label>(dlg, "_lblPairHint").Text);
 
@@ -723,6 +725,60 @@ public class WeighEntryDialogTests
             Assert.Equal(AppConfig.Current.FormatWeight(30000), Fld<Label>(dlg, "_lblGrossCell").Text);
             Assert.Equal(AppConfig.Current.FormatWeight(10000), Fld<Label>(dlg, "_lblTareCell").Text);
             Assert.Equal(AppConfig.Current.FormatWeight(20000), Fld<Label>(dlg, "_lblNetCell").Text);
+        });
+        manager.Dispose();
+    }
+
+    /// <summary>
+    /// 回归：先称毛重（一次磅存毛重列），再开"空车去皮"弹窗时，已存毛重必须显示在毛重栏，
+    /// 不能被错误地塞进皮重栏（旧实现一律把未完成一次磅的重量填进皮重栏）。
+    /// </summary>
+    [Fact]
+    public void 先称毛重再去皮_未确认时已存毛重显示在毛重栏而非皮重栏()
+    {
+        string vehicle = NewVehicle("R");
+        _repo.InsertFirstWeigh(new WeighRecord { ScaleNo = "97", VehicleNo = vehicle, GrossKg = 160 });
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+            SilenceDialogs(dlg);
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
+            PushStable(manager, 50);
+            Call(dlg, "UpdateWeight");
+
+            // 未确认：已存的毛重 0.16 吨 → 毛重栏；皮重栏等待本次确认，保持 "--"
+            Assert.Equal(AppConfig.Current.FormatWeight(160), Fld<Label>(dlg, "_lblGrossCell").Text);
+            Assert.Equal("--", Fld<Label>(dlg, "_lblTareCell").Text);
+            Assert.Equal("--", Fld<Label>(dlg, "_lblNetCell").Text);
+        });
+        manager.Dispose();
+    }
+
+    /// <summary>
+    /// 反向回归：先称皮重（一次磅存皮重列），再开"重车过磅"弹窗时，已存皮重必须显示在皮重栏，
+    /// 不能被塞进毛重栏。
+    /// </summary>
+    [Fact]
+    public void 先称皮重再毛重_未确认时已存皮重显示在皮重栏而非毛重栏()
+    {
+        string vehicle = NewVehicle("Q");
+        _repo.InsertFirstWeigh(new WeighRecord { ScaleNo = "98", VehicleNo = vehicle, TareKg = 10000 });
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: false);
+            SilenceDialogs(dlg);
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
+            PushStable(manager, 30000);
+            Call(dlg, "UpdateWeight");
+
+            // 未确认：已存的皮重 10 吨 → 皮重栏；毛重栏等待本次确认，保持 "--"
+            Assert.Equal(AppConfig.Current.FormatWeight(10000), Fld<Label>(dlg, "_lblTareCell").Text);
+            Assert.Equal("--", Fld<Label>(dlg, "_lblGrossCell").Text);
+            Assert.Equal("--", Fld<Label>(dlg, "_lblNetCell").Text);
         });
         manager.Dispose();
     }
