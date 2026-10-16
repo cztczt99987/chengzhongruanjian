@@ -756,6 +756,10 @@ public class WeighEntryDialog : Form
             _lblTareCell.Text = "--";
             _lblNetCell.Text = "--";
 
+            // 该车有历史皮重就先填进右侧皮重栏（毛重匹配时重点看的就是它；
+            // 为空车去皮时同样填，供操作员与"上次皮重"对照）
+            ShowArchivedTare(no);
+
             if (first != null)
             {
                 _lblSerialNo.Text = "No：" + first.SerialNo;
@@ -791,6 +795,17 @@ public class WeighEntryDialog : Form
     {
         if (grossKg == null || tareKg == null) return null;
         return grossKg.Value - tareKg.Value;
+    }
+
+    /// <summary>
+    /// 车号命中本车已完成皮重时，把该皮重填进票据右侧的"皮重"栏（未确认状态下的参考值）。
+    /// 毛重匹配（重车过磅）时，操作员输入完车号即能直接看到这辆车的皮重；
+    /// 无历史皮重（或车号为空）则保持初始化时清好的 "--"。
+    /// </summary>
+    private void ShowArchivedTare(string no)
+    {
+        if (GetLastTare(no)?.TareKg is { } tareKg)
+            _lblTareCell.Text = _cfg.FormatWeight(tareKg);
     }
 
     /// <summary>毛/皮两个数值 → 净重单元格文本（任一为 null 时净重显示 "--"）。</summary>

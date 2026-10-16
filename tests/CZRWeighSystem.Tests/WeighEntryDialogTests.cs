@@ -725,6 +725,79 @@ public class WeighEntryDialogTests
     }
 
     /// <summary>
+    /// 用户要求：毛重匹配时输入完车牌号，若该车有皮重信息，就把皮重显示在右侧"皮重"栏。
+    /// 未确认状态下即应显示（不必等到点确认），毛重/净重仍保持 "--"。
+    /// </summary>
+    [Fact]
+    public void 重车过磅_输入有历史皮重的车号_右侧皮重栏显示该皮重()
+    {
+        string vehicle = NewVehicle("A");
+        SeedCompletedWithTare(vehicle, 10000, 30000);   // 本车皮重 10 吨
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: false);
+            SilenceDialogs(dlg);
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
+
+            Assert.Equal(AppConfig.Current.FormatWeight(10000), Fld<Label>(dlg, "_lblTareCell").Text);
+            Assert.Equal("--", Fld<Label>(dlg, "_lblGrossCell").Text);   // 本次毛重未确认 → 不显示
+            Assert.Equal("--", Fld<Label>(dlg, "_lblNetCell").Text);
+        });
+        manager.Dispose();
+    }
+
+    /// <summary>该车无历史皮重时，右侧皮重栏保持横杠，不能凭空显示数字。</summary>
+    [Fact]
+    public void 重车过磅_输入无历史皮重的车号_右侧皮重栏保持横杠()
+    {
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: false);
+            SilenceDialogs(dlg);
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = NewVehicle("B");
+
+            Assert.Equal("--", Fld<Label>(dlg, "_lblTareCell").Text);
+            Assert.Equal("--", Fld<Label>(dlg, "_lblGrossCell").Text);
+            Assert.Equal("--", Fld<Label>(dlg, "_lblNetCell").Text);
+        });
+        manager.Dispose();
+    }
+
+    /// <summary>
+    /// 再换一辆有皮重的车：右侧皮重栏要跟着换成新车号的皮重
+    /// （GetLastTare 按车号缓存，车号变化必须重新取库）。
+    /// </summary>
+    [Fact]
+    public void 重车过磅_改车号_右侧皮重栏跟随换成本车皮重()
+    {
+        string v1 = NewVehicle("C");
+        string v2 = NewVehicle("D");
+        SeedCompletedWithTare(v1, 10000, 30000);   // 车 1 皮重 10 吨
+        SeedCompletedWithTare(v2, 6500, 25000);    // 车 2 皮重 6.5 吨
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: false);
+            SilenceDialogs(dlg);
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = v1;
+            Assert.Equal(AppConfig.Current.FormatWeight(10000), Fld<Label>(dlg, "_lblTareCell").Text);
+
+            Fld<TextBox>(dlg, "_txtVehicle").Text = v2;
+            Assert.Equal(AppConfig.Current.FormatWeight(6500), Fld<Label>(dlg, "_lblTareCell").Text);
+
+            // 换成没有皮重的车 → 回到横杠
+            Fld<TextBox>(dlg, "_txtVehicle").Text = NewVehicle("E");
+            Assert.Equal("--", Fld<Label>(dlg, "_lblTareCell").Text);
+        });
+        manager.Dispose();
+    }
+
+    /// <summary>
     /// 用户要求：点标题栏的叉离开首页时也要刷新记录列表（旧实现只有「退出」按钮设 DialogResult.OK，
     /// 叉走默认 Cancel，导致列表不刷新）。关闭回调须按"本次是否保存过"上报。
     /// </summary>
