@@ -148,7 +148,7 @@ public class SerialWeightSource : IWeightSource
     }
 
     /// <summary>
-    /// 解析单帧：剔除小数点/符号/状态字符后按数字解析。
+    /// 解析单帧：剔除小数点/状态字符后按数字解析，保留负号。
     /// 帧内显式小数点按其位置还原；无小数点时按隐含小数位还原
     /// （帧数字 = 实际重量 × 10^隐含小数位，当前仪表为 2 位）。
     /// 返回 null 表示本帧无效。
@@ -159,9 +159,10 @@ public class SerialWeightSource : IWeightSource
 
     internal static double? ParseFrame(byte[] frame, int decimalDigits)
     {
-        // frame[0]=0x02 帧头，frame[1] 通常为符号/状态字节
+        // frame[0]=0x02 帧头，frame[1] 通常为符号/状态字节（'+'=0x2B，'-'=0x2D）
         var sb = new System.Text.StringBuilder();
         int dotPos = -1;
+        bool negative = false;
 
         for (int i = 1; i < frame.Length; i++)
         {
@@ -174,7 +175,12 @@ public class SerialWeightSource : IWeightSource
             {
                 dotPos = sb.Length; // 记录小数点位置
             }
-            // 其余字符（+/-/状态位）忽略
+            else if (c == '-' && sb.Length == 0)
+            {
+                // 数字前的 '-' 为符号位；数字之后出现的 '-' 视为状态字符忽略
+                negative = true;
+            }
+            // '+' 及其他状态字符忽略
         }
 
         if (sb.Length == 0) return null;
@@ -183,7 +189,8 @@ public class SerialWeightSource : IWeightSource
         // 仪表显示值通常为千克；显式小数点优先，否则按隐含小数位还原。
         // 本秤最小分度值 1kg：还原后四舍五入取整，显示/稳定判定/保存/磅单打印全链路无小数
         int digits = dotPos >= 0 ? sb.Length - dotPos : decimalDigits;
-        return Math.Round(raw / Math.Pow(10, digits), MidpointRounding.AwayFromZero);
+        double value = Math.Round(raw / Math.Pow(10, digits), MidpointRounding.AwayFromZero);
+        return negative ? -value : value;
     }
 
     public void Dispose() => Stop();

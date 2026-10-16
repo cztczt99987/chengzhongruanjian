@@ -50,4 +50,20 @@ public class SerialFrameParseTests
         byte[] frame = { 0x02, 0x2B, 0x44 };
         Assert.Null(SerialWeightSource.ParseFrame(frame, DecimalDigits));
     }
+
+    [Fact]
+    public void NegativeWeightFrame_ParsesToNegativeValue()
+    {
+        // 负重量（皮重校验/传感器反向受力场景）：符号位 '-'=0x2D，其余与 60kg 帧相同
+        byte[] frame = { 0x02, 0x2D, 0x30, 0x30, 0x30, 0x30, 0x36, 0x30, 0x30, 0x31, 0x44 };
+        Assert.Equal(-60, SerialWeightSource.ParseFrame(frame, DecimalDigits));
+    }
+
+    [Fact]
+    public void NegativeWeightWithExplicitDot_ParsesToNegativeValue()
+    {
+        // 带显式小数点的负重量："-80.00"
+        byte[] frame = { 0x02, 0x2D, 0x38, 0x30, 0x2E, 0x30, 0x30 };
+        Assert.Equal(-80, SerialWeightSource.ParseFrame(frame, DecimalDigits));
+    }
 }
