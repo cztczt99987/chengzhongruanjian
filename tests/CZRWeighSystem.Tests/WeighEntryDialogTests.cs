@@ -667,15 +667,17 @@ public class WeighEntryDialogTests
     }
 
     /// <summary>
-    /// 用户要求：净重 = 毛重 − 皮重，缺任一项就不显示净重。
-    /// 车号有未完成一次磅但尚未确认时，毛/皮都还没有本次读数，三格一律 "--"；
-    /// 旧实现会把一次磅值填进对侧行、再拿实时读数相减，算出一个并不成立的净重。
+    /// 现场反馈：车号既有"已完成历史皮重"又有"未完成记录"时，票面应显示那次**未完成**记录的重量
+    /// （它才是即将配对结算的值），而不是历史皮重——否则与"A 有未完成的二次磅，保存时将自动配对结算"
+    /// 的提示自相矛盾（截图实例：列表未完成记录皮重 0.18，弹窗却显示历史皮重 0.12）。
+    /// 未确认时毛重仍为 "--"（本次读数要确认后才有），故净重也还不显示。
     /// </summary>
     [Fact]
-    public void 单边重量时_净重不显示数字()
+    public void 同时存在历史皮重与未完成记录_票面显示待配对的值而非历史皮重()
     {
         string vehicle = NewVehicle("T");
-        _repo.InsertFirstWeigh(new WeighRecord { ScaleNo = "95", VehicleNo = vehicle, GrossKg = 30000 });
+        SeedCompletedWithTare(vehicle, 29200, 40000);   // 历史已完成：皮重 29.2 吨
+        _repo.InsertFirstWeigh(new WeighRecord { ScaleNo = "95", VehicleNo = vehicle, GrossKg = 32310 });   // 未完成：32.31 吨
         WeighManager manager = new();
         RunOnSta(() =>
         {
@@ -684,19 +686,20 @@ public class WeighEntryDialogTests
             NoPrefix(dlg);
             Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
             PushStable(manager, 12340);
-            Call(dlg, "UpdateWeight");   // 未确认：一次磅那一边也不显示
+            Call(dlg, "UpdateWeight");
 
-            Assert.Equal("--", Fld<Label>(dlg, "_lblNetCell").Text);
+            // 未确认：显示待配对的 32.31 吨（不是历史皮重 29.2 吨）；毛重与净重仍不显示
+            Assert.Equal(AppConfig.Current.FormatWeight(32310), Fld<Label>(dlg, "_lblTareCell").Text);
             Assert.Equal("--", Fld<Label>(dlg, "_lblGrossCell").Text);
-            Assert.Equal("--", Fld<Label>(dlg, "_lblTareCell").Text);
+            Assert.Equal("--", Fld<Label>(dlg, "_lblNetCell").Text);
             Assert.Contains("未完成的二次磅", Fld<Label>(dlg, "_lblPairHint").Text);
 
             // 确认后毛/皮两项齐备，净重才按 毛重 − 皮重 算出
             Call(dlg, "Confirm");
             Assert.Equal(1, Fld<int>(dlg, "_step"));
-            Assert.Equal(AppConfig.Current.FormatWeight(30000), Fld<Label>(dlg, "_lblGrossCell").Text);
+            Assert.Equal(AppConfig.Current.FormatWeight(32310), Fld<Label>(dlg, "_lblGrossCell").Text);
             Assert.Equal(AppConfig.Current.FormatWeight(12340), Fld<Label>(dlg, "_lblTareCell").Text);
-            Assert.Equal(AppConfig.Current.FormatWeight(17660), Fld<Label>(dlg, "_lblNetCell").Text);
+            Assert.Equal(AppConfig.Current.FormatWeight(19970), Fld<Label>(dlg, "_lblNetCell").Text);
         });
         manager.Dispose();
     }
