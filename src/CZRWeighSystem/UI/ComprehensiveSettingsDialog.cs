@@ -26,6 +26,7 @@ public class ComprehensiveSettingsDialog : Form
     internal CheckBox ChkUseProvinceLetter = null!;
     internal CheckBox ChkStableSeconds = null!;
     internal ComboBox CboStableSeconds = null!;
+    internal NumericUpDown NumMaxCapacity = null!;   // 最大量程（吨）
     internal NumericUpDown NumIdleLock = null!;
     internal CheckBox ChkBlockZero = null!;
     internal ComboBox CboExpireDays = null!;
@@ -283,8 +284,28 @@ public class ComprehensiveSettingsDialog : Form
             AutoSize = true,
             Location = new Point(542, 21),
         };
+        var lblMaxCap = new Label
+        {
+            Text = "最大量程",
+            AutoSize = true,
+            Location = new Point(686, 21),
+        };
+        NumMaxCapacity = new NumericUpDown
+        {
+            Minimum = 1, Maximum = 2000,
+            Value = (decimal)(cfg.MaxCapacityKg / 1000.0),
+            Location = new Point(756, 16), Width = 70,
+            TextAlign = HorizontalAlignment.Center,
+        };
+        var lblMaxCapTail = new Label
+        {
+            Text = "吨",
+            AutoSize = true,
+            Location = new Point(832, 21),
+        };
         grpProvince.Controls.AddRange([lblProvince, CboProvince, CboLetter,
-            ChkUseProvinceLetter, ChkStableSeconds, CboStableSeconds, lblStableTail]);
+            ChkUseProvinceLetter, ChkStableSeconds, CboStableSeconds, lblStableTail,
+            lblMaxCap, NumMaxCapacity, lblMaxCapTail]);
         FlowRow(lblProvince, CboProvince, CboLetter, ChkUseProvinceLetter,
             ChkStableSeconds, CboStableSeconds, lblStableTail);
 
@@ -448,6 +469,7 @@ public class ComprehensiveSettingsDialog : Form
         cfg.DefaultLetter = CboLetter.SelectedItem?.ToString() ?? "";
         cfg.UseProvinceLetter = ChkUseProvinceLetter.Checked;
         cfg.StableSeconds = ChkStableSeconds.Checked ? (int)CboStableSeconds.SelectedItem! : 0;
+        cfg.MaxCapacityKg = (double)NumMaxCapacity.Value * 1000.0;   // 吨 → 千克
         cfg.IdleLockMinutes = (int)NumIdleLock.Value;
         cfg.BlockSaveUntilZero = ChkBlockZero.Checked;
         cfg.FirstWeighExpireDays = (int)CboExpireDays.SelectedItem!;

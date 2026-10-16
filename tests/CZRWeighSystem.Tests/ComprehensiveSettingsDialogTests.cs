@@ -48,6 +48,7 @@ public class ComprehensiveSettingsDialogTests
         f.ChkUseProvinceLetter.Checked = false;
         f.ChkStableSeconds.Checked = true;
         f.CboStableSeconds.SelectedItem = 10;
+        f.NumMaxCapacity.Value = 200;   // 最大量程 200 吨
         f.NumIdleLock.Value = 30;
         f.ChkBlockZero.Checked = true;
         f.CboExpireDays.SelectedItem = 15;
@@ -73,6 +74,7 @@ public class ComprehensiveSettingsDialogTests
             Assert.Equal("A", cfg.DefaultLetter);
             Assert.False(cfg.UseProvinceLetter);
             Assert.Equal(10, cfg.StableSeconds);
+            Assert.Equal(200000, cfg.MaxCapacityKg);   // 200 吨 → 200000 千克
             Assert.Equal(30, cfg.IdleLockMinutes);
             Assert.True(cfg.BlockSaveUntilZero);
             Assert.Equal(15, cfg.FirstWeighExpireDays);
@@ -87,6 +89,7 @@ public class ComprehensiveSettingsDialogTests
             // 还原，避免影响其他测试；必须放 finally——断言失败若跳过还原，
             // StableSeconds=10 会泄漏给后续测试（确认时报"重量未稳定"，曾造成大面积串扰）
             cfg.StableSeconds = 0;
+            cfg.MaxCapacityKg = 100000;
             cfg.BlockSaveUntilZero = false;
             cfg.ForbidReweighMinutes = 0;
             cfg.ShowPaperSizeWarn = true;
