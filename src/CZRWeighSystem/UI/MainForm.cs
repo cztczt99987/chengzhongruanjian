@@ -111,9 +111,12 @@ public class MainForm : Form
     private ToolStripStatusLabel _tsslTime = null!;
 
     // 布局参数：中部视频区、底部记录列表（顶部称重条下方直接是视频区）
-    private const int CameraY = 172;     // 视频监控区 y（顶部称重条含稳定/通讯行底边 166 + 6）
-    private const int CameraH = 400;     // 视频监控区高度（固定；加大画面区、相应压低底部记录列表）
-    private int _gridY = CameraY + CameraH + 34;   // 底部记录列表 y（中间留今日汇总行）
+    // 稳定/通讯已移到称重条侧边，顶部高度压缩，腾出空间全部交给摄像头画面。
+    // CameraY/CameraH 按窗口高度动态计算：画面区尽量撑大，底部记录列表保底 160px 不被压扁。
+    private int CameraY => _menu.Height + TopPanelH + 6;   // 视频监控区 y（顶部称重条底边 + 6）
+    private const int GridMinH = 160;   // 底部记录列表最小高度（画面再大也不压扁它）
+    private int CameraH => Math.Max(220, ClientSize.Height - 34 - CameraY - 34 - GridMinH);
+    private int GridY => CameraY + CameraH + 34;   // 底部记录列表 y（中间留今日汇总行）
 
     // ===== 界面构建 =====
     public MainForm()
@@ -148,7 +151,8 @@ public class MainForm : Form
         LayoutTopBar();          // 初始化顶部称重条居中
         LayoutStatsPanel();      // 初始化统计面板展开态并贴齐右缘
         AlignStatsToVideo();     // 统计面板与摄像头画面顶边齐平
-        Resize += (_, _) => LayoutTopBar();   // 窗口缩放时顶部称重条保持居中
+        LayoutMain();            // 按窗口高度撑开画面区、定位汇总行与记录列表
+        Resize += (_, _) => { LayoutTopBar(); LayoutMain(); };   // 窗口缩放：顶部称重条居中 + 画面区/记录列表跟随
 
         // 订阅业务事件（串口数据来自非 UI 线程，统一转发到 UI 线程）
         _manager.WeightUpdated += () => SafeInvoke(OnWeightUpdated);
@@ -213,7 +217,7 @@ public class MainForm : Form
     }
 
     // ---------- 顶部白色工具栏：左侧快捷方式｜空车去皮/大屏重量/重车过磅｜右侧快捷方式 ----------
-    private const int TopPanelH = 142;    // 工具栏高度（含大屏下方稳定/通讯行）
+    private const int TopPanelH = 118;    // 工具栏高度（稳定/通讯移到侧边后压缩，腾出空间给摄像头）
     private const int ShortcutW = 76;     // 快捷按钮宽（4 字标签 9pt 约 61px，留足余量保证单行不换行）
     private const int ShortcutH = 92;     // 快捷按钮高（与空/重车按钮同高对齐）
     private const int ShortcutGap = 6;    // 快捷按钮间距
@@ -274,7 +278,8 @@ public class MainForm : Form
         _btnGross.TextImageRelation = TextImageRelation.ImageAboveText;
         _btnGross.Click += (_, _) => OpenWeighEntry(isTare: false);
 
-        // 稳定/通讯指示（大屏重量下方横排，由 LayoutTopBar 成组居中；AutoSize：文本固定三字宽度稳定）
+        // 稳定/通讯指示（移到重车过磅按钮右侧；垂直居中于 118px 工具栏，横向位置由 LayoutTopBar 计算；
+        // AutoSize：文本固定三字宽度稳定，仅靠 Top 控制垂直位置）
         _lblStable = new Label
         {
             Text = "● 动态",
@@ -282,7 +287,7 @@ public class MainForm : Form
             ForeColor = Color.Red,
             BackColor = Color.White,
             AutoSize = true,
-            Location = new Point(905, 114),
+            Top = 46,
         };
         // 通讯状态指示：启动时未通讯显示红色，收到仪表数据后变绿
         _lblComm = new Label
@@ -292,7 +297,7 @@ public class MainForm : Form
             ForeColor = Color.Red,
             BackColor = Color.White,
             AutoSize = true,
-            Location = new Point(1010, 114),
+            Top = 46,
         };
 
         _topPanel.Controls.AddRange(new Control[] { _btnTare, _lblWeight, _btnGross, _lblStable, _lblComm });
@@ -360,8 +365,8 @@ public class MainForm : Form
     }
 
     /// <summary>
-    /// 顶部工具栏横向布局：左快捷组、称重区（空车去皮｜大屏重量｜重车过磅）、右快捷组；
-    /// 称重区在两组之间居中，稳定/通讯指示横排于大屏重量下方并居中。
+    /// 顶部工具栏横向布局：左快捷组、称重区（空车去皮｜大屏重量｜重车过磅｜稳定·通讯）、右快捷组；
+    /// 称重区在两组之间居中，稳定/通讯指示放在重车过磅按钮右侧（工具栏垂直居中，不再占大屏下方一整行）。
     /// 大屏宽度弹性伸缩（300~450）：快捷按钮加宽后，最小窗口宽度（1240）下自动收窄大屏
     /// 保证三组不重叠；窗口缩放时重新布局。
     /// </summary>
@@ -396,13 +401,36 @@ public class MainForm : Form
         for (int i = 0; i < rightCount; i++)
             _shortcutButtons[ShortcutLeftCount + i].Left = rightX0 + i * (ShortcutW + ShortcutGap);
 
-        // 稳定/通讯指示：大屏重量下方横排（不占用右侧空间）
+        // 稳定/通讯指示：放到重车过磅按钮右侧，与右快捷组之间留空；窗口太窄时紧贴按钮右侧不重叠
+        const int sideGap = 30;
         const int indicatorGap = 24;
-        int rowW = _lblStable.Width + indicatorGap + _lblComm.Width;
-        _lblStable.Left = _lblWeight.Left + (_lblWeight.Width - rowW) / 2;
+        int indicatorsW = _lblStable.Width + indicatorGap + _lblComm.Width;
+        int indicatorsLeft = _btnGross.Right + sideGap;
+        if (indicatorsLeft + indicatorsW > rightX0 - 8)
+            indicatorsLeft = Math.Max(_btnGross.Right + 8, rightX0 - 8 - indicatorsW);
+        _lblStable.Left = indicatorsLeft;
         _lblComm.Left = _lblStable.Right + indicatorGap;
 
         _topPanel.Invalidate();   // 组间竖分隔线位置随布局重绘
+    }
+
+    /// <summary>
+    /// 窗口尺寸变化时重排中部与底部：画面区按可用高度尽量撑大（记录列表保底 GridMinH），
+    /// 今日汇总行与记录列表跟随画面区底边下移，统计面板重新贴齐画面顶边。
+    /// 顶部工具栏高度固定，腾出的垂直空间全部交给摄像头画面。
+    /// </summary>
+    private void LayoutMain()
+    {
+        if (_videoPanel == null || _lblTodaySummary == null || _capturePanel == null) return;
+        int camY = CameraY;
+        int camH = CameraH;
+        _videoPanel.Location = new Point(20, camY);
+        _videoPanel.Size = new Size(ClientSize.Width - 40, camH);
+        _lblTodaySummary.Top = camY + camH + 6;
+        _capturePanel.Top = GridY;            // = camY + camH + 34，高度由 Top|Bottom 锚定自动撑开
+        AlignStatsToVideo();
+        if (_videoZoomPanel is { Visible: true })
+            _videoZoomPanel.Bounds = ZoomRegion();
     }
 
     /// <summary>打开称重录入弹窗（皮/毛由操作员手动选择）；保存成功后抓拍留证，关闭时刷新列表与统计。</summary>
@@ -1010,11 +1038,11 @@ public class MainForm : Form
         };
         Controls.Add(_lblTodaySummary);
 
-        int gridH = Math.Max(120, ClientSize.Height - 34 - _gridY);
+        int gridH = Math.Max(GridMinH, ClientSize.Height - 34 - GridY);
         _capturePanel = new GroupBox
         {
             Text = "称重记录（双击未完成行结算，右键更多操作）",
-            Location = new Point(20, _gridY),
+            Location = new Point(20, GridY),
             Size = new Size(ClientSize.Width - 40, gridH),
             Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
         };

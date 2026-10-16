@@ -41,8 +41,8 @@ public class VideoMonitorForm : Form
         AutoScaleMode = AutoScaleMode.Dpi;   // 高 DPI 下避免文字截断
         MinimizeBox = false;
         ShowInTaskbar = false;
-        Size = new Size(1200, 640);
-        MinimumSize = new Size(640, 400);
+        Size = new Size(1440, 860);
+        MinimumSize = new Size(900, 560);
         Font = new Font("Microsoft YaHei UI", 10F);
 
         // focus 为空或越界 → 回退为"平铺全部"（菜单入口行为）

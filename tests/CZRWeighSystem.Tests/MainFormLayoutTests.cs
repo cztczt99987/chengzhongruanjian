@@ -12,7 +12,7 @@ namespace CZRWeighSystem.Tests;
 /// 1. 软件启动默认全屏（最大化）；
 /// 2. 顶部白色工具栏：左快捷方式（记录查询/报表统计/视频监控/基础资料）｜
 ///    称重条（空车去皮｜大屏重量｜重车过磅）整组横向居中｜右快捷方式（计算器/退出），最小窗口宽度不重叠；
-///    空/重车按钮带自卸车图标（空厢举升/满载货堆）；稳定/通讯指示横排于大屏重量下方并成组居中；
+///    空/重车按钮带自卸车图标（空厢举升/满载货堆）；稳定/通讯指示位于重车过磅按钮右侧（工具栏垂直居中），顶部不再为其留一整行；
 /// 3. 今日称重统计面板悬浮于摄像头 3 顶部（贴画面区右上角），点击可竖直收起（仅剩标题条）/展开；
 /// 4. 底部称重记录列表条数选择框：20/50/70/100/今日全部 可选，默认 20 条；
 /// 5. 中部视频区已加大（底部记录列表相应压低），画面槽位无边距、无黑底（等比填满）。
@@ -64,7 +64,7 @@ public class MainFormLayoutTests
         // 视频区第一个子控件为 TableLayoutPanel（3 槽位）；未启用视频时为提示 Label
         int tileCount = video.Controls[0] is TableLayoutPanel table ? table.Controls.Count : 1;
         var btnTare = (Button)Fld(form, "_btnTare");
-        // 顶部整组 = 空车按钮｜大屏｜重车按钮（稳定/通讯已移到大屏下方，不再计入整组宽度）
+        // 顶部整组 = 空车按钮｜大屏｜重车按钮（稳定/通讯已移到重车右侧侧边，不计入整组宽度）
         int groupCenter = (btnTare.Left + ((Button)Fld(form, "_btnGross")).Right) / 2;
         return new LayoutSnapshot(
             btnTare.Text,
@@ -146,7 +146,7 @@ public class MainFormLayoutTests
     }
 
     [Fact]
-    public void 顶部_稳定与通讯指示位于大屏重量下方_不再占用右侧空间()
+    public void 顶部_稳定与通讯指示移到重车过磅右侧_不再占大屏下方整行()
     {
         Db.Initialize();
         RunOnSta(() =>
@@ -155,22 +155,22 @@ public class MainFormLayoutTests
             var weights = (Label)Fld(form, "_lblWeight");
             var stable = (Label)Fld(form, "_lblStable");
             var comm = (Label)Fld(form, "_lblComm");
+            var gross = (Button)Fld(form, "_btnGross");
             var video = (GroupBox)Fld(form, "_videoPanel");
-
-            // 移到大屏下方：两指示顶边均在大屏重量底边之下
-            Assert.True(stable.Top >= weights.Bottom,
-                $"稳定指示(顶={stable.Top})应在大屏重量(底={weights.Bottom})下方");
-            Assert.True(comm.Top >= weights.Bottom,
-                $"通讯指示(顶={comm.Top})应在大屏重量(底={weights.Bottom})下方");
-            // 成组居中于大屏，且完全落在横向范围内（不再占用大屏右侧空间）
-            int rowCenter = (stable.Left + comm.Right) / 2;
-            int weightCenter = weights.Left + weights.Width / 2;
-            Assert.True(Math.Abs(weightCenter - rowCenter) <= 2,
-                $"稳定/通讯未居中于大屏：偏差 {weightCenter - rowCenter}px");
-            Assert.True(stable.Left >= weights.Left && comm.Right <= weights.Right,
-                $"稳定/通讯({stable.Left}~{comm.Right})超出大屏范围({weights.Left}~{weights.Right})");
-            // 指示行完整落在视频区上方，紧凑衔接不与画面区重叠（指示位于白色工具栏面板内，坐标需换算）
             var topPanel = (Panel)Fld(form, "_topPanel");
+
+            // 移到重车过磅按钮右侧：两指示左缘均在重车按钮右缘之后
+            Assert.True(stable.Left >= gross.Right,
+                $"稳定指示(左={stable.Left})应在重车过磅(右={gross.Right})右侧");
+            Assert.True(comm.Left >= gross.Right,
+                $"通讯指示(左={comm.Left})应在重车过磅(右={gross.Right})右侧");
+            // 工具栏垂直居中（指示顶边不低于按钮区、底边不超出工具栏）
+            Assert.True(stable.Top >= 0 && stable.Bottom <= topPanel.Height,
+                $"稳定指示(顶={stable.Top} 底={stable.Bottom})应落在工具栏(高={topPanel.Height})内");
+            // 不再占用大屏下方整行：指示顶边不在大屏重量底边之下
+            Assert.True(stable.Top < weights.Bottom,
+                $"稳定指示(顶={stable.Top})不应在大屏重量(底={weights.Bottom})下方（应放侧边）");
+            // 与视频区不重叠（指示位于工具栏面板内，坐标需换算到窗体）
             Assert.True(topPanel.Top + stable.Bottom <= video.Top && topPanel.Top + comm.Bottom <= video.Top,
                 $"稳定/通讯指示与视频区(顶={video.Top})重叠");
         });
