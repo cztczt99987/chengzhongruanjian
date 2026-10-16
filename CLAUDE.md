@@ -60,6 +60,25 @@
 
 强有力的成功标准能让你独立闭环推进。弱成功标准（“把它弄好”）则会不断需要额外澄清。
 
+## 5. 本项目的验证方式
+
+**构建：** `dotnet build src\CZRWeighSystem.sln`
+
+**测试：** 用 `test.ps1`，不要直接 `dotnet test`。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File test.ps1               # 全量
+powershell -ExecutionPolicy Bypass -File test.ps1 -NoBuild      # 不重编译
+powershell -ExecutionPolicy Bypass -File test.ps1 -Filter "FullyQualifiedName~FeeCalculator"
+```
+
+原因：主工程与测试工程目标框架是 `net8.0-windows`（为兼容现场老 Win10 系统），
+而开发机只安装了 .NET 10 运行时。直接 `dotnet test` 会报
+`You must install or update .NET to run this application`（找不到 Microsoft.NETCore.App 8.0.0）。
+`test.ps1` 先设 `DOTNET_ROLL_FORWARD=LatestMajor` 让产物向上滚动到 .NET 10 执行。
+
+**当前基线：** 构建 0 错误（1 个可空性警告），测试 288 个全部通过。
+
 ---
 
 **如果这些准则正在发挥作用，你会看到：** diff 中不必要的改动更少，因为过度复杂而返工的次数更少，而且澄清性问题会出现在实现之前，而不是出错之后。
