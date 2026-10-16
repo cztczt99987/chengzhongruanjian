@@ -25,7 +25,12 @@ public class WeighEntryDialog : Form
     private int _step;
     private double? _confirmedKg;            // 确认时锁定的稳定重量（千克）
     private WeighRecord? _confirmedFirst;    // 确认时识别出的待配对一次磅（null=第一次称重）
-    private WeighRecord? _savedRecord;       // 保存成功的记录（打印用）
+    /// <summary>保存成功的记录（打印用）</summary>
+    private WeighRecord? _savedRecord;
+    /// <summary>本次弹窗期间是否保存过记录（关闭时决定要不要让首页刷新列表）</summary>
+    private bool _savedAny;
+    /// <summary>关闭收尾是否已执行（防 FormClosing 与 btnExit 重复触发刷新）</summary>
+    private bool _closed;
     private PlateKeypadForm? _keypad;        // 车牌编号字母触摸面板（双击编号框弹出）
 
     /// <summary>当天已保存过（未作废）的记录：车牌自动补全候选 + 选中后回填上次信息。</summary>
@@ -52,6 +57,13 @@ public class WeighEntryDialog : Form
 
     /// <summary>保存成功后回调（参数=流水号；主界面用于抓拍留证）。</summary>
     internal Action<string>? OnSaved;
+
+    /// <summary>
+    /// 弹窗关闭时回调（参数=本次是否保存过记录）。
+    /// 由 FormClosing 统一触发，因此点标题栏的叉与点「退出」按钮行为一致。
+    /// （命名避开 Form.OnClosed 事件）
+    /// </summary>
+    internal Action<bool>? OnDialogClosed;
 
     /// <summary>打印动作（默认直接打印磅单；测试注入空实现避免真实出纸）。</summary>
     internal Func<WeighRecord, bool> PrintAction = r => Report.PoundTicketPrinter.Print(r);
@@ -115,12 +127,16 @@ public class WeighEntryDialog : Form
             .Where(r => r.Status != "已作废").ToList();
         RefreshPlateSuggest();
 
-        _txtVehicle.TextChanged += (_, _) => { TryAutoFill(); UpdateWeight(); };   // 车号变化：回填上次信息 + 刷新配对
+        _txtVehicle.TextChanged += (_, _) =>
+        {
+            ResetFlow();                  // 车号一变即作废本次确认：票面清空、须重新点"确认"
+            TryAutoFill();                // 回填上次信息
+        };
         _cboPrefix.SelectedIndexChanged += (_, _) =>
         {
-            RefreshPlateSuggest();             // 省份变化 → 补全候选按新省份重建
+            ResetFlow();                  // 省份简称也属于车号的一部分，同样需重新确认
+            RefreshPlateSuggest();        // 省份变化 → 补全候选按新省份重建
             TryAutoFill();
-            UpdateWeight();
         };
         // 预填放在事件挂接之后：带车号进入时同样触发回填上次信息
         ApplyPrefill(prefillVehicle);
@@ -136,6 +152,16 @@ public class WeighEntryDialog : Form
         SetStep(0);   // 链式流程初始：仅"确认"可点
 
         _tick.Tick += (_, _) => UpdateWeight();   // 实时重量/净重预览随仪表数据刷新
+        // 关闭收尾统一走 FormClosing：标题栏的叉不会设 DialogResult（默认 Cancel），
+        // 只有「退出」按钮设 OK，导致点叉离开时首页记录列表不刷新。
+        // 这里改成"保存过就通知首页刷新"，不论用叉还是用「退出」按钮都一致。
+        FormClosing += (_, _) =>
+        {
+            if (_closed) return;
+            _closed = true;
+            if (_savedAny) DialogResult = DialogResult.OK;
+            OnDialogClosed?.Invoke(_savedAny);
+        };
         // 注意：定时器仅在窗体真正显示时启动（OnShown）——测试等场景下未显示的窗体
         // 不启动定时器，避免线程结束后残留未释放的 WinForms Timer
         FormClosed += (_, _) =>
@@ -446,7 +472,7 @@ public class WeighEntryDialog : Form
         _btnPrint.Click += (_, _) => DoPrint();
         _btnContinue.Click += (_, _) => DoContinue();
 
-        // 退出：返回主界面（DialogResult.OK 触发主界面刷新记录/统计）
+        // 退出：返回主界面（FormClosing 按"是否保存过"决定首页是否刷新记录/统计）
         var btnExit = new Button
         {
             Text = "退 出",
@@ -500,8 +526,7 @@ public class WeighEntryDialog : Form
         _lblPanelTitle.Text = _isTare ? "本次皮重" : "本次毛重";
         _lastTareKey = null;   // 模式切换后车号相同也要重取（显示/隐藏语义已变）
         UpdateLastTareVisibility();
-        ResetFlow();
-        UpdateWeight();
+        ResetFlow();   // 内部已刷新票面（票面清空、回到"确认"步）
     }
 
     /// <summary>上次空车去皮信息区块仅空车去皮模式可见（重车过磅模式整组隐藏）。</summary>
@@ -533,13 +558,18 @@ public class WeighEntryDialog : Form
         return _lastTare;
     }
 
-    /// <summary>放弃链式进度：清空确认/保存状态，回到"确认"步。</summary>
+    /// <summary>
+    /// 放弃链式进度：清空确认/保存状态，回到"确认"步并刷新票面。
+    /// 刷新不可省——票面右列的毛/皮/净在"确认"后才填写，光置空状态而不重绘会残留上一辆车的数字
+    /// （用户要求：换车号后毛/皮/净一律不显示，等重新点"确认"再显示）。
+    /// </summary>
     private void ResetFlow()
     {
         _confirmedKg = null;
         _confirmedFirst = null;
         _savedRecord = null;
         SetStep(0);
+        UpdateWeight();
     }
 
     /// <summary>
@@ -682,24 +712,27 @@ public class WeighEntryDialog : Form
         {
             // 确认已锁定读数：票面固定展示锁定值，不再跟随实时重量（车下磅归零也不变）；
             // 保存时按该锁定值入库（见 DoSave）
-            string locked = _cfg.FormatWeight(_confirmedKg.Value);
-            // 已配对的一次磅按其入库列显示，本次锁定值进当前操作模式对应行
-            if (_confirmedFirst != null)
+            double lockedKg = _confirmedKg.Value;
+            double? firstKg = _confirmedFirst?.FirstWeightKg;
+
+            // 本次锁定值进当前操作模式对应行；已配对一次磅的重量进对侧行——
+            // 两项合起来才是本次的毛/皮对，所以净重必须由这两个数算，不能只看单边
+            double? grossKg = null, tareKg = null;
+            if (_isTare)
             {
-                string paired = _cfg.FormatWeight(_confirmedFirst.FirstWeightKg ?? 0);
-                if (_confirmedFirst.FirstWeighIsTare) { _lblTareCell.Text = paired; _lblGrossCell.Text = "--"; }
-                else { _lblGrossCell.Text = paired; _lblTareCell.Text = "--"; }
+                tareKg = lockedKg;
+                if (firstKg is { } f) grossKg = f > lockedKg ? f : null;
             }
             else
             {
-                _lblGrossCell.Text = "--";
-                _lblTareCell.Text = "--";
+                grossKg = lockedKg;
+                if (firstKg is { } f) tareKg = lockedKg > f ? f : null;
             }
-            if (_isTare) _lblTareCell.Text = locked;
-            else _lblGrossCell.Text = locked;
-            _lblNetCell.Text = _confirmedFirst != null
-                ? _cfg.FormatWeight(Math.Abs((_confirmedFirst.FirstWeightKg ?? 0) - _confirmedKg.Value))
-                : "--";
+
+            _lblGrossCell.Text = grossKg.HasValue ? _cfg.FormatWeight(grossKg.Value) : "--";
+            _lblTareCell.Text = tareKg.HasValue ? _cfg.FormatWeight(tareKg.Value) : "--";
+            // 净重 = 毛重 − 皮重；毛皮未配对齐（尤其只称过一次）时为 null → 显示 "--"
+            _lblNetCell.Text = NetCellText(grossKg, tareKg);
 
             if (_confirmedFirst != null)
             {
@@ -717,25 +750,11 @@ public class WeighEntryDialog : Form
             var first = no.Length == 0 ? null
                 : _manager.GetUnfinishedList().FirstOrDefault(r => r.VehicleNo == no);
 
-            // 票据右列毛/皮/净：本次实时值进当前操作模式对应行，
-            // 已存一次磅按其入库列显示，配对且稳定时预览净重
-            string live = _cfg.FormatWeight(_manager.CurrentKg);
-            if (first != null)
-            {
-                string saved = _cfg.FormatWeight(first.FirstWeightKg ?? 0);
-                if (first.FirstWeighIsTare) { _lblTareCell.Text = saved; _lblGrossCell.Text = "--"; }
-                else { _lblGrossCell.Text = saved; _lblTareCell.Text = "--"; }
-            }
-            else
-            {
-                _lblGrossCell.Text = "--";
-                _lblTareCell.Text = "--";
-            }
-            if (_isTare) _lblTareCell.Text = live;
-            else _lblGrossCell.Text = live;
-            _lblNetCell.Text = first != null && _manager.IsStable
-                ? _cfg.FormatWeight(Math.Abs((first.FirstWeightKg ?? 0) - _manager.StableKg))
-                : "--";
+            // 本次尚未"确认"：票面右列不显示实时重量，毛/皮/净一律为 "--"
+            // （2026-10 用户要求：未点确认不显示重量；确认后才把锁定的读数填进对应行）
+            _lblGrossCell.Text = "--";
+            _lblTareCell.Text = "--";
+            _lblNetCell.Text = "--";
 
             if (first != null)
             {
@@ -764,6 +783,23 @@ public class WeighEntryDialog : Form
         }
     }
 
+    /// <summary>
+    /// 净重 = 毛重 − 皮重：两个数值都填写/存在时才计算，缺任一项返回 null（票据显示 "--"）。
+    /// 空车去皮模式下"这次皮重 + 该车已过磅毛重"也按此规则取净重。
+    /// </summary>
+    internal static double? NetKg(double? grossKg, double? tareKg)
+    {
+        if (grossKg == null || tareKg == null) return null;
+        return grossKg.Value - tareKg.Value;
+    }
+
+    /// <summary>毛/皮两个数值 → 净重单元格文本（任一为 null 时净重显示 "--"）。</summary>
+    private string NetCellText(double? grossKg, double? tareKg)
+    {
+        double? netKg = NetKg(grossKg, tareKg);
+        return netKg.HasValue ? _cfg.FormatWeight(netKg.Value) : "--";
+    }
+
     // ================================================================
     // 链式流程：确认 → 保存 → 打印 → 继续
     // ================================================================
@@ -787,14 +823,18 @@ public class WeighEntryDialog : Form
             InfoBox("请选择车号", "提示", false);
             return;
         }
+        // 读数前置校验：0 是无效重量，先于"稳定"判定——车没上磅时读数未稳定，
+        // 若先判稳定会提示"重量未稳定"，掩盖了真正的原因（车不在磅上）。
+        // 用 CurrentKg 而非 StableKg：后者只在稳定时才写入（StabilityFilter），
+        // 读数跳动期间恒为 0，会把"有车但未稳定"误报成"重量为 0"。
+        if (_manager.CurrentKg <= 0)
+        {
+            InfoBox("当前重量为 0，请确认车辆已上磅", "提示", false);
+            return;
+        }
         if (!_manager.IsStableForSave)
         {
             InfoBox("重量未稳定，请等待稳定后再确认", "提示", false);
-            return;
-        }
-        if (_manager.StableKg <= 0)
-        {
-            InfoBox("当前重量为 0，请确认车辆已上磅", "提示", false);
             return;
         }
         if (_manager.IsOverload)
@@ -829,6 +869,7 @@ public class WeighEntryDialog : Form
         }
 
         SetStep(1);   // 确认完成 → 解锁"保存"
+        UpdateWeight();   // 立即把锁定的读数画到票面（否则要等 200ms 定时器刷新）
     }
 
     /// <summary>步骤2【保存】：有确认的待配对记录则二次磅结算，否则第一次称重（无弹窗）。</summary>
@@ -862,8 +903,10 @@ public class WeighEntryDialog : Form
             _savedRecord = newRecord;
             OnSaved?.Invoke(newRecord!.SerialNo);
         }
+        _savedAny = true;      // 关窗时据此让首页刷新记录列表/统计
         _lastTareKey = null;   // 保存后历史皮重可能变化，下次查询重新取库
         SetStep(2);   // 保存完成 → 解锁"打印"
+        UpdateWeight();   // 立即把已存结果显示到票面（否则要等 200ms 定时器刷新）
     }
 
     /// <summary>步骤3【打印】：直接打印磅单，不再弹"是否打印"；失败可原地重试。</summary>
@@ -900,6 +943,12 @@ public class WeighEntryDialog : Form
     {
         if (_step != 3) return;
 
+        // 先清状态再清输入框：清空车号会触发 TextChanged → UpdateWeight，
+        // 若 _savedRecord 尚未清空，已保存记录的结果会被重新画回票面。
+        _confirmedKg = null;
+        _confirmedFirst = null;
+        _savedRecord = null;
+
         _txtVehicle.Clear();
         _txtVariety.Clear();
         _txtOwner.Clear();
@@ -910,16 +959,12 @@ public class WeighEntryDialog : Form
         _txtUnitPrice.Clear();
         _autoFilledFields.Clear();   // 表单整体清空：脏标记一并复位，不依赖各 Clear 的事件顺序
 
-        _confirmedKg = null;
-        _confirmedFirst = null;
-        _savedRecord = null;
-
         // 当天记录加入刚保存的车号（下一辆车输入时自动补全/回填候选）
         _todayRecords = _plateRepo.Query(DateTime.Today, null, "", "", "", "")
             .Where(r => r.Status != "已作废").ToList();
         RefreshPlateSuggest();
 
-        SetStep(0);
+        ResetFlow();          // 回到"确认"步并刷新票面（毛/皮/净清空）
         _txtVehicle.Focus();
     }
 

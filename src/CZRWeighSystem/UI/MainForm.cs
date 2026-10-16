@@ -405,7 +405,7 @@ public class MainForm : Form
         _topPanel.Invalidate();   // 组间竖分隔线位置随布局重绘
     }
 
-    /// <summary>打开称重录入弹窗（皮/毛由操作员手动选择）；保存成功后抓拍留证并刷新列表与统计。</summary>
+    /// <summary>打开称重录入弹窗（皮/毛由操作员手动选择）；保存成功后抓拍留证，关闭时刷新列表与统计。</summary>
     private void OpenWeighEntry(bool isTare, string? prefillVehicle = null)
     {
         using var f = new WeighEntryDialog(_manager, isTare, prefillVehicle);
@@ -414,11 +414,15 @@ public class MainForm : Form
             CaptureFor(serial);
             _sync?.EnqueueRecord(serial);   // 二次磅结算完成后推送平台（一次磅内部跳过）
         };
-        if (f.ShowDialog(this) == DialogResult.OK)
+        // 关闭即刷新：由弹窗 FormClosing 回调驱动，点标题栏的叉与点「退出」按钮都能刷新
+        // （旧实现靠 DialogResult.OK，而叉走的是默认 Cancel，导致点叉后列表不刷新）
+        f.OnDialogClosed = saved =>
         {
+            if (!saved) return;
             RefreshGrid();
             RefreshStats();
-        }
+        };
+        f.ShowDialog(this);
     }
 
     // ---------- 视频监控面板（首页中部，固定 3 个画面槽位；大屏弹窗见菜单） ----------

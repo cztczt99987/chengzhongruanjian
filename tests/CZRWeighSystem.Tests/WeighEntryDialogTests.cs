@@ -61,13 +61,22 @@ public class WeighEntryDialogTests
     /// </summary>
     private static void UseTestScaleNo() => AppConfig.Current.ScaleNo = "91";
 
-    /// <summary>向管理器的稳定判定器推送 N 次相同采样，使 IsStable=true、StableKg=kg。</summary>
+    /// <summary>
+    /// 向管理器推送 N 次相同采样，使 IsStable=true、StableKg=kg，并同步实时读数 CurrentKg。
+    /// 走 WeighManager 的注入口而非直接操作 _filter：真实数据流下 CurrentKg 必然有值，
+    /// 票据"未确认不显示重量"与"0 是无效数值"两处判定都依赖实时读数，直连 _filter 会让测试
+    /// 长期停留在 CurrentKg=0 的失真状态。
+    /// </summary>
     private static void PushStable(WeighManager manager, double kg)
     {
-        var filter = (StabilityFilter)typeof(WeighManager)
-            .GetField("_filter", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(manager)!;
-        for (int i = 0;i < 3; i++) filter.Push(kg);   // 默认 StableCount=3
+        for (int i = 0;i < 3; i++) manager.InjectWeight(kg);   // 默认 StableCount=3
     }
+
+    /// <summary>
+    /// 推送一次采样：实时读数 CurrentKg 立即更新，但未达稳定次数，StableKg 仍为 0
+    /// （模拟车在磅上读数跳动）。用于区分"重量为 0"与"未稳定"两种提示。
+    /// </summary>
+    private static void PushUnstable(WeighManager manager, double kg) => manager.InjectWeight(kg);
 
     /// <summary>每次运行唯一车号：共享库会残留上次运行的记录，断言 Single 时不能重名。</summary>
     private static string NewVehicle(string prefix) => $"测{prefix}{Guid.NewGuid():N}"[..7];
@@ -502,6 +511,274 @@ public class WeighEntryDialogTests
         Assert.Contains("请选择车号", _lastInfo);
     }
 
+    /// <summary>用户要求：0 是无效数值，不能称重——读数 0 时确认必须弹提示并停在确认步。</summary>
+    [Fact]
+    public void 重量为0时确认_提示重量为0且不进入待保存步()
+    {
+        string vehicle = NewVehicle("Z");
+        _lastInfo = null;
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+            SilenceDialogs(dlg);
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
+            PushStable(manager, 0);   // 稳定的 0：读数有效但值为 0
+            Call(dlg, "Confirm");
+
+            Assert.Equal(0, Fld<int>(dlg, "_step"));   // 拒绝确认，停在确认步
+        });
+        manager.Dispose();
+
+        Assert.Contains("当前重量为 0", _lastInfo);
+        Assert.Empty(_repo.Query(null, null, vehicle, "", "", ""));
+    }
+
+    /// <summary>
+    /// "重量为 0"必须先于"未稳定"判定：无任何读数时若先判稳定，提示会变成"重量未稳定"，
+    /// 掩盖真正原因（车不在磅上）。同时覆盖"确实为 0"与"未收到数据"两种情形。
+    /// </summary>
+    [Fact]
+    public void 未收到仪表数据时确认_提示重量为0而非未稳定()
+    {
+        _lastInfo = null;
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+            SilenceDialogs(dlg);
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = NewVehicle("Y");
+            Call(dlg, "Confirm");   // 未推送任何采样 → CurrentKg=0
+
+            Assert.Equal(0, Fld<int>(dlg, "_step"));
+        });
+        manager.Dispose();
+
+        Assert.Contains("当前重量为 0", _lastInfo);
+        Assert.DoesNotContain("未稳定", _lastInfo);
+    }
+
+    /// <summary>
+    /// 用户要求：有重量但尚未稳定时，提示应为"未稳定"而不是"重量为 0"。
+    /// StableKg 只在稳定时才写入，故判定"0"必须用实时读数 CurrentKg。
+    /// </summary>
+    [Fact]
+    public void 有重量但未稳定时确认_提示未稳定而非重量为0()
+    {
+        _lastInfo = null;
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+            SilenceDialogs(dlg);
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = NewVehicle("X");
+            PushUnstable(manager, 40000);   // 仅一次采样：有读数、未达稳定次数
+            Call(dlg, "Confirm");
+
+            Assert.Equal(0, Fld<int>(dlg, "_step"));
+        });
+        manager.Dispose();
+
+        Assert.Contains("未稳定", _lastInfo);
+        Assert.DoesNotContain("当前重量为 0", _lastInfo);
+    }
+
+    /// <summary>
+    /// 用户要求：未点"确认"时，票据的毛重/皮重/净重都不显示实时重量。
+    /// 未确认前票面三格应一律为 "--"，即使仪表已有稳定读数。
+    /// </summary>
+    [Fact]
+    public void 未点确认时_票面毛皮净一律不显示数字()
+    {
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+            SilenceDialogs(dlg);
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = NewVehicle("V");
+            PushStable(manager, 12340);   // 仪表有稳定读数
+            Call(dlg, "UpdateWeight");
+
+            Assert.Equal(0, Fld<int>(dlg, "_step"));   // 仍在待确认步
+            Assert.Equal("--", Fld<Label>(dlg, "_lblTareCell").Text);
+            Assert.Equal("--", Fld<Label>(dlg, "_lblGrossCell").Text);
+            Assert.Equal("--", Fld<Label>(dlg, "_lblNetCell").Text);
+        });
+        manager.Dispose();
+    }
+
+    /// <summary>
+    /// 用户要求：换车号后毛/皮/净都要清空，等重新点"确认"才显示。
+    /// 覆盖已确认（票面有锁定值）后再改车号的场景——必须回到待确认步且三格清空。
+    /// </summary>
+    [Fact]
+    public void 更换车号后_票面清空并回到待确认步()
+    {
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+            SilenceDialogs(dlg);
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = NewVehicle("W");
+            PushStable(manager, 12340);
+            Call(dlg, "Confirm");
+            Assert.Equal(1, Fld<int>(dlg, "_step"));
+            Assert.Equal(AppConfig.Current.FormatWeight(12340), Fld<Label>(dlg, "_lblTareCell").Text);
+
+            // 换成另一辆车：已确认读数作废
+            Fld<TextBox>(dlg, "_txtVehicle").Text = NewVehicle("U");
+
+            Assert.Equal(0, Fld<int>(dlg, "_step"));   // 回到待确认步，须重新确认
+            Assert.Equal("--", Fld<Label>(dlg, "_lblTareCell").Text);
+            Assert.Equal("--", Fld<Label>(dlg, "_lblGrossCell").Text);
+            Assert.Equal("--", Fld<Label>(dlg, "_lblNetCell").Text);
+        });
+        manager.Dispose();
+    }
+
+    /// <summary>省份简称也属于车号的一部分，改动同样应作废本次确认。</summary>
+    [Fact]
+    public void 更换省份简称后_票面清空并回到待确认步()
+    {
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: false);
+            SilenceDialogs(dlg);
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = "A12345";
+            PushStable(manager, 20000);
+            Call(dlg, "Confirm");
+            Assert.Equal(1, Fld<int>(dlg, "_step"));
+
+            Fld<ProvincePicker>(dlg, "_cboPrefix").SelectedIndex = 1;   // 选一个省份简称
+
+            Assert.Equal(0, Fld<int>(dlg, "_step"));
+            Assert.Equal("--", Fld<Label>(dlg, "_lblGrossCell").Text);
+            Assert.Equal("--", Fld<Label>(dlg, "_lblTareCell").Text);
+            Assert.Equal("--", Fld<Label>(dlg, "_lblNetCell").Text);
+        });
+        manager.Dispose();
+    }
+
+    /// <summary>
+    /// 用户要求：净重 = 毛重 − 皮重，缺任一项就不显示净重。
+    /// 车号有未完成一次磅但尚未确认时，毛/皮都还没有本次读数，三格一律 "--"；
+    /// 旧实现会把一次磅值填进对侧行、再拿实时读数相减，算出一个并不成立的净重。
+    /// </summary>
+    [Fact]
+    public void 单边重量时_净重不显示数字()
+    {
+        string vehicle = NewVehicle("T");
+        _repo.InsertFirstWeigh(new WeighRecord { ScaleNo = "95", VehicleNo = vehicle, GrossKg = 30000 });
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+            SilenceDialogs(dlg);
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
+            PushStable(manager, 12340);
+            Call(dlg, "UpdateWeight");   // 未确认：一次磅那一边也不显示
+
+            Assert.Equal("--", Fld<Label>(dlg, "_lblNetCell").Text);
+            Assert.Equal("--", Fld<Label>(dlg, "_lblGrossCell").Text);
+            Assert.Equal("--", Fld<Label>(dlg, "_lblTareCell").Text);
+            Assert.Contains("未完成的二次磅", Fld<Label>(dlg, "_lblPairHint").Text);
+
+            // 确认后毛/皮两项齐备，净重才按 毛重 − 皮重 算出
+            Call(dlg, "Confirm");
+            Assert.Equal(1, Fld<int>(dlg, "_step"));
+            Assert.Equal(AppConfig.Current.FormatWeight(30000), Fld<Label>(dlg, "_lblGrossCell").Text);
+            Assert.Equal(AppConfig.Current.FormatWeight(12340), Fld<Label>(dlg, "_lblTareCell").Text);
+            Assert.Equal(AppConfig.Current.FormatWeight(17660), Fld<Label>(dlg, "_lblNetCell").Text);
+        });
+        manager.Dispose();
+    }
+
+    /// <summary>空车去皮配对：本次皮重 10000 + 已存 30000（毛重）→ 净重 = 30000 − 10000 = 20000。</summary>
+    [Fact]
+    public void 空车去皮配对_净重按毛重减皮重显示()
+    {
+        string vehicle = NewVehicle("S");
+        _repo.InsertFirstWeigh(new WeighRecord { ScaleNo = "96", VehicleNo = vehicle, GrossKg = 30000 });
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+            SilenceDialogs(dlg);
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
+            PushStable(manager, 10000);
+            Call(dlg, "Confirm");
+
+            Assert.Equal(AppConfig.Current.FormatWeight(30000), Fld<Label>(dlg, "_lblGrossCell").Text);
+            Assert.Equal(AppConfig.Current.FormatWeight(10000), Fld<Label>(dlg, "_lblTareCell").Text);
+            Assert.Equal(AppConfig.Current.FormatWeight(20000), Fld<Label>(dlg, "_lblNetCell").Text);
+        });
+        manager.Dispose();
+    }
+
+    /// <summary>
+    /// 用户要求：点标题栏的叉离开首页时也要刷新记录列表（旧实现只有「退出」按钮设 DialogResult.OK，
+    /// 叉走默认 Cancel，导致列表不刷新）。关闭回调须按"本次是否保存过"上报。
+    /// </summary>
+    [Fact]
+    public void 关闭弹窗_按是否保存过回调_供首页刷新列表()
+    {
+        string vehicle = NewVehicle("R");
+        bool? closedSaved = null;
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+            SilenceDialogs(dlg);
+            dlg.OnDialogClosed = saved => closedSaved = saved;
+            UseTestScaleNo();
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
+            PushStable(manager, 10000);
+            ConfirmAndSave(dlg);
+            dlg.Show();    // WinForms 对从未显示过的窗体 Close() 不触发 FormClosing
+            dlg.Close();
+        });
+        manager.Dispose();
+
+        Assert.True(closedSaved);
+        Assert.Single(_repo.Query(null, null, vehicle, "", "", ""));
+    }
+
+    /// <summary>未保存就关闭时不应让首页白刷一次：回调参数为 false。</summary>
+    [Fact]
+    public void 未保存就关闭弹窗_回调为false()
+    {
+        bool? closedSaved = null;
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+            SilenceDialogs(dlg);
+            dlg.OnDialogClosed = saved => closedSaved = saved;
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = NewVehicle("Q");
+            dlg.Show();
+            dlg.Close();
+        });
+        manager.Dispose();
+
+        Assert.False(closedSaved);
+    }
+
+    /// <summary>
+    /// 有重量但未达稳定要求时，确认应被拒绝并提示"未稳定"。
+    /// 注意：这里必须推送一个非零读数——若完全不推送采样（CurrentKg=0），
+    /// 应提示"重量为 0"（见 未收到仪表数据时确认_提示重量为0而非未稳定）。
+    /// </summary>
     [Fact]
     public void 重量未稳定时确认_提示未稳定且不保存()
     {
@@ -514,7 +791,8 @@ public class WeighEntryDialogTests
             SilenceDialogs(dlg);
             NoPrefix(dlg);
             Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
-            Call(dlg, "Confirm");   // 未推送稳定采样 → IsStableForSave=false
+            PushUnstable(manager, 40000);   // 有读数但未达稳定次数 → IsStableForSave=false
+            Call(dlg, "Confirm");
 
             Assert.Equal(0, Fld<int>(dlg, "_step"));
         });

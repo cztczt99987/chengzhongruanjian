@@ -278,7 +278,11 @@ public class WeighManager : IDisposable
 
     /// <summary>注入一次重量采样（测试用：模拟仪表来数；生产代码走数据源事件）。</summary>
     internal void InjectWeight(double kg)
-        => OnWeightReceived(new WeightData(kg, DateTime.Now));
+    {
+        _lastDataTime = DateTime.Now;   // 与生产数据流一致：有读数即视为通讯正常
+        _errorSinceLastData = false;
+        OnWeightReceived(new WeightData(kg, DateTime.Now));
+    }
 
     public void Dispose()
     {
