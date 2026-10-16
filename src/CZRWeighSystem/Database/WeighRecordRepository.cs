@@ -228,8 +228,11 @@ public class WeighRecordRepository
         }
 
         string whereSql = where.Count == 0 ? "" : "WHERE " + string.Join(" AND ", where);
+        // 按"最后操作时间"倒序：一次磅按 first_time、二次磅完成按 second_time，
+        // 保证每次保存后该记录都浮到最上面（旧 ORDER BY id DESC 无法让二次磅更新的记录上浮）。
         cmd.CommandText = Db.TopSql(
-            $"SELECT {{TOP}} * FROM t_weigh_record {whereSql} ", "ORDER BY id DESC", 5000);
+            $"SELECT {{TOP}} * FROM t_weigh_record {whereSql} ",
+            "ORDER BY COALESCE(second_time, first_time) DESC, id DESC", 5000);
 
         using var reader = cmd.ExecuteReader();
         var list = new List<WeighRecord>();
