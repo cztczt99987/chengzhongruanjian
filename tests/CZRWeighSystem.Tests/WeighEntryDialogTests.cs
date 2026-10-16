@@ -851,6 +851,33 @@ public class WeighEntryDialogTests
     }
 
     /// <summary>
+    /// 用户要求：点"保存"后首页列表要立即显示新数据（不关闭弹窗也要显示出来）。
+    /// 保存成功后必须触发 OnRecordSaved 回调，由主界面立即刷新列表与统计。
+    /// </summary>
+    [Fact]
+    public void 保存成功后_立即触发OnRecordSaved回调_供首页即时刷新列表()
+    {
+        string vehicle = NewVehicle("RS");
+        bool recordSaved = false;
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+            SilenceDialogs(dlg);
+            UseTestScaleNo();
+            dlg.OnRecordSaved = () => recordSaved = true;
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
+            PushStable(manager, 10000);
+            ConfirmAndSave(dlg);
+        });
+        manager.Dispose();
+
+        Assert.True(recordSaved, "保存成功后应立即触发 OnRecordSaved 回调");
+        Assert.Single(_repo.Query(null, null, vehicle, "", "", ""));
+    }
+
+    /// <summary>
     /// 有重量但未达稳定要求时，确认应被拒绝并提示"未稳定"。
     /// 注意：这里必须推送一个非零读数——若完全不推送采样（CurrentKg=0），
     /// 应提示"重量为 0"（见 未收到仪表数据时确认_提示重量为0而非未稳定）。

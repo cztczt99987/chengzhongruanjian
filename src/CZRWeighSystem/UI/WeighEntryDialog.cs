@@ -58,6 +58,9 @@ public class WeighEntryDialog : Form
     /// <summary>保存成功后回调（参数=流水号；主界面用于抓拍留证）。</summary>
     internal Action<string>? OnSaved;
 
+    /// <summary>保存成功后回调（主界面用于立即刷新列表与统计，不必等弹窗关闭）。</summary>
+    internal Action? OnRecordSaved;
+
     /// <summary>
     /// 弹窗关闭时回调（参数=本次是否保存过记录）。
     /// 由 FormClosing 统一触发，因此点标题栏的叉与点「退出」按钮行为一致。
@@ -466,7 +469,7 @@ public class WeighEntryDialog : Form
         _btnConfirm = ChainButton("确 认", 182, 36);
         _btnSave = ChainButton("保 存", 234, 36);
         _btnPrint = ChainButton("打 印", 286, 36);
-        _btnContinue = ChainButton("继 续", 338, 32);
+        _btnContinue = ChainButton("继 续", 348, 32);   // 单独出来：与打印拉开间距，不加箭头
         _btnConfirm.Click += (_, _) => Confirm();
         _btnSave.Click += (_, _) => DoSave();
         _btnPrint.Click += (_, _) => DoPrint();
@@ -476,7 +479,7 @@ public class WeighEntryDialog : Form
         var btnExit = new Button
         {
             Text = "退 出",
-            Location = new Point(494, 376),
+            Location = new Point(494, 386),
             Size = new Size(205, 26),
             FlatStyle = FlatStyle.Flat,
             BackColor = Color.FromArgb(235, 235, 235),
@@ -489,7 +492,7 @@ public class WeighEntryDialog : Form
         Controls.Add(_btnSave);
         Controls.Add(Arrow(272));
         Controls.Add(_btnPrint);
-        Controls.Add(Arrow(324));
+        // 打印与继续之间不加箭头：继续是"重新开始下一辆"，不是链式下一步，视觉上单独出来
         Controls.Add(_btnContinue);
         Controls.Add(btnExit);
     }
@@ -715,18 +718,14 @@ public class WeighEntryDialog : Form
             double lockedKg = _confirmedKg.Value;
             double? firstKg = _confirmedFirst?.FirstWeightKg;
 
-            // 本次锁定值进当前操作模式对应行；已配对一次磅的重量进对侧行——
-            // 两项合起来才是本次的毛/皮对，所以净重必须由这两个数算，不能只看单边
+            // 本次锁定值进当前操作模式对应行；已配对一次磅的重量按其实际类型进对侧行——
+            // 两项合起来才是毛/皮对，净重由两者之差算出（不能用"哪个大哪个是毛重"猜，
+            // 毛重<皮重时会把已存毛重误判成皮重）。
             double? grossKg = null, tareKg = null;
-            if (_isTare)
+            if (_isTare) tareKg = lockedKg; else grossKg = lockedKg;
+            if (_confirmedFirst != null && firstKg is { } f)
             {
-                tareKg = lockedKg;
-                if (firstKg is { } f) grossKg = f > lockedKg ? f : null;
-            }
-            else
-            {
-                grossKg = lockedKg;
-                if (firstKg is { } f) tareKg = lockedKg > f ? f : null;
+                if (_confirmedFirst.FirstWeighIsTare) tareKg = f; else grossKg = f;
             }
 
             _lblGrossCell.Text = grossKg.HasValue ? _cfg.FormatWeight(grossKg.Value) : "--";
@@ -758,11 +757,23 @@ public class WeighEntryDialog : Form
 
             // 先填本车历史皮重（毛重匹配时操作员输入完车号就要看到它）；
             // 若该车另有未完成记录，则用那条记录的重量覆盖——此时票面必须显示"即将配对结算"的那个值，
-            // 否则会与下方"A 有未完成的二次磅，保存时将自动配对结算"的提示自相矛盾
-            // （现场反馈：列表里未完成记录皮重 0.18，弹窗却显示历史皮重 0.12）。
+            // 否则会与下方"A 有未完成的二次磅，保存时将自动配对结算"的提示自相矛盾。
+            // 未完成一次磅的重量按其实际类型填对应栏（一次磅是毛重→毛重栏、是皮重→皮重栏），
+            // 不能一律塞进皮重栏（否则先称毛重、再去皮时，毛重值会被错误显示在皮重栏）。
             ShowArchivedTare(no);
             if (first is { FirstWeightKg: { } pendingKg })
-                _lblTareCell.Text = _cfg.FormatWeight(pendingKg);
+            {
+                if (first.FirstWeighIsTare)
+                {
+                    _lblTareCell.Text = _cfg.FormatWeight(pendingKg);
+                    _lblGrossCell.Text = "--";
+                }
+                else
+                {
+                    _lblGrossCell.Text = _cfg.FormatWeight(pendingKg);
+                    _lblTareCell.Text = "--";   // 未完成的是毛重：皮重栏不应残留历史皮重
+                }
+            }
 
             if (first != null)
             {
@@ -925,6 +936,7 @@ public class WeighEntryDialog : Form
             OnSaved?.Invoke(newRecord!.SerialNo);
         }
         _savedAny = true;      // 关窗时据此让首页刷新记录列表/统计
+        OnRecordSaved?.Invoke();   // 保存成功立即通知首页刷新列表/统计（弹窗不关也能看到新记录）
         _lastTareKey = null;   // 保存后历史皮重可能变化，下次查询重新取库
         SetStep(2);   // 保存完成 → 解锁"打印"
         UpdateWeight();   // 立即把已存结果显示到票面（否则要等 200ms 定时器刷新）

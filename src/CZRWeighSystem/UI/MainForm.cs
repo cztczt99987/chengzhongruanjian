@@ -414,6 +414,12 @@ public class MainForm : Form
             CaptureFor(serial);
             _sync?.EnqueueRecord(serial);   // 二次磅结算完成后推送平台（一次磅内部跳过）
         };
+        // 保存成功立即刷新首页列表与统计：弹窗不关闭也能看到新记录
+        f.OnRecordSaved = () =>
+        {
+            RefreshGrid();
+            RefreshStats();
+        };
         // 关闭即刷新：由弹窗 FormClosing 回调驱动，点标题栏的叉与点「退出」按钮都能刷新
         // （旧实现靠 DialogResult.OK，而叉走的是默认 Cancel，导致点叉后列表不刷新）
         f.OnDialogClosed = saved =>
