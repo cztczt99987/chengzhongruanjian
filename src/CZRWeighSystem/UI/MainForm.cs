@@ -112,12 +112,13 @@ public class MainForm : Form
 
     // 布局参数：中部视频区、底部记录列表（顶部称重条下方直接是视频区）
     // 稳定/通讯已移到称重条侧边，顶部高度压缩，腾出空间全部交给摄像头画面。
-    // CameraY/CameraH 按窗口高度动态计算：画面区尽量撑大，底部记录列表保底 160px 不被压扁。
+    // CameraY/CameraH 按窗口高度动态计算：画面区尽量撑大，底部记录列表保底至少 5 行可见。
     private int CameraY => _menu.Height + TopPanelH + 6;   // 视频监控区 y（顶部称重条底边 + 6）
-    private const int GridMinH = 160;   // 底部记录列表最小高度（画面再大也不压扁它）
+    private const int GridMinH = 210;    // 记录列表最小高度：保证表格内至少 5 行可见（表头+5×行高+控件条带）
+    private const int VideoToGridGap = 6;   // 视频区与记录列表面板之间的间距（今日汇总已移入面板内）
     private int _statusH = 22;          // 状态栏实际高度（BuildStatusBar 中实测，避免多留空隙）
-    private int CameraH => Math.Max(220, ClientSize.Height - _statusH - CameraY - 34 - GridMinH);
-    private int GridY => CameraY + CameraH + 34;   // 底部记录列表 y（中间留今日汇总行）
+    private int CameraH => Math.Max(220, ClientSize.Height - _statusH - CameraY - VideoToGridGap - GridMinH);
+    private int GridY => CameraY + CameraH + VideoToGridGap;   // 底部记录列表面板 y
 
     // ===== 界面构建 =====
     public MainForm()
@@ -427,7 +428,6 @@ public class MainForm : Form
         int camH = CameraH;
         _videoPanel.Location = new Point(20, camY);
         _videoPanel.Size = new Size(ClientSize.Width - 40, camH);
-        _lblTodaySummary.Top = camY + camH + 6;
         // 显式设定 Bounds（含高度）：capturePanel 仅锚定 Top|Left|Right，高度完全由这里控制，
         // 保证不同分辨率/窗体大小下列表底边恰好贴合状态栏顶边、放大画面能完整覆盖
         int capH = Math.Max(GridMinH, ClientSize.Height - _statusH - GridY);
@@ -1031,16 +1031,16 @@ public class MainForm : Form
     // ---------- 底部称重记录面板（显示条数可选；双击未完成行带车号打开录入窗） ----------
     private void BuildCapturePanel()
     {
-        // 视频区下方今日汇总行
+        // 今日称重汇总：放在记录列表面板内左上角（与右侧刷新/单位/条数同一行），
+        // 不再单独占视频区与列表之间的一整行，把垂直空间还给表格
         _lblTodaySummary = new Label
         {
             Text = "今日称重：",
             AutoSize = true,
-            Location = new Point(20, CameraY + CameraH + 6),
+            Location = new Point(10, 21),
             ForeColor = Color.FromArgb(0, 102, 204),
             Font = new Font("Microsoft YaHei UI", 10.5F, FontStyle.Bold),
         };
-        Controls.Add(_lblTodaySummary);
 
         int gridH = Math.Max(GridMinH, ClientSize.Height - _statusH - GridY);
         _capturePanel = new GroupBox
@@ -1069,6 +1069,7 @@ public class MainForm : Form
             // 表头/行高随字体自适应：高 DPI 下默认固定表头高度会把中文列头截成一半
             ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize,
             AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCellsExceptHeaders,
+            RowTemplate = { Height = 24 },   // 固定行高，配合 GridMinH 保证至少 5 行可见
             BackgroundColor = Color.White,
             BorderStyle = BorderStyle.FixedSingle,
         };
@@ -1174,10 +1175,12 @@ public class MainForm : Form
         _btnRefresh.Click += (_, _) => RefreshGrid();
 
         _capturePanel.Controls.Add(_captureGrid);
+        _capturePanel.Controls.Add(_lblTodaySummary);   // 今日称重汇总（面板内左上角）
         _capturePanel.Controls.Add(lblPage);
         _capturePanel.Controls.Add(_cboPageSize);
         _capturePanel.Controls.AddRange([_rdoKg, _rdoTon, _btnRefresh]);
-        // 表格先加入 → 处于 z 序前层，会把后加入的控件压住；显式置前保证条数选择框始终可见
+        // 表格先加入 → 处于 z 序前层，会把后加入的控件压住；显式置前保证条数选择框与汇总始终可见
+        _lblTodaySummary.BringToFront();
         lblPage.BringToFront();
         _cboPageSize.BringToFront();
         _rdoKg.BringToFront();

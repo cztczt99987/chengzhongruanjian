@@ -56,4 +56,36 @@ public class MainFormZoomLayoutTests
                 $"[{w}x{h}] 放大区底边({zoomRegion.Bottom})应不小于列表底边({capture.Bottom})");
         });
     }
+
+    /// <summary>
+    /// 无论窗口分辨率，称重记录表格内至少能完整显示 5 行数据。
+    /// 今日称重汇总已移入列表面板内、视频区与列表间距压缩到 6px，
+    /// GridMinH 保底 + 行高固定 24px，共同保证小窗口下也有 5 行可见位置。
+    /// </summary>
+    [Theory]
+    [InlineData(1240, 780)]     // 最小窗口
+    [InlineData(1366, 768)]     // 常见笔记本
+    [InlineData(1600, 900)]
+    [InlineData(1920, 1080)]
+    public void 多分辨率_记录表格至少显示5行(int w, int h)
+    {
+        Db.Initialize();
+        RunOnSta(() =>
+        {
+            using var form = new MainForm();
+            form.ClientSize = new Size(w, h);
+            form.PerformLayout();
+
+            var capture = (GroupBox)Fld(form, "_capturePanel");
+            var grid = (DataGridView)Fld(form, "_captureGrid");
+
+            // 表格可视数据区高度 = 表格高度 - 表头高度（表头自适应，实测 ≥ 25）
+            int dataArea = grid.Height - grid.ColumnHeadersHeight;
+            // 行高固定 24px，至少要能容纳 5 行
+            int rowH = 24;
+            int visibleRows = dataArea / rowH;
+            Assert.True(visibleRows >= 5,
+                $"[{w}x{h}] 表格数据区({dataArea}px)只能显示 {visibleRows} 行(行高{rowH})，要求至少 5 行；面板高 {capture.Height}px");
+        });
+    }
 }
