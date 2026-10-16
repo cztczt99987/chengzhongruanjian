@@ -544,13 +544,13 @@ public class MainForm : Form
         var pic = new PictureBox
         {
             Dock = DockStyle.Fill,
-            SizeMode = PictureBoxSizeMode.Normal,   // 帧由 Paint 等比填满（不留黑边、不拉伸变形）
-            BackColor = SystemColors.Control,
+            SizeMode = PictureBoxSizeMode.Normal,   // 帧由 Paint 等比完整显示（不裁剪，日期/时间 OSD 可见）
+            BackColor = Color.Black,                 // 画面比例与槽位不一致时四周留黑边
             Margin = new Padding(0),
             Cursor = Cursors.Hand,
         };
 
-        // 帧画面等比缩放填满整个槽位（居中裁剪）：去掉画面四周的黑色留边
+        // 帧画面等比缩放完整显示在槽位内（居中，可能留黑边）：保证摄像头自带日期/时间不被裁掉
         pic.Paint += (_, e) =>
         {
             if (src.CurrentFrame is not { } frame) return;
@@ -606,15 +606,15 @@ public class MainForm : Form
     }
 
     /// <summary>
-    /// 等比缩放填满槽位的目标矩形（居中裁剪，对应 CSS background-size: cover）：
-    /// 不拉伸变形、不留黑边；图片越小超出槽位的部分被裁掉。
+    /// 等比缩放完整显示在槽位内（居中，对应 CSS background-size: contain）：
+    /// 不拉伸变形、不裁剪；画面四周可能留黑边，但摄像头自带的日期/时间 OSD 不会被切掉。
     /// </summary>
-    internal static Rectangle FitCover(int imgW, int imgH, int boxW, int boxH)
+    internal static Rectangle FitContain(int imgW, int imgH, int boxW, int boxH)
     {
         if (imgW <= 0 || imgH <= 0 || boxW <= 0 || boxH <= 0) return Rectangle.Empty;
-        double scale = Math.Max((double)boxW / imgW, (double)boxH / imgH);
-        int w = (int)Math.Ceiling(imgW * scale);
-        int h = (int)Math.Ceiling(imgH * scale);
+        double scale = Math.Min((double)boxW / imgW, (double)boxH / imgH);
+        int w = (int)Math.Round(imgW * scale);
+        int h = (int)Math.Round(imgH * scale);
         return new Rectangle((boxW - w) / 2, (boxH - h) / 2, w, h);
     }
 
@@ -738,7 +738,7 @@ public class MainForm : Form
         var pic = new PictureBox
         {
             Dock = DockStyle.Fill,
-            SizeMode = PictureBoxSizeMode.Normal,   // 实时帧由 Paint 等比填满（不留黑边、不拉伸变形）
+            SizeMode = PictureBoxSizeMode.Normal,   // 实时帧由 Paint 等比完整显示（不裁剪，日期/时间 OSD 可见）
             Margin = new Padding(0),
             BackColor = Color.Black,
         };
@@ -866,7 +866,7 @@ public class MainForm : Form
     {
         lock (frame)
         {
-            var rect = FitCover(frame.Width, frame.Height, box.Width, box.Height);
+            var rect = FitContain(frame.Width, frame.Height, box.Width, box.Height);
             g.InterpolationMode = InterpolationMode.HighQualityBilinear;
             g.DrawImage(frame, rect);
         }
