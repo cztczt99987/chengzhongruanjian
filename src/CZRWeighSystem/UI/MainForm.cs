@@ -136,7 +136,7 @@ public class MainForm : Form
         KeyPreview = true;
         KeyDown += (_, e) =>
         {
-            if (e.KeyCode == Keys.F3 && AppSession.CurrentUser?.IsAdmin == true)
+            if (e.KeyCode == Keys.F3)
             {
                 e.Handled = true;
                 OpenComprehensiveSettings();
@@ -1422,21 +1422,21 @@ public class MainForm : Form
                 using var f = new PrintSettingsDialog();
                 f.ShowDialog(this);
             }));
-            // 综合设置（对应目标软件"综合设置 [F3]"：基本/串口/联网/视频设置；限管理员）
-            mSys.DropDownItems.Add(new ToolStripMenuItem("综合设置", null, (_, _) => OpenComprehensiveSettings()));
-            // 收费设置（按重量分段固定金额，参考行业"代磅收费"版式；限管理员）
-            mSys.DropDownItems.Add(new ToolStripMenuItem("收费设置", null, (_, _) =>
-            {
-                using var f = new FeeSettingsDialog();
-                f.ShowDialog(this);
-            }));
-            // 磅单模板管理（模板库：分类/搜索/预览/启用/复制/重命名/删除）
-            mSys.DropDownItems.Add(new ToolStripMenuItem("磅单模板管理", null, (_, _) =>
-            {
-                using var f = new TemplateLibraryForm();
-                f.ShowDialog(this);
-            }));
         }
+        // 综合设置（对应目标软件"综合设置 [F3]"：基本/串口/联网/视频设置；称重员可访问）
+        mSys.DropDownItems.Add(new ToolStripMenuItem("综合设置", null, (_, _) => OpenComprehensiveSettings()));
+        // 收费设置（按重量分段固定金额，参考行业"代磅收费"版式；称重员可访问）
+        mSys.DropDownItems.Add(new ToolStripMenuItem("收费设置", null, (_, _) =>
+        {
+            using var f = new FeeSettingsDialog();
+            f.ShowDialog(this);
+        }));
+        // 磅单模板管理（模板库：分类/搜索/预览/启用/复制/重命名/删除；称重员可访问）
+        mSys.DropDownItems.Add(new ToolStripMenuItem("磅单模板管理", null, (_, _) =>
+        {
+            using var f = new TemplateLibraryForm();
+            f.ShowDialog(this);
+        }));
         mSys.DropDownItems.Add(new ToolStripSeparator());
         // 数据库设置（对应 PRD F9-05：单机 SQLite / 网络 SQL Server，限管理员）
         if (AppSession.CurrentUser?.IsAdmin == true)
@@ -1499,16 +1499,13 @@ public class MainForm : Form
             using var f = new VideoMonitorForm(_cameras);
             f.ShowDialog(this);
         }));
-        // 摄像头设置（多路取流地址配置；限管理员）
-        if (AppSession.CurrentUser?.IsAdmin == true)
+        // 摄像头设置（多路取流地址配置；称重员可访问）
+        mVideo.DropDownItems.Add(new ToolStripSeparator());
+        mVideo.DropDownItems.Add(new ToolStripMenuItem("摄像头设置", null, (_, _) =>
         {
-            mVideo.DropDownItems.Add(new ToolStripSeparator());
-            mVideo.DropDownItems.Add(new ToolStripMenuItem("摄像头设置", null, (_, _) =>
-            {
-                using var f = new CameraSettingsDialog();
-                if (f.ShowDialog(this) == DialogResult.OK) RestartCameras();
-            }));
-        }
+            using var f = new CameraSettingsDialog();
+            if (f.ShowDialog(this) == DialogResult.OK) RestartCameras();
+        }));
         _menu.Items.Add(mVideo);
 
         mSource.DropDownItems.Add(new ToolStripSeparator());
@@ -1520,17 +1517,11 @@ public class MainForm : Form
         Controls.Add(_menu);
     }
 
-    // ---------- 综合设置（对应目标软件"综合设置 [F3]"，限管理员） ----------
+    // ---------- 综合设置（对应目标软件"综合设置 [F3]"，称重员可访问） ----------
 
     /// <summary>打开综合设置：串口/摄像头在页签内保存后立即按新配置重连。</summary>
     private void OpenComprehensiveSettings()
     {
-        if (AppSession.CurrentUser?.IsAdmin != true)
-        {
-            MessageBox.Show("综合设置需要管理员权限。", "提示",
-                MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
-        }
         using var f = new ComprehensiveSettingsDialog();
         f.SerialSaved += () =>
         {
