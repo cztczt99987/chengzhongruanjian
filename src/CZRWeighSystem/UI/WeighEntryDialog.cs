@@ -25,6 +25,8 @@ public class WeighEntryDialog : Form
     private int _step;
     private double? _confirmedKg;            // 确认时锁定的稳定重量（千克）
     private WeighRecord? _confirmedFirst;    // 确认时识别出的待配对一次磅（null=第一次称重）
+    /// <summary>同类型重复称重（两次皮重或两次毛重）：保存时覆盖一次磅重量而非配对结算</summary>
+    private bool _isOverwrite;
     /// <summary>保存成功的记录（打印用）</summary>
     private WeighRecord? _savedRecord;
     /// <summary>本次弹窗期间是否保存过记录（关闭时决定要不要让首页刷新列表）</summary>
@@ -571,6 +573,7 @@ public class WeighEntryDialog : Form
     {
         _confirmedKg = null;
         _confirmedFirst = null;
+        _isOverwrite = false;
         _savedRecord = null;
         SetStep(0);
         UpdateWeight();
@@ -866,21 +869,9 @@ public class WeighEntryDialog : Form
         _confirmedKg = _manager.StableKg;
         _confirmedFirst = _manager.GetUnfinishedList().FirstOrDefault(r => r.VehicleNo == no);
 
-        // 同类型重复称重不允许配对结算：一次磅是皮重则不能再用皮重配对，
-        // 一次磅是毛重则不能再用毛重配对，否则第二次同类型重量会被误当成另一列结算。
-        // 需先完成配对（称另一种类型）或作废已有一次磅。
-        if (_confirmedFirst != null && _confirmedFirst.FirstWeighIsTare == _isTare)
-        {
-            string type = _isTare ? "皮重" : "毛重";
-            InfoBox(
-                $"车号 [{no}] 已有一次{type}记录（{_confirmedFirst.SerialNo}），"
-                + $"不能再次保存{type}。\n\n"
-                + "请先完成配对结算（称另一种重量），或在首页作废该未完成记录后再称重。",
-                "提示", false);
-            _confirmedKg = null;
-            _confirmedFirst = null;
-            return;
-        }
+        // 同类型重复称重（两次皮重或两次毛重）：第二次称重覆盖第一次的重量，不配对结算。
+        // 只有类型不同（一次皮一次毛）时才走 SaveSecondWeigh 配对结算。
+        _isOverwrite = _confirmedFirst != null && _confirmedFirst.FirstWeighIsTare == _isTare;
 
         // 空车去皮差值预警：本次皮重与本车最近一次已完成皮重相差超过综合设置阈值（吨）时提示。
         // 仅预警不阻止保存（用户已确认）；阈值 0 = 关闭。
@@ -918,13 +909,25 @@ public class WeighEntryDialog : Form
 
         if (_confirmedFirst != null)
         {
-            // 二次磅结算（按确认锁定的读数结算，并按大小分配毛/皮）
-            var (ok, msg, record) = _manager.SaveSecondWeigh(
-                _confirmedFirst, null, _txtOperator.Text, _confirmedKg);
-            if (!ok) { InfoBox(msg, "提示", false); return; }
+            if (_isOverwrite)
+            {
+                // 同类型重复称重：用本次锁定读数覆盖一次磅的重量，记录仍为"未完成"
+                var (ok, msg, record) = _manager.OverwriteUnfinishedWeigh(
+                    _confirmedFirst, _txtOperator.Text, _confirmedKg);
+                if (!ok) { InfoBox(msg, "提示", false); return; }
 
-            _savedRecord = record;
-            OnSaved?.Invoke(record!.SerialNo);
+                _savedRecord = record;
+            }
+            else
+            {
+                // 二次磅结算（按确认锁定的读数结算，并按大小分配毛/皮）
+                var (ok, msg, record) = _manager.SaveSecondWeigh(
+                    _confirmedFirst, null, _txtOperator.Text, _confirmedKg);
+                if (!ok) { InfoBox(msg, "提示", false); return; }
+
+                _savedRecord = record;
+            }
+            OnSaved?.Invoke(_savedRecord!.SerialNo);
         }
         else
         {

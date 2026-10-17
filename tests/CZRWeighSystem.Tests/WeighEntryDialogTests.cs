@@ -771,11 +771,11 @@ public class WeighEntryDialogTests
     }
 
     /// <summary>
-    /// 同类型重复称重必须阻止：一次磅是皮重时不能再用皮重确认，
-    /// 否则第二次皮重会被误当成毛重配对结算。应在确认步骤拦截并提示。
+    /// 同类型重复称重走覆盖而非配对结算：已有一次皮重后再次去皮，
+    /// 保存时用第二次皮重覆盖第一次的皮重值，记录仍为"未完成"，不结算。
     /// </summary>
     [Fact]
-    public void 已有皮重记录再次去皮_确认时被阻止不配对结算()
+    public void 已有皮重记录再次去皮_保存时覆盖皮重不结算()
     {
         string vehicle = NewVehicle("T1");
         // 已有一次皮重记录（未完成）
@@ -789,13 +789,16 @@ public class WeighEntryDialogTests
             Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
             PushStable(manager, 12000);   // 第二次皮重，与第一次不同
             Call(dlg, "Confirm");
-
-            // 被阻止：仍停留在待确认步（step=0），未进入保存
-            Assert.Equal(0, Fld<int>(dlg, "_step"));
-            Assert.Null(Fld<double?>(dlg, "_confirmedKg"));
-            Assert.Null(Fld<WeighRecord>(dlg, "_confirmedFirst"));
+            Call(dlg, "DoSave");
         });
         manager.Dispose();
+
+        // 覆盖后仍为未完成，皮重被更新为 12000，毛重仍为空，无净重
+        var record = _repo.Query(null, null, vehicle, "", "", "").Single();
+        Assert.Equal("未完成", record.Status);
+        Assert.Equal(12000, record.TareKg);
+        Assert.Null(record.GrossKg);
+        Assert.Null(record.NetKg);
     }
 
     /// <summary>

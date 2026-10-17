@@ -187,10 +187,10 @@ public class ComprehensiveSettingsDialog : Form
         {
             Text = cfg.PromiseText,
             Multiline = true,
-            WordWrap = true,
+            ScrollBars = ScrollBars.Vertical,   // 必须在 WordWrap 之前设：设置 ScrollBars 会把 WordWrap 重置为 false
+            WordWrap = true,                     // 长文本自动折行，不被右边界截断
             Location = new Point(110, 195),
             Size = new Size(grpInfo.Width - 130, 90),
-            ScrollBars = ScrollBars.Vertical,
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
         };
         grpInfo.Controls.Add(lblPromise);
