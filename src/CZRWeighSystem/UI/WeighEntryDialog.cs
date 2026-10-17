@@ -725,9 +725,10 @@ public class WeighEntryDialog : Form
             // 本次锁定值进当前操作模式对应行；已配对一次磅的重量按其实际类型进对侧行——
             // 两项合起来才是毛/皮对，净重由两者之差算出（不能用"哪个大哪个是毛重"猜，
             // 毛重<皮重时会把已存毛重误判成皮重）。
+            // 覆盖模式（同类型）：锁定值替换一次磅的旧值进同一列，不再显示旧值。
             double? grossKg = null, tareKg = null;
             if (_isTare) tareKg = lockedKg; else grossKg = lockedKg;
-            if (_confirmedFirst != null && firstKg is { } f)
+            if (_confirmedFirst != null && firstKg is { } f && !_isOverwrite)
             {
                 if (_confirmedFirst.FirstWeighIsTare) tareKg = f; else grossKg = f;
             }
@@ -740,7 +741,15 @@ public class WeighEntryDialog : Form
             if (_confirmedFirst != null)
             {
                 _lblSerialNo.Text = "No：" + _confirmedFirst.SerialNo;
-                _lblPairHint.Text = $"[{no}] 有未完成的二次磅，保存时将自动配对结算";
+                if (_isOverwrite)
+                {
+                    string type = _isTare ? "皮重" : "毛重";
+                    _lblPairHint.Text = $"[{no}] 保存将覆盖本次{type}（仍为未完成，可继续配对）";
+                }
+                else
+                {
+                    _lblPairHint.Text = $"[{no}] 有未完成的二次磅，保存时将自动配对结算";
+                }
             }
             else
             {
@@ -828,10 +837,16 @@ public class WeighEntryDialog : Form
     /// <summary>步骤1【确认】：校验车号/稳定/超载，锁定当前稳定读数并识别是否二次磅；
     /// 之后票面展示与保存均用锁定值，车辆下磅（归零）不影响。
     /// 在"保存"之前（步骤 0 或 1）可反复点击：每次都重新校验并取最新稳定读数更新票面，
-    /// 便于车辆挪位/读数变化后重新锁定。</summary>
+    /// 便于车辆挪位/读数变化后重新锁定。
+    /// 覆盖模式（同类型重复称重）保存后仍可再次确认，以便连续覆盖调整重量。</summary>
     private void Confirm()
     {
-        if (_step > 1) return;   // 仅在"保存"前允许反复确认；保存后不再允许改读数
+        // 普通保存（step=2）后不再允许改读数；覆盖模式保存后允许再次确认以重新覆盖
+        if (_step > 2 || (_step == 2 && !_isOverwrite)) return;
+
+        // 重新确认时清掉上一次保存的记录（覆盖场景下 step 可能为 2，_savedRecord 仍有值），
+        // 否则 UpdateWeight 会优先显示已存记录而非本次锁定读数
+        _savedRecord = null;
 
         // 地主电话是平台归属匹配的必填依据（格式非法平台整条拒收），录入时即校验
         if (!ValidPhone(_txtOwnerPhone.Text.Trim()))

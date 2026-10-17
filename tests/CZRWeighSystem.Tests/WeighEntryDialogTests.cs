@@ -802,6 +802,43 @@ public class WeighEntryDialogTests
     }
 
     /// <summary>
+    /// 连续覆盖：已有皮重 → 第一次覆盖保存 → 改重量 → 再次确认+保存 → 再次覆盖。
+    /// 覆盖保存后应允许重新确认（step 2 → 1），保存再次更新皮重值。
+    /// </summary>
+    [Fact]
+    public void 已有皮重记录_连续两次覆盖保存_皮重最终为第二次覆盖值()
+    {
+        string vehicle = NewVehicle("T2");
+        _repo.InsertFirstWeigh(new WeighRecord { ScaleNo = "98", VehicleNo = vehicle, TareKg = 800 });
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+            SilenceDialogs(dlg);
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
+
+            // 第一次覆盖：800 → 1400
+            PushStable(manager, 1400);
+            Call(dlg, "Confirm");
+            Call(dlg, "DoSave");
+            Assert.Equal(2, Fld<int>(dlg, "_step"));
+
+            // 改重量后再次确认+保存：1400 → 2000
+            PushStable(manager, 2000);
+            Call(dlg, "Confirm");          // 覆盖模式 step 2 允许重新确认 → step 1
+            Assert.Equal(1, Fld<int>(dlg, "_step"));
+            Call(dlg, "DoSave");            // 再次覆盖
+            Assert.Equal(2, Fld<int>(dlg, "_step"));
+        });
+        manager.Dispose();
+
+        var record = _repo.Query(null, null, vehicle, "", "", "").Single();
+        Assert.Equal("未完成", record.Status);
+        Assert.Equal(2000, record.TareKg);   // 最终为第二次覆盖值
+    }
+
+    /// <summary>
     /// 回归：先称毛重（一次磅存毛重列），再开"空车去皮"弹窗时，已存毛重必须显示在毛重栏，
     /// 不能被错误地塞进皮重栏（旧实现一律把未完成一次磅的重量填进皮重栏）。
     /// </summary>
