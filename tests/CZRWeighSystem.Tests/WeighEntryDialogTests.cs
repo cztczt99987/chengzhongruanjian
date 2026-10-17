@@ -289,7 +289,7 @@ public class WeighEntryDialogTests
     public void 重车过磅_车号有待配对记录_自动二次磅结算()
     {
         string vehicle = NewVehicle("L");
-        _repo.InsertFirstWeigh(new WeighRecord { ScaleNo = "02", VehicleNo = vehicle, GrossKg = 30000 });
+        _repo.InsertFirstWeigh(new WeighRecord { ScaleNo = "02", VehicleNo = vehicle, TareKg = 30000 });
         WeighManager manager = new();
         RunOnSta(() =>
         {
@@ -375,7 +375,7 @@ public class WeighEntryDialogTests
     public void 二次磅结算后_票面固定显示结算毛皮净()
     {
         string vehicle = NewVehicle("H");
-        _repo.InsertFirstWeigh(new WeighRecord { ScaleNo = "93", VehicleNo = vehicle, GrossKg = 30000 });
+        _repo.InsertFirstWeigh(new WeighRecord { ScaleNo = "93", VehicleNo = vehicle, TareKg = 30000 });
         WeighManager manager = new();
         RunOnSta(() =>
         {
@@ -466,7 +466,7 @@ public class WeighEntryDialogTests
     public void 二次磅_确认后归零再保存_按锁定值结算()
     {
         string vehicle = NewVehicle("K");
-        _repo.InsertFirstWeigh(new WeighRecord { ScaleNo = "94", VehicleNo = vehicle, GrossKg = 30000 });
+        _repo.InsertFirstWeigh(new WeighRecord { ScaleNo = "94", VehicleNo = vehicle, TareKg = 30000 });
         WeighManager manager = new();
         RunOnSta(() =>
         {
@@ -725,6 +725,34 @@ public class WeighEntryDialogTests
             Assert.Equal(AppConfig.Current.FormatWeight(30000), Fld<Label>(dlg, "_lblGrossCell").Text);
             Assert.Equal(AppConfig.Current.FormatWeight(10000), Fld<Label>(dlg, "_lblTareCell").Text);
             Assert.Equal(AppConfig.Current.FormatWeight(20000), Fld<Label>(dlg, "_lblNetCell").Text);
+        });
+        manager.Dispose();
+    }
+
+    /// <summary>
+    /// 同类型重复称重必须阻止：一次磅是皮重时不能再用皮重确认，
+    /// 否则第二次皮重会被误当成毛重配对结算。应在确认步骤拦截并提示。
+    /// </summary>
+    [Fact]
+    public void 已有皮重记录再次去皮_确认时被阻止不配对结算()
+    {
+        string vehicle = NewVehicle("T1");
+        // 已有一次皮重记录（未完成）
+        _repo.InsertFirstWeigh(new WeighRecord { ScaleNo = "99", VehicleNo = vehicle, TareKg = 10000 });
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);   // 再次去皮
+            SilenceDialogs(dlg);
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
+            PushStable(manager, 12000);   // 第二次皮重，与第一次不同
+            Call(dlg, "Confirm");
+
+            // 被阻止：仍停留在待确认步（step=0），未进入保存
+            Assert.Equal(0, Fld<int>(dlg, "_step"));
+            Assert.Null(Fld<double?>(dlg, "_confirmedKg"));
+            Assert.Null(Fld<WeighRecord>(dlg, "_confirmedFirst"));
         });
         manager.Dispose();
     }
@@ -1717,7 +1745,7 @@ public class WeighEntryDialogTests
             cfg.TareDiffWarnTon = 0.5;
             // 再造一条该车牌的未完成一次磅，使重车过磅可确认配对
             _repo.InsertFirstWeigh(new WeighRecord
-            { ScaleNo = "91", VehicleNo = vehicle, GrossKg = 12000 });
+            { ScaleNo = "91", VehicleNo = vehicle, TareKg = 12000 });
             RunOnSta(() =>
             {
                 using var dlg = new WeighEntryDialog(manager, isTare: false);

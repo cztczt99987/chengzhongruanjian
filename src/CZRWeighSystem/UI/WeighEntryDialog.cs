@@ -823,10 +823,12 @@ public class WeighEntryDialog : Form
     // ================================================================
 
     /// <summary>步骤1【确认】：校验车号/稳定/超载，锁定当前稳定读数并识别是否二次磅；
-    /// 之后票面展示与保存均用锁定值，车辆下磅（归零）不影响。</summary>
+    /// 之后票面展示与保存均用锁定值，车辆下磅（归零）不影响。
+    /// 在"保存"之前（步骤 0 或 1）可反复点击：每次都重新校验并取最新稳定读数更新票面，
+    /// 便于车辆挪位/读数变化后重新锁定。</summary>
     private void Confirm()
     {
-        if (_step != 0) return;
+        if (_step > 1) return;   // 仅在"保存"前允许反复确认；保存后不再允许改读数
 
         // 地主电话是平台归属匹配的必填依据（格式非法平台整条拒收），录入时即校验
         if (!ValidPhone(_txtOwnerPhone.Text.Trim()))
@@ -863,6 +865,22 @@ public class WeighEntryDialog : Form
 
         _confirmedKg = _manager.StableKg;
         _confirmedFirst = _manager.GetUnfinishedList().FirstOrDefault(r => r.VehicleNo == no);
+
+        // 同类型重复称重不允许配对结算：一次磅是皮重则不能再用皮重配对，
+        // 一次磅是毛重则不能再用毛重配对，否则第二次同类型重量会被误当成另一列结算。
+        // 需先完成配对（称另一种类型）或作废已有一次磅。
+        if (_confirmedFirst != null && _confirmedFirst.FirstWeighIsTare == _isTare)
+        {
+            string type = _isTare ? "皮重" : "毛重";
+            InfoBox(
+                $"车号 [{no}] 已有一次{type}记录（{_confirmedFirst.SerialNo}），"
+                + $"不能再次保存{type}。\n\n"
+                + "请先完成配对结算（称另一种重量），或在首页作废该未完成记录后再称重。",
+                "提示", false);
+            _confirmedKg = null;
+            _confirmedFirst = null;
+            return;
+        }
 
         // 空车去皮差值预警：本次皮重与本车最近一次已完成皮重相差超过综合设置阈值（吨）时提示。
         // 仅预警不阻止保存（用户已确认）；阈值 0 = 关闭。
