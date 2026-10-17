@@ -431,6 +431,47 @@ public class WeighEntryDialogTests
     }
 
     /// <summary>
+    /// 用户要求："确认"按钮在点"保存"之前可反复点击，每次都取最新稳定读数更新票面。
+    /// 模拟车辆挪位后读数变化：第一次确认锁定 100kg，第二次确认应更新为 250kg，
+    /// 且仍停在待保存步（step=1），保存后（step=2）再点确认无效。
+    /// </summary>
+    [Fact]
+    public void 保存前可反复确认_每次取最新稳定读数更新()
+    {
+        string vehicle = NewVehicle("R");
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+            SilenceDialogs(dlg);
+            UseTestScaleNo();
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
+
+            // 第一次确认：锁定 100kg
+            PushStable(manager, 100);
+            Call(dlg, "Confirm");
+            Assert.Equal(1, Fld<int>(dlg, "_step"));
+            Assert.Equal(100, Fld<double?>(dlg, "_confirmedKg"));
+
+            // 车辆挪位，读数变为 250kg：再次确认应更新锁定值
+            PushStable(manager, 250);
+            Call(dlg, "Confirm");
+            Assert.Equal(1, Fld<int>(dlg, "_step"));      // 仍在待保存步
+            Assert.Equal(250, Fld<double?>(dlg, "_confirmedKg"));   // 锁定值已更新为最新稳定读数
+            Assert.Equal(AppConfig.Current.FormatWeight(250), Fld<Label>(dlg, "_lblTareCell").Text);
+
+            // 保存后（step=2）再点确认：无效，锁定值不变
+            Call(dlg, "DoSave");
+            Assert.Equal(2, Fld<int>(dlg, "_step"));
+            PushStable(manager, 999);
+            Call(dlg, "Confirm");
+            Assert.Equal(2, Fld<int>(dlg, "_step"));      // 保存后确认不再生效
+        });
+        manager.Dispose();
+    }
+
+    /// <summary>
     /// 确认后车辆下磅归零再点保存：仍应按确认时锁定的读数入库
     /// （旧实现保存时取实时稳定重量，归零后被"当前重量为 0"拦截，无法保存）。
     /// </summary>
