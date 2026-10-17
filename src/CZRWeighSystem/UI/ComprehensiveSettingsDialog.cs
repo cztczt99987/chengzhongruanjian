@@ -187,8 +187,9 @@ public class ComprehensiveSettingsDialog : Form
         {
             Text = cfg.PromiseText,
             Multiline = true,
+            WordWrap = true,
             Location = new Point(110, 195),
-            Size = new Size(grpInfo.Width - 130, 70),
+            Size = new Size(grpInfo.Width - 130, 90),
             ScrollBars = ScrollBars.Vertical,
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
         };
