@@ -156,8 +156,8 @@ public class UserRepository
     /// </summary>
     public (bool Ok, string Message) ChangePassword(long userId, string oldPwd, string newPwd, string confirmPwd)
     {
-        if (string.IsNullOrWhiteSpace(newPwd) || newPwd.Length < 6)
-            return (false, "新密码长度至少 6 位");
+        if (string.IsNullOrWhiteSpace(newPwd))
+            return (false, "请输入新密码");
         if (newPwd != confirmPwd)
             return (false, "两次输入的新密码不一致");
 
@@ -218,7 +218,7 @@ public class UserRepository
     public record AddUserResult(bool Ok, string Message);
 
     /// <summary>
-    /// 新增用户（管理员操作）：账号唯一、初始密码至少 6 位；
+    /// 新增用户（管理员操作）：账号唯一、初始密码非空（不限位数，1 位及以上均可）；
     /// 创建后 is_default_pwd=1，首次登录强制修改密码。
     /// </summary>
     public AddUserResult AddUser(string username, string displayName, string role, string password)
@@ -230,8 +230,8 @@ public class UserRepository
         if (displayName.Length == 0) return new AddUserResult(false, "请输入姓名");
         if (role != User.RoleAdmin && role != User.RoleWeigher)
             return new AddUserResult(false, "角色无效");
-        if (string.IsNullOrWhiteSpace(password) || password.Length < 6)
-            return new AddUserResult(false, "初始密码长度至少 6 位");
+        if (string.IsNullOrWhiteSpace(password))
+            return new AddUserResult(false, "请输入初始密码");
 
         using var conn = Db.CreateConnection();
         if (GetByUsername(conn, username) != null)

@@ -68,7 +68,7 @@ public class UserAddForm : Form
 
         _lblError = new Label
         {
-            Text = "初始密码至少 6 位，用户首次登录时将强制修改",
+            Text = "初始密码 1 位及以上，用户首次登录时将强制修改",
             ForeColor = Color.Gray,
             AutoSize = true,
             Location = new Point(130, 220),

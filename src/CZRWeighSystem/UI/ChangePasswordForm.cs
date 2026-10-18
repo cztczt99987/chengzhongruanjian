@@ -49,7 +49,7 @@ public class ChangePasswordForm : Form
 
         _lblError = new Label
         {
-            Text = "新密码长度至少 6 位",
+            Text = "新密码 1 位及以上均可",
             ForeColor = Color.Gray,
             AutoSize = true,
             Location = new Point(140, 152),
