@@ -102,7 +102,9 @@ public class RecordQueryForm : Form
         if (defIdx >= 0) _cboPrefix.SelectedIndex = defIdx;
         _txtVehicle.DoubleClick += (_, _) => ShowKeypad();
         new ToolTip().SetToolTip(_txtVehicle, "双击打开字母选择面板（点选一个字符后自动关闭）");
-        _txtGoods = new TextBox { Location = new Point(500, 35), Size = new Size(100, 28) };
+        // 货物组 x=525：与车号框（405..500）之间留 25px 间距
+        // ——此前两者都在 x=500 无间隔紧贴，视觉上连成一片，容易误看成一个输入框
+        _txtGoods = new TextBox { Location = new Point(525, 35), Size = new Size(100, 28) };
         _txtCompany = new TextBox { Location = new Point(650, 35), Size = new Size(110, 28) };
         _cboStatus = new ComboBox
         {
@@ -143,7 +145,7 @@ public class RecordQueryForm : Form
         {
             L("日期：", 15, 40), _dtpFrom, L("至", 193, 40), _dtpTo,
             L("车号：", 350 + 0, 15), _cboPrefix, _txtVehicle,
-            L("货物：", 500, 15), _txtGoods,
+            L("货物：", 525, 15), _txtGoods,
             L("单位：", 650, 15), _txtCompany,
             L("状态：", 820, 15), _cboStatus,
             btnQuery, btnReset,
