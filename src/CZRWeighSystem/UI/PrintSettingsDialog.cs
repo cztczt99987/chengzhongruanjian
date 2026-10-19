@@ -7,6 +7,8 @@ namespace CZRWeighSystem.UI;
 /// 打印设置对话框（对应 PRD F9-04：磅单纸张、联数、字段显隐、自动打印开关）。
 /// [预览效果] 即时套用界面上的选择渲染磅单预览（不落盘）；
 /// [保存] 写入 config.json；[取消] 还原为打开时的配置。
+/// 注意：[预览效果] 会临时改写内存中的全局配置（渲染需要），因此关闭窗口时必须还原，
+/// 否则用标题栏的叉关闭会把预览时的联数等设置残留在本次运行中（点一次打印出多张）。
 /// </summary>
 public class PrintSettingsDialog : Form
 {
@@ -19,7 +21,10 @@ public class PrintSettingsDialog : Form
     /// <summary>字段目录的 key 列表（与 _lstFields 条目按序对应）</summary>
     private readonly List<string> _keys = [];
 
-    // 打开时的配置快照（取消时还原）
+    /// <summary>点过[保存]：关闭时不再还原快照（否则会把已保存的值又从内存里回滚掉）</summary>
+    private bool _saved;
+
+    // 打开时的配置快照（取消/叉关闭时还原）
     private string _snapPaper = "";
     private List<string> _snapHidden = [];
     private int _snapCopies;
@@ -140,7 +145,7 @@ public class PrintSettingsDialog : Form
 
         var btnCancel = new Button
         { Text = "取消", Location = new Point(354, 510), Size = new Size(88, 34) };
-        btnCancel.Click += (_, _) => { RestoreSnapshot(); Close(); };
+        btnCancel.Click += (_, _) => Close();   // 还原快照由 FormClosing 统一处理
 
         Controls.AddRange(new Control[] { grpTpl, grpPaper, grpFields, btnPreview, btnOk, btnCancel });
 
@@ -156,6 +161,13 @@ public class PrintSettingsDialog : Form
         _snapCopies = cfg.PrintCopies;
         _snapAuto = cfg.AutoPrintEnabled;
         _snapTpl = cfg.PrintTemplateFile;
+
+        // 任何关闭方式（取消按钮、标题栏的叉）都还原快照：点[预览效果]已把界面选择写进内存全局配置，
+        // 不还原会把预览用的联数等残留到本次运行（表现为点一次打印出好几张），config.json 却仍是旧值。
+        FormClosing += (_, _) =>
+        {
+            if (!_saved) RestoreSnapshot();
+        };
     }
 
     /// <summary>重新加载模板目录到下拉框（首项"不使用模板"）。</summary>
@@ -214,6 +226,7 @@ public class PrintSettingsDialog : Form
     {
         ApplyToConfig();
         AppConfig.Current.Save();
+        _saved = true;   // 已落盘：关闭时不要再还原（否则内存配置会与 config.json 不一致）
         Close();
     }
 

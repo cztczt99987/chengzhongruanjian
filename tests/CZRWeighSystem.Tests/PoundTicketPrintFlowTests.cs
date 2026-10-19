@@ -167,4 +167,76 @@ public class PoundTicketPrintFlowTests : IDisposable
         }));
         Assert.True(PoundTicketPrinter.CanPrint(new WeighRecord { Status = "未完成" }));
     }
+
+    // ---------- 打印设置的"预览效果"会临时改写全局配置，关闭时必须还原 ----------
+
+    private static T PSField<T>(PrintSettingsDialog dlg, string name) =>
+        (T)typeof(PrintSettingsDialog)
+            .GetField(name, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .GetValue(dlg)!;
+
+    private static void PSCall(PrintSettingsDialog dlg, string name) =>
+        typeof(PrintSettingsDialog)
+            .GetMethod(name, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .Invoke(dlg, null);
+
+    /// <summary>
+    /// 用户排查发现：把"联数"改成 3 → 点[预览效果] → 用标题栏的叉关闭，联数会残留在内存全局配置里，
+    /// 之后点一次"打印"就按 3 联出纸（而 config.json 仍是 1，重启才恢复）。
+    /// 现在任何关闭方式都还原快照，必须保证叉关闭后联数回到打开时的值。
+    /// </summary>
+    [Fact]
+    public void 打印设置_预览效果后用叉关闭_联数还原不残留()
+    {
+        int savedCopies = _cfg.PrintCopies;
+        _cfg.PrintCopies = 1;
+        try
+        {
+            RunOnSta(() =>
+            {
+                using var dlg = new PrintSettingsDialog();
+                PSField<NumericUpDown>(dlg, "_numCopies").Value = 3;
+                PSCall(dlg, "ApplyToConfig");   // = [预览效果] 里改写内存配置的那一步
+                Assert.Equal(3, AppConfig.Current.PrintCopies);   // 前提：确实被临时改写
+
+                dlg.Show();
+                dlg.Close();                    // 相当于点标题栏的叉
+            });
+
+            Assert.Equal(1, _cfg.PrintCopies);   // 已还原
+        }
+        finally { _cfg.PrintCopies = savedCopies; }
+    }
+
+    /// <summary>点[保存]后关闭不能再还原：否则内存配置会被回滚成打开时的值，与已落盘的 config.json 不一致。</summary>
+    [Fact]
+    public void 打印设置_保存后关闭_不回滚已保存的联数()
+    {
+        int savedCopies = _cfg.PrintCopies;
+        string savedTpl = _cfg.PrintTemplateFile;
+        var savedHidden = new List<string>(_cfg.PrintHiddenFields);
+        string savedPaper = _cfg.PrintPaper;
+        bool savedAuto = _cfg.AutoPrintEnabled;
+        _cfg.PrintCopies = 1;
+        try
+        {
+            RunOnSta(() =>
+            {
+                using var dlg = new PrintSettingsDialog();
+                PSField<NumericUpDown>(dlg, "_numCopies").Value = 2;
+                dlg.Show();
+                PSCall(dlg, "SaveAndClose");   // 保存：落盘 + 关闭
+            });
+
+            Assert.Equal(2, _cfg.PrintCopies);   // 保存的值保留，未被 FormClosing 回滚
+        }
+        finally
+        {
+            _cfg.PrintCopies = savedCopies;
+            _cfg.PrintTemplateFile = savedTpl;
+            _cfg.PrintHiddenFields = savedHidden;
+            _cfg.PrintPaper = savedPaper;
+            _cfg.AutoPrintEnabled = savedAuto;
+        }
+    }
 }
