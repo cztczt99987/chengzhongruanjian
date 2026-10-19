@@ -35,8 +35,9 @@ public class WeighEntryDialog : Form
     private bool _closed;
     private PlateKeypadForm? _keypad;        // 车牌编号字母触摸面板（双击编号框弹出）
 
-    /// <summary>当天已保存过（未作废）的记录：车牌自动补全候选 + 选中后回填上次信息。</summary>
-    private List<WeighRecord> _todayRecords = [];
+    /// <summary>所有已保存过（未作废）的记录：车牌自动补全候选 + 选中后回填上次信息。
+    /// 不限日期——只要数据库里存在该车号，就回填该车上一次保存的品种/货主/单价等信息。</summary>
+    private List<WeighRecord> _plateHistoryRecords = [];
 
     /// <summary>
     /// 当前值由"命中历史车牌自动回填"而来的字段集合。
@@ -127,8 +128,8 @@ public class WeighEntryDialog : Form
         BuildTicket();
         BuildWeightPanel();
 
-        // 当天已保存车牌：自动补全候选（输入一半时下拉出现），选中后回填上次填写的信息
-        _todayRecords = _plateRepo.Query(DateTime.Today, null, "", "", "", "")
+        // 所有历史车牌（不限日期）：自动补全候选，输入完整车号后回填上一次填写的信息
+        _plateHistoryRecords = _plateRepo.Query(null, null, "", "", "", "")
             .Where(r => r.Status != "已作废").ToList();
         RefreshPlateSuggest();
 
@@ -277,7 +278,7 @@ public class WeighEntryDialog : Form
             Margin = new Padding(5, 4, 5, 4),
         };
 
-        // 行1：车牌号码（省份简称下拉 + 编号手输，带当天历史自动补全）｜ 毛重
+        // 行1：车牌号码（省份简称下拉 + 编号手输，带历史车牌自动补全）｜ 毛重
         grid.Controls.Add(Head("车牌号码"), 0, 0);
         var platePanel = new Panel { Dock = DockStyle.Fill, BackColor = Color.White, Margin = new Padding(2, 3, 2, 3) };
         // 省份选择器：点击弹出 8 列×4 行网格，避免 31 个省份拉成超长单列下拉
@@ -617,7 +618,7 @@ public class WeighEntryDialog : Form
     {
         string prefix = _cboPrefix.SelectedItem?.ToString() ?? "";
         var src = new AutoCompleteStringCollection();
-        src.AddRange(_todayRecords
+        src.AddRange(_plateHistoryRecords
             .Where(r => prefix.Length == 0 || r.VehicleNo.StartsWith(prefix, StringComparison.Ordinal))
             .Select(r => r.VehicleNo.StartsWith(prefix, StringComparison.Ordinal)
                 ? r.VehicleNo[prefix.Length..]
@@ -629,7 +630,7 @@ public class WeighEntryDialog : Form
 
     /// <summary>
     /// 车号变化时回填/清理历史信息：
-    /// 完整车号命中当天已保存记录 → 回填最新一条的品种/地主姓名/地主电话/司机电话/货主姓名/货主电话/单价，
+    /// 完整车号命中任意日期已保存记录 → 回填最新一条的品种/地主姓名/地主电话/司机电话/货主姓名/货主电话/单价，
     /// 并把这些字段标记为"自动填入"；
     /// 车号为空或无命中 → 只清空仍带"自动填入"标记的字段（用户手动输入/改过的保留），
     /// 避免上一辆车的自动回填信息残留到新车。
@@ -638,7 +639,7 @@ public class WeighEntryDialog : Form
     {
         string no = ComposeVehicleNo();
         var hit = no.Length == 0 ? null
-            : _todayRecords.FirstOrDefault(r => r.VehicleNo == no);
+            : _plateHistoryRecords.FirstOrDefault(r => r.VehicleNo == no);
 
         _autoFilling = true;   // 下面赋值触发的 TextChanged 是程序回填，不算用户手改
         try
@@ -1015,8 +1016,8 @@ public class WeighEntryDialog : Form
         _txtUnitPrice.Clear();
         _autoFilledFields.Clear();   // 表单整体清空：脏标记一并复位，不依赖各 Clear 的事件顺序
 
-        // 当天记录加入刚保存的车号（下一辆车输入时自动补全/回填候选）
-        _todayRecords = _plateRepo.Query(DateTime.Today, null, "", "", "", "")
+        // 刷新全部历史车牌（含刚保存的车号），供下一辆车输入时自动补全/回填
+        _plateHistoryRecords = _plateRepo.Query(null, null, "", "", "", "")
             .Where(r => r.Status != "已作废").ToList();
         RefreshPlateSuggest();
 
