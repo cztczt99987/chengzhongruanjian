@@ -33,6 +33,13 @@ public class WeighRecord
     public DateTime? SecondTime { get; set; }
     public string? Operator { get; set; }
 
+    /// <summary>
+    /// 一次磅是否为空车去皮（皮重先行）：称第一次时写入并持久化，二次磅结算后仍保留。
+    /// 用于区分"先称的是毛重还是皮重"——结算后毛/皮两列都有值，
+    /// 仅凭 first_time/second_time 与毛/皮重量无法反推两次称重的先后类型。
+    /// </summary>
+    public bool FirstIsTare { get; set; }
+
     /// <summary>状态：未完成 / 已完成 / 已作废</summary>
     public string Status { get; set; } = "未完成";
     /// <summary>是否手工补录</summary>
@@ -49,6 +56,18 @@ public class WeighRecord
 
     /// <summary>一次磅（未配对）重量是否存于皮重列（空车去皮先行时；重车过磅先行则为毛重列）</summary>
     public bool FirstWeighIsTare => TareKg.HasValue && !GrossKg.HasValue;
+
+    /// <summary>
+    /// 毛重时间：毛重已称时取其称重时刻（先皮后毛→二次磅时间，先毛后皮→一次磅时间）；
+    /// 毛重尚未称时返回 null（首页"毛重时间"列应留空，不能填一次磅的皮重时间）。
+    /// </summary>
+    public DateTime? GrossTime => GrossKg.HasValue ? (FirstIsTare ? SecondTime : FirstTime) : null;
+
+    /// <summary>
+    /// 皮重时间：皮重已称时取其称重时刻（先皮后毛→一次磅时间，先毛后皮→二次磅时间）；
+    /// 皮重尚未称时返回 null。
+    /// </summary>
+    public DateTime? TareTime => TareKg.HasValue ? (FirstIsTare ? FirstTime : SecondTime) : null;
 
     /// <summary>实收重量 = 净重 - 扣重（无扣重时即净重）</summary>
     public double? ReceivedKg => NetKg.HasValue ? NetKg - (DeductKg ?? 0) : null;

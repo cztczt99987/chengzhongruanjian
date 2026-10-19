@@ -140,6 +140,9 @@ public class WeighManager : IDisposable
             // 二次磅结算时再依据数值大小归位，两种先后顺序均能正确区分毛重/皮重
             GrossKg = isTare ? null : weight.Value,
             TareKg = isTare ? weight.Value : null,
+            // 记住一次磅是皮重先行还是毛重先行：结算后毛/皮两列都有值，据此才能把
+            // first_time/second_time 正确归到"毛重时间/皮重时间"（见 WeighRecord.GrossTime/TareTime）
+            FirstIsTare = isTare,
             DeductKg = deductKg,
             Operator = operatorName,
             ExtJson = WeighRecord.ExtToJson(ext),

@@ -77,6 +77,40 @@ public static class Db
         EnsureCompanyDeductColumns(conn);
         EnsurePrintCountColumn(conn);
         EnsureAmountColumn(conn);
+        EnsureFirstIsTareColumn(conn);
+    }
+
+    /// <summary>
+    /// 旧库升级：t_weigh_record 补 first_is_tare 列（一次磅是否空车去皮/皮重先行，
+    /// 用于首页"毛重时间/皮重时间"两列的正确归属；重复执行报"列已存在"直接忽略）。
+    /// 老数据按可判定规则回填：未完成记录若只有皮重值，必然是一次磅存的皮重（→1）；
+    /// 其余（含全部已完成记录）保持 0，与升级前的显示规则一致。
+    /// </summary>
+    private static void EnsureFirstIsTareColumn(DbConnection conn)
+    {
+        using var cmd = conn.CreateCommand();
+        if (IsSqlServer)
+        {
+            cmd.CommandText = """
+                IF NOT EXISTS (SELECT 1 FROM sys.columns
+                    WHERE object_id = OBJECT_ID(N't_weigh_record') AND name = 'first_is_tare')
+                ALTER TABLE t_weigh_record ADD first_is_tare BIT NOT NULL DEFAULT 0;
+                """;
+            cmd.ExecuteNonQuery();
+        }
+        else
+        {
+            cmd.CommandText = "ALTER TABLE t_weigh_record ADD COLUMN first_is_tare INTEGER NOT NULL DEFAULT 0;";
+            try { cmd.ExecuteNonQuery(); }
+            catch { /* 列已存在 */ }
+        }
+
+        using var backfill = conn.CreateCommand();
+        backfill.CommandText = """
+            UPDATE t_weigh_record SET first_is_tare = 1
+            WHERE status = '未完成' AND gross_kg IS NULL AND tare_kg IS NOT NULL;
+            """;
+        backfill.ExecuteNonQuery();
     }
 
     /// <summary>
@@ -216,6 +250,7 @@ public static class Db
             net_kg       REAL,
             first_time   TEXT,
             second_time  TEXT,
+            first_is_tare INTEGER NOT NULL DEFAULT 0,
             operator     TEXT,
             status       TEXT NOT NULL DEFAULT '未完成',
             is_manual    INTEGER NOT NULL DEFAULT 0,
@@ -307,6 +342,7 @@ public static class Db
             net_kg       FLOAT,
             first_time   NVARCHAR(20),
             second_time  NVARCHAR(20),
+            first_is_tare BIT NOT NULL DEFAULT 0,
             operator     NVARCHAR(20),
             status       NVARCHAR(10) NOT NULL DEFAULT N'未完成',
             is_manual    BIT NOT NULL DEFAULT 0,

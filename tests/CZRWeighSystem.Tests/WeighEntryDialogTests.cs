@@ -1674,8 +1674,9 @@ public class WeighEntryDialogTests
     private WeighRecord SeedCompletedWithTare(string vehicle, double tareKg, double grossKg)
     {
         UseTestScaleNo();
+        // 一次磅为空车去皮（皮重先行）：重量入皮重列并置 FirstIsTare，二次磅结算时按大小归位
         var first = _repo.InsertFirstWeigh(new WeighRecord
-        { ScaleNo = "91", VehicleNo = vehicle, GrossKg = tareKg });
+        { ScaleNo = "91", VehicleNo = vehicle, TareKg = tareKg, FirstIsTare = true });
         return _repo.CompleteSecondWeigh(first.Id, grossKg, null, "管理员");
     }
 
@@ -1692,18 +1693,48 @@ public class WeighEntryDialogTests
             NoPrefix(dlg);
             Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
 
-            // 空车去皮模式：上次重量=历史皮重，上次时间=一次磅（皮重）时间
+            // 空车去皮模式：上次重量=历史皮重，上次时间=皮重那次称重的时间（先皮后毛即一次磅时间）
             var lblW = Fld<Label>(dlg, "_lblLastWeight");
             var lblT = Fld<Label>(dlg, "_lblLastTime");
             Assert.True(dlg.LastTareInfoVisible);
             Assert.Equal(AppConfig.Current.FormatWeight(10000), lblW.Text);
-            Assert.Equal(done.FirstTime!.Value.ToString("yyyy-MM-dd HH:mm"), lblT.Text);
+            Assert.Equal(done.TareTime!.Value.ToString("yyyy-MM-dd HH:mm"), lblT.Text);
 
             // 切到重车过磅：整组隐藏，重车表单不展示该功能
             Call(dlg, "ToggleMode");
             Assert.False(dlg.LastTareInfoVisible);
             Assert.False(lblW.Visible);
             Assert.False(lblT.Visible);
+        });
+        manager.Dispose();
+    }
+
+    /// <summary>
+    /// 历史记录为先毛后皮（重车先行）时：空车去皮的"上次时间"必须取皮重那次称重的时间
+    /// （= 二次磅时间），不能取先称毛重的一次磅时间——仅凭 first/second_time 无法反推先后，
+    /// 依赖持久化的 FirstIsTare 区分。
+    /// </summary>
+    [Fact]
+    public void 空车去皮_历史为先毛后皮_上次时间取皮重那次()
+    {
+        string vehicle = NewVehicle("W");
+        UseTestScaleNo();
+        var first = _repo.InsertFirstWeigh(new WeighRecord
+        { ScaleNo = "91", VehicleNo = vehicle, GrossKg = 30000, FirstIsTare = false });   // 先称毛重
+        var done = _repo.CompleteSecondWeigh(first.Id, 10000, null, "管理员");             // 后称皮重
+        Assert.False(done.FirstIsTare);
+        Assert.Equal(done.SecondTime, done.TareTime);     // 皮重时间 = 皮重那次（二次磅）时间
+
+        WeighManager manager = new();
+        RunOnSta(() =>
+        {
+            using var dlg = new WeighEntryDialog(manager, isTare: true);
+            SilenceDialogs(dlg);
+            NoPrefix(dlg);
+            Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
+
+            Assert.Equal(done.SecondTime!.Value.ToString("yyyy-MM-dd HH:mm"),
+                Fld<Label>(dlg, "_lblLastTime").Text);
         });
         manager.Dispose();
     }

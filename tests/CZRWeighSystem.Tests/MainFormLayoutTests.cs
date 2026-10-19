@@ -445,6 +445,62 @@ public class MainFormLayoutTests
         });
     }
 
+    /// <summary>
+    /// 首页「毛重时间/皮重时间」必须落在该重量实际称重的那一次（对应缺陷：空车先称皮重、
+    /// 毛重还没称时，毛重时间列被误填了一次磅的皮重时间）。先皮后毛的记录结算后，
+    /// 毛重时间换成二次磅时间、皮重时间保持一次磅时间（先后类型靠持久化的 FirstIsTare 区分）。
+    /// </summary>
+    [Fact]
+    public void 首页时间列_毛重未称时留空_先皮后毛结算后各归其位()
+    {
+        Db.Initialize();
+        var repo = new WeighRecordRepository();
+        string tareFirstNo = "皮" + Guid.NewGuid().ToString("N")[..6];
+        string grossFirstNo = "毛" + Guid.NewGuid().ToString("N")[..6];
+
+        // 空车去皮先行：皮重已称、毛重未称，一次磅时间 10:29:47
+        var tareFirst = repo.InsertFirstWeigh(new WeighRecord
+        {
+            ScaleNo = "96", VehicleNo = tareFirstNo, TareKg = 30150,
+            Status = "未完成", FirstIsTare = true,
+        });
+        SetFirstTime(tareFirst.Id, DateTime.Today.AddHours(10).AddMinutes(29).AddSeconds(47));
+        // 重车过磅先行：毛重已称、皮重未称，一次磅时间 08:00:00
+        var grossFirst = repo.InsertFirstWeigh(new WeighRecord
+        {
+            ScaleNo = "96", VehicleNo = grossFirstNo, GrossKg = 60000,
+            Status = "未完成", FirstIsTare = false,
+        });
+        SetFirstTime(grossFirst.Id, DateTime.Today.AddHours(8));
+
+        RunOnSta(() =>
+        {
+            using var form = new MainForm();
+            ((ComboBox)Fld(form, "_cboPageSize")).SelectedIndex = 4;   // 今日全部：保证刚插入的记录都在列表里
+            var grid = (DataGridView)Fld(form, "_captureGrid");
+            DataGridViewRow Row(string no) => grid.Rows.Cast<DataGridViewRow>()
+                .Single(r => (string)r.Cells["VehicleNo"].Value! == no);
+
+            var tareRow = Row(tareFirstNo);
+            Assert.Equal("", tareRow.Cells["GrossTime"].Value);      // 毛重未称 → 毛重时间留空
+            Assert.Equal("10:29:47", tareRow.Cells["TareTime"].Value);
+
+            var grossRow = Row(grossFirstNo);
+            Assert.Equal("08:00:00", grossRow.Cells["GrossTime"].Value);
+            Assert.Equal("", grossRow.Cells["TareTime"].Value);      // 皮重未称 → 皮重时间留空
+
+            // 该车回头称毛重结算：毛重时间 = 二次磅时间，皮重时间仍为皮重那次（一次磅）时间
+            var settled = repo.CompleteSecondWeigh(tareFirst.Id, 60000, null, "测试");
+            Assert.True(settled.FirstIsTare);
+            typeof(Control).GetMethod("OnClick", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .Invoke((Button)Fld(form, "_btnRefresh"), [EventArgs.Empty]);
+
+            var settledRow = Row(tareFirstNo);
+            Assert.Equal(settled.SecondTime!.Value.ToString("HH:mm:ss"), settledRow.Cells["GrossTime"].Value);
+            Assert.Equal("10:29:47", settledRow.Cells["TareTime"].Value);
+        });
+    }
+
     [Fact]
     public void 底部记录列表_表头与内容单行完整展示_窄窗出横向滚动()
     {

@@ -20,12 +20,14 @@ public class RecordQueryForm : Form
 
     private DateTimePicker _dtpFrom = null!;    // 开始日期
     private DateTimePicker _dtpTo = null!;      // 结束日期
-    private TextBox _txtVehicle = null!;        // 车号
+    private ProvincePicker _cboPrefix = null!;  // 车牌省份简称
+    private TextBox _txtVehicle = null!;        // 车号编号（省份简称后的部分）
     private TextBox _txtGoods = null!;          // 货物
     private TextBox _txtCompany = null!;        // 单位
     private ComboBox _cboStatus = null!;        // 状态
     private DataGridView _grid = null!;         // 结果表格
     private Label _lblSummary = null!;          // 合计信息
+    private PlateKeypadForm? _keypad;           // 车牌字母触摸面板（双击编号框弹出）
 
     /// <param name="presetDate">
     /// 预置查询日期（首页记录行右键「当日记录」传入该行日期）：日期范围锁定为当天，
@@ -89,7 +91,17 @@ public class RecordQueryForm : Form
             Size = new Size(120, 28),
             Value = DateTime.Today,
         };
-        _txtVehicle = new TextBox { Location = new Point(350, 35), Size = new Size(100, 28) };
+        _txtVehicle = new TextBox { Location = new Point(405, 35), Size = new Size(95, 28) };
+        // 车牌省份简称选择器（与称重弹窗一致），默认取综合设置的"默认省份"
+        _cboPrefix = new ProvincePicker
+        {
+            Location = new Point(350, 35),
+            Size = new Size(50, 28),
+        };
+        int defIdx = ProvincePicker.Items.IndexOf(_cfg.DefaultProvince);
+        if (defIdx >= 0) _cboPrefix.SelectedIndex = defIdx;
+        _txtVehicle.DoubleClick += (_, _) => ShowKeypad();
+        new ToolTip().SetToolTip(_txtVehicle, "双击打开字母选择面板（点选一个字符后自动关闭）");
         _txtGoods = new TextBox { Location = new Point(500, 35), Size = new Size(100, 28) };
         _txtCompany = new TextBox { Location = new Point(650, 35), Size = new Size(110, 28) };
         _cboStatus = new ComboBox
@@ -130,7 +142,7 @@ public class RecordQueryForm : Form
         panel.Controls.AddRange(new Control[]
         {
             L("日期：", 15, 40), _dtpFrom, L("至", 193, 40), _dtpTo,
-            L("车号：", 350 + 0, 15), _txtVehicle,
+            L("车号：", 350 + 0, 15), _cboPrefix, _txtVehicle,
             L("货物：", 500, 15), _txtGoods,
             L("单位：", 650, 15), _txtCompany,
             L("状态：", 820, 15), _cboStatus,
@@ -419,7 +431,7 @@ public class RecordQueryForm : Form
         string status = _cboStatus.SelectedIndex == 0 ? "" : _cboStatus.Text;
 
         var list = _repo.Query(_dtpFrom.Value.Date, _dtpTo.Value.Date,
-            _txtVehicle.Text, _txtGoods.Text, _txtCompany.Text, status);
+            ComposeVehicleNo(), _txtGoods.Text, _txtCompany.Text, status);
 
         _grid.Rows.Clear();
         var extFields = new CustomFieldRepository().GetAll(enabledOnly: true);
@@ -465,10 +477,55 @@ public class RecordQueryForm : Form
     {
         _dtpFrom.Value = DateTime.Today.AddDays(-30);
         _dtpTo.Value = DateTime.Today;
+        _cboPrefix.SelectedIndex = 0;   // 复位到"无省份"
         _txtVehicle.Clear();
         _txtGoods.Clear();
         _txtCompany.Clear();
         _cboStatus.SelectedIndex = 0;
         DoQuery();
+    }
+
+    /// <summary>组合完整车号 = 省份简称 + 编号输入框内容；编号为空时返回空串（不过滤车号）。</summary>
+    private string ComposeVehicleNo()
+    {
+        string rest = _txtVehicle.Text.Trim();
+        if (rest.Length == 0) return "";
+        string prefix = _cboPrefix.SelectedItem ?? "";
+        return rest.StartsWith(prefix, StringComparison.Ordinal) ? rest : prefix + rest;
+    }
+
+    // ---------- 车牌字母触摸面板 ----------
+
+    /// <summary>打开车牌字母触摸面板：双击编号框触发。</summary>
+    private void ShowKeypad()
+    {
+        if (_keypad != null && !_keypad.IsDisposed)
+        {
+            _keypad.BringToFront();
+            return;
+        }
+
+        // 双击默认会选中一段文本：取消选中改为末尾追加
+        if (_txtVehicle.SelectionLength > 0)
+        {
+            _txtVehicle.SelectionLength = 0;
+            _txtVehicle.SelectionStart = _txtVehicle.TextLength;
+        }
+
+        _keypad = new PlateKeypadForm();
+        _keypad.CharPicked += InsertPlateChar;
+        _keypad.FormClosed += (_, _) => _keypad = null;
+        _keypad.PlaceNear(_txtVehicle);
+        _keypad.Show(this);
+    }
+
+    /// <summary>在编号框当前光标处插入字符（有选中则替换），光标右移。</summary>
+    private void InsertPlateChar(string s)
+    {
+        int start = _txtVehicle.SelectionStart;
+        int len = _txtVehicle.SelectionLength;
+        _txtVehicle.Text = _txtVehicle.Text.Remove(start, len).Insert(start, s);
+        _txtVehicle.SelectionStart = start + s.Length;
+        _txtVehicle.SelectionLength = 0;
     }
 }

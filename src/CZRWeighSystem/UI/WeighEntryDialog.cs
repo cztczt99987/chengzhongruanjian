@@ -35,10 +35,6 @@ public class WeighEntryDialog : Form
     private bool _closed;
     private PlateKeypadForm? _keypad;        // 车牌编号字母触摸面板（双击编号框弹出）
 
-    /// <summary>所有已保存过（未作废）的记录：车牌自动补全候选 + 选中后回填上次信息。
-    /// 不限日期——只要数据库里存在该车号，就回填该车上一次保存的品种/货主/单价等信息。</summary>
-    private List<WeighRecord> _plateHistoryRecords = [];
-
     /// <summary>
     /// 当前值由"命中历史车牌自动回填"而来的字段集合。
     /// 换车号且无命中时只清空这些字段——用户手动输入/改过的字段保留，
@@ -128,9 +124,7 @@ public class WeighEntryDialog : Form
         BuildTicket();
         BuildWeightPanel();
 
-        // 所有历史车牌（不限日期）：自动补全候选，输入完整车号后回填上一次填写的信息
-        _plateHistoryRecords = _plateRepo.Query(null, null, "", "", "", "")
-            .Where(r => r.Status != "已作废").ToList();
+        // 初始化车牌自动补全候选（不限日期，直接查库去重）
         RefreshPlateSuggest();
 
         _txtVehicle.TextChanged += (_, _) =>
@@ -611,19 +605,19 @@ public class WeighEntryDialog : Form
     }
 
     /// <summary>
-    /// 重建车牌自动补全候选：当天已保存记录中与当前选中省份匹配的车牌，
-    /// 去掉省份简称取编号部分去重后作为建议项（输入一半即在下拉中出现）。
+    /// 重建车牌自动补全候选：从数据库取所有未作废记录的去重车号（按当前选中省份前缀过滤），
+    /// 去掉省份简称取编号部分作为建议项（输入一半即在下拉中出现）。直接查库，无 5000 条上限。
     /// </summary>
     private void RefreshPlateSuggest()
     {
         string prefix = _cboPrefix.SelectedItem?.ToString() ?? "";
+        // 直接查库取全部去重车号（按省份前缀过滤），不受 5000 条上限影响
+        var allNos = _plateRepo.GetAllVehicleNos(string.IsNullOrEmpty(prefix) ? null : prefix);
         var src = new AutoCompleteStringCollection();
-        src.AddRange(_plateHistoryRecords
-            .Where(r => prefix.Length == 0 || r.VehicleNo.StartsWith(prefix, StringComparison.Ordinal))
-            .Select(r => r.VehicleNo.StartsWith(prefix, StringComparison.Ordinal)
-                ? r.VehicleNo[prefix.Length..]
-                : r.VehicleNo)
-            .Distinct()
+        src.AddRange(allNos
+            .Select(n => n.StartsWith(prefix, StringComparison.Ordinal)
+                ? n[prefix.Length..]
+                : n)
             .ToArray());
         _txtVehicle.AutoCompleteCustomSource = src;
     }
@@ -638,8 +632,8 @@ public class WeighEntryDialog : Form
     private void TryAutoFill()
     {
         string no = ComposeVehicleNo();
-        var hit = no.Length == 0 ? null
-            : _plateHistoryRecords.FirstOrDefault(r => r.VehicleNo == no);
+        // 直接按车号查库取最新一条，不受 5000 条上限影响
+        var hit = no.Length == 0 ? null : _plateRepo.GetLatestByVehicleNo(no);
 
         _autoFilling = true;   // 下面赋值触发的 TextChanged 是程序回填，不算用户手改
         try
@@ -805,7 +799,7 @@ public class WeighEntryDialog : Form
             var lastTare = GetLastTare(no);
             _lblLastWeight.Text = lastTare?.TareKg.HasValue == true
                 ? _cfg.FormatWeight(lastTare.TareKg.Value) : "--";
-            _lblLastTime.Text = lastTare?.FirstTime?.ToString("yyyy-MM-dd HH:mm") ?? "--";
+            _lblLastTime.Text = lastTare?.TareTime?.ToString("yyyy-MM-dd HH:mm") ?? "--";
         }
         else
         {
@@ -902,7 +896,7 @@ public class WeighEntryDialog : Form
                     InfoBox(
                         $"两次空车去皮称重的差值过大！\n\n"
                         + $"上次皮重：{_cfg.FormatWeight(lastTare.TareKg.Value)}"
-                        + $"（{lastTare.FirstTime:yyyy-MM-dd HH:mm}）\n"
+                        + $"（{lastTare.TareTime:yyyy-MM-dd HH:mm}）\n"
                         + $"本次皮重：{_cfg.FormatWeight(_confirmedKg.Value)}\n"
                         + $"相差：{diffTon:0.##} 吨（预警值 {_cfg.TareDiffWarnTon:0.##} 吨）\n\n"
                         + "请核实车辆状态（货厢残留/改装/油品水量等）后再保存。",
@@ -1016,9 +1010,7 @@ public class WeighEntryDialog : Form
         _txtUnitPrice.Clear();
         _autoFilledFields.Clear();   // 表单整体清空：脏标记一并复位，不依赖各 Clear 的事件顺序
 
-        // 刷新全部历史车牌（含刚保存的车号），供下一辆车输入时自动补全/回填
-        _plateHistoryRecords = _plateRepo.Query(null, null, "", "", "", "")
-            .Where(r => r.Status != "已作废").ToList();
+        // 保存后刷新车牌补全候选（含刚保存的车号），供下一辆车输入时自动补全/回填
         RefreshPlateSuggest();
 
         ResetFlow();          // 回到"确认"步并刷新票面（毛/皮/净清空）

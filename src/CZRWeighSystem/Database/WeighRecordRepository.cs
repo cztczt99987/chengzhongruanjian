@@ -25,11 +25,11 @@ public class WeighRecordRepository
             INSERT INTO t_weigh_record
                 (serial_no, scale_no, vehicle_no, goods, sender_company, receiver_company,
                  deduct_kg, spec, batch_no, remark,
-                 gross_kg, tare_kg, first_time, operator, status, is_manual, ext_json, created_at)
+                 gross_kg, tare_kg, first_time, first_is_tare, operator, status, is_manual, ext_json, created_at)
             VALUES
                 (@serial_no, @scale_no, @vehicle_no, @goods, @sender_company, @receiver_company,
                  @deduct_kg, @spec, @batch_no, @remark,
-                 @gross_kg, @tare_kg, @first_time, @operator, @status, @is_manual, @ext_json, @created_at);
+                 @gross_kg, @tare_kg, @first_time, @first_is_tare, @operator, @status, @is_manual, @ext_json, @created_at);
             """ + Db.LastIdSql;
 
         using var cmd = conn.CreateCommand();
@@ -109,8 +109,8 @@ public class WeighRecordRepository
         using var conn = Db.CreateConnection();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = isTare
-            ? "UPDATE t_weigh_record SET tare_kg=@kg, first_time=@time WHERE id=@id AND status='未完成'"
-            : "UPDATE t_weigh_record SET gross_kg=@kg, first_time=@time WHERE id=@id AND status='未完成'";
+            ? "UPDATE t_weigh_record SET tare_kg=@kg, first_time=@time, first_is_tare=1 WHERE id=@id AND status='未完成'"
+            : "UPDATE t_weigh_record SET gross_kg=@kg, first_time=@time, first_is_tare=0 WHERE id=@id AND status='未完成'";
         cmd.Add("@kg", weightKg);
         cmd.Add("@time", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
         cmd.Add("@id", id);
@@ -153,6 +153,46 @@ public class WeighRecordRepository
         cmd.Add("@vehicle_no", vehicleNo);
         using var reader = cmd.ExecuteReader();
         return reader.Read() ? Map(reader) : null;
+    }
+
+    /// <summary>
+    /// 按车号查最新一条未作废记录（用于输入车号时自动回填品种/货主/单价等）。
+    /// 直接按车号定位、取一条，不受 Query 的 5000 条上限影响——
+    /// 即使该车号只在很久前出现过，也能正确回填其上一次的信息。
+    /// </summary>
+    public WeighRecord? GetLatestByVehicleNo(string vehicleNo)
+    {
+        using var conn = Db.CreateConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = Db.TopSql(
+            "SELECT {TOP} * FROM t_weigh_record " +
+            "WHERE vehicle_no=@vehicle_no AND status != '已作废' ",
+            "ORDER BY COALESCE(second_time, first_time) DESC, id DESC", 1);
+        cmd.Add("@vehicle_no", vehicleNo);
+        using var reader = cmd.ExecuteReader();
+        return reader.Read() ? Map(reader) : null;
+    }
+
+    /// <summary>
+    /// 查询所有未作废记录的车号（去重），供车牌输入框自动补全下拉使用。
+    /// prefix 非空时只返回以该前缀（省份简称）开头的车号；不受 5000 条上限影响。
+    /// </summary>
+    public List<string> GetAllVehicleNos(string? prefix = null)
+    {
+        using var conn = Db.CreateConnection();
+        using var cmd = conn.CreateCommand();
+        string where = "status != '已作废'";
+        if (!string.IsNullOrEmpty(prefix))
+        {
+            where += " AND vehicle_no LIKE @prefix";
+            cmd.Add("@prefix", prefix + "%");
+        }
+        cmd.CommandText = $"SELECT DISTINCT vehicle_no FROM t_weigh_record WHERE {where} ORDER BY vehicle_no";
+        var list = new List<string>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+            list.Add(reader.GetString(0));
+        return list;
     }
 
     /// <summary>
@@ -458,6 +498,7 @@ public class WeighRecordRepository
         cmd.Add("@gross_kg", r.GrossKg);
         cmd.Add("@tare_kg", r.TareKg);
         cmd.Add("@first_time", r.FirstTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "");
+        cmd.Add("@first_is_tare", r.FirstIsTare ? 1 : 0);
         cmd.Add("@operator", r.Operator);
         cmd.Add("@status", r.Status);
         cmd.Add("@is_manual", r.IsManual ? 1 : 0);
@@ -487,6 +528,7 @@ public class WeighRecordRepository
             AmountYuan = GetDec(reader, "amount_yuan"),
             FirstTime = ParseTime(reader, "first_time"),
             SecondTime = ParseTime(reader, "second_time"),
+            FirstIsTare = Convert.ToInt64(reader.GetValue(reader.GetOrdinal("first_is_tare"))) == 1,
             Operator = GetStr(reader, "operator"),
             Status = reader.GetString(reader.GetOrdinal("status")),
             IsManual = Convert.ToInt64(reader.GetValue(reader.GetOrdinal("is_manual"))) == 1,

@@ -1262,8 +1262,10 @@ public class MainForm : Form
                 r.TareKg.HasValue ? _cfg.FormatWeightNumber(r.TareKg.Value) : "--",
                 r.NetKg.HasValue ? _cfg.FormatWeightNumber(r.NetKg.Value) : "--",
                 r.AmountYuan?.ToString("0.##") ?? "--",
-                r.FirstTime?.ToString("HH:mm:ss") ?? "",
-                r.SecondTime?.ToString("HH:mm:ss") ?? "",
+                // 毛重/皮重时间按各自重量实际称重的那一次填写（先皮后毛时毛重时间取二次磅时间）；
+                // 该重量尚未称过则留空——不能把一次磅时间既填毛重列又填皮重列
+                r.GrossTime?.ToString("HH:mm:ss") ?? "",
+                r.TareTime?.ToString("HH:mm:ss") ?? "",
                 r.Operator ?? "",
                 r.Status);
             _captureGrid.Rows[i].Tag = r;
