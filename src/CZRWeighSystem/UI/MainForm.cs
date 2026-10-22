@@ -441,9 +441,9 @@ public class MainForm : Form
     private void OpenWeighEntry(bool isTare, string? prefillVehicle = null)
     {
         using var f = new WeighEntryDialog(_manager, isTare, prefillVehicle);
-        f.OnSaved = serial =>
+        f.OnSaved = (serial, isTare) =>
         {
-            CaptureFor(serial);
+            CaptureFor(serial, isTare);
             _sync?.EnqueueRecord(serial);   // 二次磅结算完成后推送平台（一次磅内部跳过）
         };
         // 保存成功立即刷新首页列表与统计：弹窗不关闭也能看到新记录
@@ -1324,18 +1324,11 @@ public class MainForm : Form
         Report.PoundTicketPrinter.PrintPreview(r, allowPrint: true);
     }
 
-    /// <summary>右键-过磅视图：查看该次过磅的抓拍存证图片（对应 PRD F7-03）。</summary>
+    /// <summary>右键-过磅视图：查看该次过磅的抓拍存证图片（皮重/毛重分段展示，对应 PRD F7-03）。</summary>
     private void ShowSelectedCaptures()
     {
         if (SelectedRecord is not { } r) { WarnNoRecordSelected(); return; }
-        var files = Video.CameraManager.FindCaptures(r.SerialNo);
-        if (files.Count == 0)
-        {
-            MessageBox.Show($"记录 {r.SerialNo} 没有抓拍图片\n（抓拍图片保存在 exe 目录 captures/ 下）",
-                "抓拍查询", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            return;
-        }
-        using var f = new CaptureViewForm(r.SerialNo, files);
+        using var f = new CaptureViewForm(r);
         f.ShowDialog(this);
     }
 
@@ -1343,13 +1336,13 @@ public class MainForm : Form
         MessageBox.Show("请先在称重记录上点击右键选择一条记录", "提示",
             MessageBoxButtons.OK, MessageBoxIcon.Warning);
 
-    /// <summary>保存称重后自动抓拍（对应 PRD F7-02），返回存档路径数。</summary>
-    private int CaptureFor(string serialNo)
+    /// <summary>保存称重后自动抓拍（对应 PRD F7-02），皮重/毛重分文件保存，返回存档路径数。</summary>
+    private int CaptureFor(string serialNo, bool isTare)
     {
         if (!_cfg.CameraEnabled) return 0;
-        var files = _cameras.CaptureAll(serialNo);
+        var files = _cameras.CaptureAll(serialNo, isTare);
         if (files.Count > 0)
-            SetState($"已抓拍 {files.Count} 张存证图片", true);
+            SetState($"已抓拍 {files.Count} 张{(isTare ? "皮重" : "毛重")}存证图片", true);
         return files.Count;
     }
 

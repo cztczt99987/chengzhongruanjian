@@ -181,7 +181,7 @@ public class WeighEntryDialogTests
             using var dlg = new WeighEntryDialog(manager, isTare: true);
             SilenceDialogs(dlg);
             UseTestScaleNo();
-            dlg.OnSaved = _ => onSaved = true;
+            dlg.OnSaved = (_, _) => onSaved = true;
             NoPrefix(dlg);
             Fld<TextBox>(dlg, "_txtVehicle").Text = vehicle;
             PushStable(manager, 10000);

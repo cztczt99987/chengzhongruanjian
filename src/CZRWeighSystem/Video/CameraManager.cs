@@ -44,32 +44,61 @@ public class CameraManager : IDisposable
 
     /// <summary>
     /// 保存称重时抓拍全部摄像头（对应 PRD F7-02 / F12-01 防作弊留证）。
+    /// 皮重与毛重分文件保存，避免二次磅覆盖一次磅的留证。
     /// </summary>
     /// <param name="serialNo">称重流水号（存档文件名的一部分）</param>
+    /// <param name="isTare">本次抓拍是否对应皮重（空车去皮）；false=毛重（重车过磅）</param>
     /// <returns>已保存的图片路径</returns>
-    public List<string> CaptureAll(string serialNo)
+    public List<string> CaptureAll(string serialNo, bool isTare)
     {
         var saved = new List<string>();
         string dir = Path.Combine(AppContext.BaseDirectory,
             "captures", DateTime.Now.ToString("yyyyMMdd"));
+        string tag = isTare ? "tare" : "gross";
 
         for (int i = 0; i < _sources.Count; i++)
         {
-            string file = Path.Combine(dir, $"{serialNo}_cam{i + 1}.jpg");
+            string file = Path.Combine(dir, $"{serialNo}_{tag}_cam{i + 1}.jpg");
             if (_sources[i].CaptureTo(file)) saved.Add(file);
         }
         return saved;
     }
 
     /// <summary>
-    /// 按流水号查找已存档的抓拍图片（对应 PRD F7-03）。
+    /// 按流水号查找皮重抓拍图片（对应 PRD F7-03）。
+    /// </summary>
+    public static List<string> FindTareCaptures(string serialNo)
+        => FindCapturesByTag(serialNo, "tare");
+
+    /// <summary>
+    /// 按流水号查找毛重抓拍图片（对应 PRD F7-03）。
+    /// </summary>
+    public static List<string> FindGrossCaptures(string serialNo)
+        => FindCapturesByTag(serialNo, "gross");
+
+    /// <summary>
+    /// 按流水号查找全部已存档抓拍图片（皮重 + 毛重，对应 PRD F7-03 / 平台同步）。
     /// </summary>
     public static List<string> FindCaptures(string serialNo)
+    {
+        var all = new List<string>();
+        all.AddRange(FindTareCaptures(serialNo));
+        all.AddRange(FindGrossCaptures(serialNo));
+        return all;
+    }
+
+    /// <summary>
+    /// 该流水号是否存在任意抓拍图片（皮重或毛重）。
+    /// </summary>
+    public static bool HasAnyCaptures(string serialNo)
+        => FindTareCaptures(serialNo).Count > 0 || FindGrossCaptures(serialNo).Count > 0;
+
+    private static List<string> FindCapturesByTag(string serialNo, string tag)
     {
         string dir = Path.Combine(AppContext.BaseDirectory,
             "captures", serialNo[..Math.Min(8, serialNo.Length)]);
         if (!Directory.Exists(dir)) return [];
-        return Directory.GetFiles(dir, serialNo + "_*.jpg").OrderBy(f => f).ToList();
+        return Directory.GetFiles(dir, $"{serialNo}_{tag}_*.jpg").OrderBy(f => f).ToList();
     }
 
     /// <summary>

@@ -381,7 +381,7 @@ public class RecordQueryForm : Form
             MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
-    /// <summary>查看选中记录关联的抓拍图片（对应 PRD F7-03）。</summary>
+    /// <summary>查看选中记录关联的抓拍图片（皮重/毛重分段展示，对应 PRD F7-03）。</summary>
     private void ShowCaptures()
     {
         var r = SelectedRecord;
@@ -392,14 +392,7 @@ public class RecordQueryForm : Form
             return;
         }
 
-        var files = Video.CameraManager.FindCaptures(r.SerialNo);
-        if (files.Count == 0)
-        {
-            MessageBox.Show($"记录 {r.SerialNo} 没有抓拍图片\n（抓拍图片保存在 exe 目录 captures/ 下）",
-                "抓拍查询", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            return;
-        }
-        using var f = new CaptureViewForm(r.SerialNo, files);
+        using var f = new CaptureViewForm(r);
         f.ShowDialog(this);
     }
 

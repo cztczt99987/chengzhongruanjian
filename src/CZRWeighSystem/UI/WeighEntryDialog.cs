@@ -54,8 +54,8 @@ public class WeighEntryDialog : Form
         MessageBox.Show(msg, title, MessageBoxButtons.OK,
             ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
 
-    /// <summary>保存成功后回调（参数=流水号；主界面用于抓拍留证）。</summary>
-    internal Action<string>? OnSaved;
+    /// <summary>保存成功后回调（参数=流水号、本次是否皮重；主界面用于抓拍留证，皮/毛分文件保存）。</summary>
+    internal Action<string, bool>? OnSaved;
 
     /// <summary>保存成功后回调（主界面用于立即刷新列表与统计，不必等弹窗关闭）。</summary>
     internal Action? OnRecordSaved;
@@ -937,7 +937,7 @@ public class WeighEntryDialog : Form
 
                 _savedRecord = record;
             }
-            OnSaved?.Invoke(_savedRecord!.SerialNo);
+            OnSaved?.Invoke(_savedRecord!.SerialNo, _isTare);
         }
         else
         {
@@ -950,7 +950,7 @@ public class WeighEntryDialog : Form
             if (!ok) { InfoBox(msg, "提示", false); return; }
 
             _savedRecord = newRecord;
-            OnSaved?.Invoke(newRecord!.SerialNo);
+            OnSaved?.Invoke(newRecord!.SerialNo, _isTare);
         }
         _savedAny = true;      // 关窗时据此让首页刷新记录列表/统计
         OnRecordSaved?.Invoke();   // 保存成功立即通知首页刷新列表/统计（弹窗不关也能看到新记录）
