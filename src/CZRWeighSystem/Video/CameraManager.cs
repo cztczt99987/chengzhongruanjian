@@ -52,8 +52,11 @@ public class CameraManager : IDisposable
     public List<string> CaptureAll(string serialNo, bool isTare)
     {
         var saved = new List<string>();
-        string dir = Path.Combine(AppContext.BaseDirectory,
-            "captures", DateTime.Now.ToString("yyyyMMdd"));
+        // 目录日期取流水号前8位（yyyyMMdd），与查找时一致——
+        // 抓拍若紧跟保存通常同日，但午夜前后称重时 DateTime.Now 可能跨天，
+        // 导致图片存到次日目录、按流水号日期查找不到（用户反馈"有记录无图片"）。
+        string datePart = serialNo.Length >= 8 ? serialNo[..8] : DateTime.Now.ToString("yyyyMMdd");
+        string dir = Path.Combine(AppContext.BaseDirectory, "captures", datePart);
         string tag = isTare ? "tare" : "gross";
 
         for (int i = 0; i < _sources.Count; i++)
@@ -72,9 +75,16 @@ public class CameraManager : IDisposable
 
     /// <summary>
     /// 按流水号查找毛重抓拍图片（对应 PRD F7-03）。
+    /// 兼容旧版抓拍文件（命名 {流水号}_camN.jpg，无 tare/gross 标记）：
+    /// 旧版一次磅与二次磅抓拍互相覆盖，最终只剩最后一次（多数场景为毛重），
+    /// 故无新格式毛重文件时回退到旧文件，显示在毛重段。
     /// </summary>
     public static List<string> FindGrossCaptures(string serialNo)
-        => FindCapturesByTag(serialNo, "gross");
+    {
+        var gross = FindCapturesByTag(serialNo, "gross");
+        if (gross.Count > 0) return gross;
+        return FindLegacyCaptures(serialNo);
+    }
 
     /// <summary>
     /// 按流水号查找全部已存档抓拍图片（皮重 + 毛重，对应 PRD F7-03 / 平台同步）。
@@ -95,11 +105,26 @@ public class CameraManager : IDisposable
 
     private static List<string> FindCapturesByTag(string serialNo, string tag)
     {
-        string dir = Path.Combine(AppContext.BaseDirectory,
-            "captures", serialNo[..Math.Min(8, serialNo.Length)]);
+        string dir = CaptureDir(serialNo);
         if (!Directory.Exists(dir)) return [];
         return Directory.GetFiles(dir, $"{serialNo}_{tag}_*.jpg").OrderBy(f => f).ToList();
     }
+
+    /// <summary>
+    /// 旧版抓拍文件查找（命名 {流水号}_camN.jpg，无 tare/gross 标记）。
+    /// pattern {serialNo}_cam*.jpg 不会误匹配新格式 {serialNo}_{tag}_cam*.jpg
+    /// （_cam 与 _{tag}_cam 第二个字符 c vs t 不同）。
+    /// </summary>
+    private static List<string> FindLegacyCaptures(string serialNo)
+    {
+        string dir = CaptureDir(serialNo);
+        if (!Directory.Exists(dir)) return [];
+        return Directory.GetFiles(dir, $"{serialNo}_cam*.jpg").OrderBy(f => f).ToList();
+    }
+
+    private static string CaptureDir(string serialNo)
+        => Path.Combine(AppContext.BaseDirectory,
+            "captures", serialNo[..Math.Min(8, serialNo.Length)]);
 
     /// <summary>
     /// 手动拍照（首页放大画面/全屏画面的右键菜单）：抓拍指定路当前画面存到
