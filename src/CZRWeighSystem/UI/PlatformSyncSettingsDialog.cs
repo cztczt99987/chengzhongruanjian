@@ -16,6 +16,7 @@ public class PlatformSyncSettingsDialog : Form
     internal TextBox TxtAppSecret = null!;       // AppSecret
     internal CheckBox ChkBlackbox = null!;       // 同步黑匣子
     internal Label LblStats = null!;             // 队列状态行
+    internal DataGridView GridFailed = null!;    // 失败明细列表
     internal Button BtnTest = null!;
     internal Button BtnRequeue = null!;
 
@@ -23,6 +24,9 @@ public class PlatformSyncSettingsDialog : Form
     internal Action<string, string, bool> InfoBox = (msg, title, ok) =>
         MessageBox.Show(msg, title, MessageBoxButtons.OK,
             ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+
+    /// <summary>保存设置后的历史补推动作（测试注入空实现，避免后台线程写共享测试库）。</summary>
+    internal Action HistoryBackfill = () => Task.Run(() => PushScheduler.Current?.BackfillHistory());
 
     private readonly PushQueueRepository _queueRepo = new();
 
@@ -34,7 +38,7 @@ public class PlatformSyncSettingsDialog : Form
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
-        ClientSize = new Size(560, 360);
+        ClientSize = new Size(560, 600);
         Font = new Font("Microsoft YaHei UI", 10F);
 
         BuildUi();
@@ -132,6 +136,34 @@ public class PlatformSyncSettingsDialog : Form
             FlatStyle = FlatStyle.Flat,
         };
 
+        var lblFailed = new Label
+        {
+            Text = "失败明细（最近 200 条，修正配置后可点上方「重推失败项」）",
+            AutoSize = true,
+            Location = new Point(25, 368),
+            ForeColor = Color.Gray,
+        };
+        GridFailed = new DataGridView
+        {
+            Location = new Point(25, 394),
+            Size = new Size(510, 178),
+            ReadOnly = true,
+            AllowUserToAddRows = false,
+            AllowUserToDeleteRows = false,
+            AllowUserToResizeRows = false,
+            RowHeadersVisible = false,
+            SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+            MultiSelect = false,
+            BackgroundColor = Color.White,
+            BorderStyle = BorderStyle.FixedSingle,
+            AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+            ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing,
+        };
+        GridFailed.Columns.Add(new DataGridViewTextBoxColumn { Name = "Kind", HeaderText = "类型", FillWeight = 12 });
+        GridFailed.Columns.Add(new DataGridViewTextBoxColumn { Name = "Ref", HeaderText = "流水号 / 照片", FillWeight = 40 });
+        GridFailed.Columns.Add(new DataGridViewTextBoxColumn { Name = "Error", HeaderText = "失败原因", FillWeight = 36 });
+        GridFailed.Columns.Add(new DataGridViewTextBoxColumn { Name = "Time", HeaderText = "失败时间", FillWeight = 12 });
+
         BtnTest.Click += (_, _) => TestConnection();
         BtnRequeue.Click += (_, _) => RequeueFailed();
         btnSave.Click += (_, _) => Save();
@@ -141,6 +173,7 @@ public class PlatformSyncSettingsDialog : Form
         {
             ChkEnabled, lblUrl, TxtUrl, lblKey, TxtAppKey, lblSecret, TxtAppSecret,
             ChkBlackbox, lblHint, LblStats, BtnTest, BtnRequeue, btnSave, btnCancel,
+            lblFailed, GridFailed,
         });
     }
 
@@ -200,8 +233,27 @@ public class PlatformSyncSettingsDialog : Form
     {
         var (pending, failed) = _queueRepo.GetStats();
         LblStats.Text = $"同步队列：待推送 {pending} 条，失败 {failed} 条" +
-                        (failed > 0 ? "（失败原因见日志 logs/，处理后可重推）" : "");
+                        (failed > 0 ? "（失败原因见下方列表，处理后可重推）" : "");
+
+        GridFailed.Rows.Clear();
+        foreach (var it in _queueRepo.GetFailedItems(200))
+        {
+            GridFailed.Rows.Add(
+                KindText(it.Kind),
+                it.ClientRef,
+                it.LastError,
+                it.UpdatedAt == default ? "" : it.UpdatedAt.ToString("MM-dd HH:mm:ss"));
+        }
     }
+
+    private static string KindText(string kind) => kind switch
+    {
+        PushQueueRepository.KindPhoto => "照片",
+        PushQueueRepository.KindRecord => "称重记录",
+        PushQueueRepository.KindBlackbox => "黑匣子",
+        PushQueueRepository.KindVoid => "作废",
+        _ => kind,
+    };
 
     /// <summary>保存配置（internal 供测试直调：必填校验 + 写入 AppConfig）。</summary>
     internal void Save()
@@ -230,6 +282,10 @@ public class PlatformSyncSettingsDialog : Form
         cfg.PlatformSyncBlackbox = ChkBlackbox.Checked;
         cfg.Save();
         Log.Info($"平台对接设置已保存：启用={cfg.PlatformSyncEnabled} 地址={cfg.PlatformApiUrl}");
+
+        // 开启同步后立刻在后台补齐历史已完成记录（首次启用/重装后队列为空时尤为重要）
+        if (cfg.PlatformSyncEnabled) HistoryBackfill();
+
         InfoBox("设置已保存，立即生效。", "成功", true);
         DialogResult = DialogResult.OK;
         Close();

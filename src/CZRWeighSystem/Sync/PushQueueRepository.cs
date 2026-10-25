@@ -23,6 +23,8 @@ public sealed class PushQueueItem
     public string LastError { get; set; } = "";
     /// <summary>成功结果（照片项存 photoId，记录项存平台称重单号）</summary>
     public string Result { get; set; } = "";
+    /// <summary>最后更新时间（失败明细列表展示失败时间）</summary>
+    public DateTime UpdatedAt { get; set; }
 }
 
 /// <summary>
@@ -195,6 +197,40 @@ public class PushQueueRepository
             reader.IsDBNull(1) ? 0 : Convert.ToInt32(reader.GetValue(1)));
     }
 
+    /// <summary>失败明细（设置界面列表展示，最近更新的在前）。</summary>
+    public List<PushQueueItem> GetFailedItems(int limit)
+    {
+        using var conn = Db.CreateConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = Db.TopSql(
+            "SELECT {TOP} * FROM t_push_queue WHERE status='failed' ",
+            "ORDER BY updated_at DESC, id DESC", limit);
+        using var reader = cmd.ExecuteReader();
+        var list = new List<PushQueueItem>();
+        while (reader.Read()) list.Add(Map(reader));
+        return list;
+    }
+
+    /// <summary>
+    /// 已完成但从未入队的记录流水号（启动补推 / 开启同步后补齐历史）：
+    /// 与队列表按 kind='record' 做左连接差集，已入队的（含已推送成功的）不会重复补。
+    /// 按 id 升序返回，先补老的。
+    /// </summary>
+    public List<string> GetUnqueuedCompletedSerialNos(int limit)
+    {
+        using var conn = Db.CreateConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = Db.TopSql(
+            "SELECT {TOP} r.serial_no FROM t_weigh_record r " +
+            "LEFT JOIN t_push_queue q ON q.kind='record' AND q.client_ref = r.serial_no " +
+            "WHERE r.status='已完成' AND q.id IS NULL ",
+            "ORDER BY r.id", limit);
+        using var reader = cmd.ExecuteReader();
+        var list = new List<string>();
+        while (reader.Read()) list.Add(reader.GetString(0));
+        return list;
+    }
+
     /// <summary>人工重推：全部失败项重置为待推送（attempts 清零重新退避）。返回重置条数。</summary>
     public int RequeueFailed()
     {
@@ -243,6 +279,8 @@ public class PushQueueRepository
 
     private static PushQueueItem Map(DbDataReader r)
     {
+        static DateTime Parse(string? s) =>
+            DateTime.TryParse(s, out var t) ? t : default;
         return new PushQueueItem
         {
             Id = r.GetInt64(r.GetOrdinal("id")),
@@ -251,9 +289,10 @@ public class PushQueueRepository
             Payload = r.GetString(r.GetOrdinal("payload")),
             Status = r.GetString(r.GetOrdinal("status")),
             Attempts = Convert.ToInt32(r.GetValue(r.GetOrdinal("attempts"))),
-            NextAttempt = DateTime.TryParse(r.GetString(r.GetOrdinal("next_attempt")), out var t) ? t : default,
+            NextAttempt = Parse(GetString(r, "next_attempt")),
             LastError = GetString(r, "last_error"),
             Result = GetString(r, "result"),
+            UpdatedAt = Parse(GetString(r, "updated_at")),
         };
     }
 

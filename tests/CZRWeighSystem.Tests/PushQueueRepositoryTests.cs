@@ -1,3 +1,4 @@
+using CZRWeighSystem.Core;
 using CZRWeighSystem.Database;
 using CZRWeighSystem.Sync;
 using CZRWeighSystem.Utils;
@@ -89,6 +90,78 @@ public class PushQueueRepositoryTests
         Assert.Equal("文件损坏", st.LastError);
         // kind 隔离：同 ref 的记录项不受照片失败影响
         Assert.Null(_repo.GetStatus(PushQueueRepository.KindRecord, @ref));
+    }
+
+    [Fact]
+    public void GetFailedItems_只返回失败项并带原因与更新时间()
+    {
+        string failedRef = Ref(), pendingRef = Ref();
+        _repo.Enqueue(PushQueueRepository.KindPhoto, failedRef, "{}");
+        _repo.Enqueue(PushQueueRepository.KindPhoto, pendingRef, "{}");
+
+        long id = _repo.GetDue(PushQueueRepository.KindPhoto, 100)
+            .First(i => i.ClientRef == failedRef).Id;
+        _repo.MarkFailed(id, "图片损坏");
+
+        var failed = _repo.GetFailedItems(100);
+        var item = failed.First(i => i.ClientRef == failedRef);
+        Assert.Equal("图片损坏", item.LastError);
+        Assert.NotEqual(default, item.UpdatedAt);
+        Assert.DoesNotContain(failed, i => i.ClientRef == pendingRef);   // 待推送项不在失败明细
+    }
+
+    [Fact]
+    public void GetUnqueuedCompletedSerialNos_只返回已完成且从未入队的记录()
+    {
+        var records = new WeighRecordRepository();
+        var first = records.InsertFirstWeigh(new WeighRecord
+        {
+            ScaleNo = "95",
+            VehicleNo = "测" + Guid.NewGuid().ToString("N")[..6],
+            GrossKg = 30000,
+        });
+        string serial = first.SerialNo;
+
+        try
+        {
+            // 未完成：不在补推范围
+            Assert.DoesNotContain(serial, _repo.GetUnqueuedCompletedSerialNos(500));
+
+            records.CompleteSecondWeigh(first.Id, 50000, null, "测试");
+            Assert.Contains(serial, _repo.GetUnqueuedCompletedSerialNos(500));
+
+            // 入队后不再重复补（含已推送成功的）
+            _repo.Enqueue(PushQueueRepository.KindRecord, serial, "{}");
+            Assert.DoesNotContain(serial, _repo.GetUnqueuedCompletedSerialNos(500));
+
+            long id = _repo.GetDue(PushQueueRepository.KindRecord, 100)
+                .First(i => i.ClientRef == serial).Id;
+            _repo.MarkDone(id, "CZ001202610250001");
+            Assert.DoesNotContain(serial, _repo.GetUnqueuedCompletedSerialNos(500));
+        }
+        finally
+        {
+            CleanupRecord(serial);
+        }
+    }
+
+    /// <summary>删除本用例造的业务记录与队列项，避免影响共享测试库的统计/列表断言。</summary>
+    private static void CleanupRecord(string serial)
+    {
+        using (var conn = Db.CreateConnection())
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = "DELETE FROM t_push_queue WHERE client_ref=@ref";
+            cmd.Add("@ref", serial);
+            cmd.ExecuteNonQuery();
+        }
+        using (var conn = Db.CreateConnection())
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = "DELETE FROM t_weigh_record WHERE serial_no=@no";
+            cmd.Add("@no", serial);
+            cmd.ExecuteNonQuery();
+        }
     }
 
     [Fact]

@@ -22,6 +22,7 @@ public sealed class PushScheduler : IDisposable
     private readonly WeighRecordRepository _recordRepo = new();
     private System.Threading.Timer? _timer;
     private int _busy;                                  // 轮次重入保护
+    private int _historyChecked;                        // 0=启动后尚未做历史补推
     private DateTime _lastBlackboxPush = DateTime.MinValue;
 
     /// <summary>启动后台轮询（未启用平台对接时轮次直接空转）。</summary>
@@ -112,6 +113,30 @@ public sealed class PushScheduler : IDisposable
         }
     }
 
+    /// <summary>
+    /// 历史补推：把"已完成但从未入队"的记录补进推送队列。
+    /// 覆盖开启平台对接之前产生的历史记录、重装软件导致队列丢失的记录、入队异常遗漏的记录；
+    /// 幂等——已入队（含已推送成功）的记录不会重复补。后台线程调用，不阻塞 UI。
+    /// 每批 200 条、最多 max 条，避免一次扫全库。
+    /// </summary>
+    public int BackfillHistory(int max = 2000)
+    {
+        if (!IsEnabled()) return 0;
+        int total = 0;
+        while (total < max)
+        {
+            var serials = _queue.GetUnqueuedCompletedSerialNos(200);
+            if (serials.Count == 0) break;
+            foreach (var no in serials)
+            {
+                EnqueueRecord(no);
+                if (++total >= max) break;
+            }
+        }
+        if (total > 0) Log.Info($"平台推送历史补推：补入队 {total} 条已完成记录");
+        return total;
+    }
+
     // ==================== 后台轮次 ====================
 
     private async Task RunOnceSafeAsync()
@@ -119,6 +144,10 @@ public sealed class PushScheduler : IDisposable
         if (Interlocked.Exchange(ref _busy, 1) != 0) return;   // 上一轮未结束不重入
         try
         {
+            // 启动后首轮：先在后台默默检查是否有从未入队的已完成记录，补齐后才开始推送正常队列
+            if (Interlocked.Exchange(ref _historyChecked, 1) == 0)
+                BackfillHistory();
+
             await ProcessDueAsync();
         }
         catch (Exception ex)
