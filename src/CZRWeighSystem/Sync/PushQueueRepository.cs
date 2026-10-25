@@ -159,6 +159,24 @@ public class PushQueueRepository
         return val is string s && s.Length > 0 ? s : null;
     }
 
+    /// <summary>
+    /// 按幂等键查询队列项状态与最后错误（不存在返回 null）。
+    /// 记录推送前用它识别"关联照片已永久失败"，避免记录无限顺延。
+    /// </summary>
+    public (string Status, string LastError)? GetStatus(string kind, string clientRef)
+    {
+        using var conn = Db.CreateConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT status, last_error FROM t_push_queue
+            WHERE kind=@kind AND client_ref=@ref;
+            """;
+        cmd.Add("@kind", kind);
+        cmd.Add("@ref", clientRef);
+        using var reader = cmd.ExecuteReader();
+        return reader.Read() ? (reader.GetString(0), GetString(reader, "last_error")) : null;
+    }
+
     /// <summary>队列统计（设置界面同步状态展示）。</summary>
     public (int Pending, int Failed) GetStats()
     {

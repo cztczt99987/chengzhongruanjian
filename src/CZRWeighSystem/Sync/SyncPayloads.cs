@@ -77,5 +77,20 @@ public static class SyncPayloads
         Path.ChangeExtension(Path.GetRelativePath(AppContext.BaseDirectory, filePath), null)
             .Replace('\\', '/');
 
+    /// <summary>
+    /// 照片文件 → 拍摄时间：按文件名中的 tare/gross 标记取各自称重时刻，
+    /// 不能统一用二次磅时间——否则先皮后毛时皮重照片会被标成毛重时间、先毛后皮则相反。
+    /// 旧版无标记文件（{流水号}_camN.jpg）退回二次磅时间（该记录最终称重时刻，只能保守取值）。
+    /// </summary>
+    public static DateTime? ShotAtOf(string filePath, WeighRecord r)
+    {
+        string name = Path.GetFileName(filePath);
+        if (name.Contains("_tare_", StringComparison.OrdinalIgnoreCase))
+            return r.TareTime ?? r.SecondTime;
+        if (name.Contains("_gross_", StringComparison.OrdinalIgnoreCase))
+            return r.GrossTime ?? r.SecondTime;
+        return r.SecondTime;
+    }
+
     private static string? NullIfEmpty(string s) => s.Trim().Length == 0 ? null : s.Trim();
 }

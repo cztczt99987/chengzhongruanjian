@@ -74,6 +74,24 @@ public class PushQueueRepositoryTests
     }
 
     [Fact]
+    public void GetStatus_返回状态与最后错误_不存在为null()
+    {
+        string @ref = Ref();
+        Assert.Null(_repo.GetStatus(PushQueueRepository.KindPhoto, @ref));
+
+        _repo.Enqueue(PushQueueRepository.KindPhoto, @ref, "{}");
+        Assert.Equal("pending", _repo.GetStatus(PushQueueRepository.KindPhoto, @ref)!.Value.Status);
+
+        long id = _repo.GetDue(PushQueueRepository.KindPhoto, 100).First(i => i.ClientRef == @ref).Id;
+        _repo.MarkFailed(id, "文件损坏");
+        var st = _repo.GetStatus(PushQueueRepository.KindPhoto, @ref)!.Value;
+        Assert.Equal("failed", st.Status);
+        Assert.Equal("文件损坏", st.LastError);
+        // kind 隔离：同 ref 的记录项不受照片失败影响
+        Assert.Null(_repo.GetStatus(PushQueueRepository.KindRecord, @ref));
+    }
+
+    [Fact]
     public void ScheduleRetry_按退避表顺延_超五次置失败()
     {
         string @ref = Ref();

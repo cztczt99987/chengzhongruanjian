@@ -100,6 +100,30 @@ public class SyncPayloadsTests
             "captures", "20260930", "20260930-01-0001_cam1.jpg");
         Assert.Equal("captures/20260930/20260930-01-0001_cam1", SyncPayloads.PhotoRefOf(file));
     }
+
+    [Fact]
+    public void ShotAtOf_皮重毛重照片各取各自称重时刻()
+    {
+        // 先皮后毛：一次磅=皮重（上午 8:00），二次磅=毛重（下午 16:30）
+        var record = new WeighRecord
+        {
+            SerialNo = "20261024-01-0001",
+            GrossKg = 60000, TareKg = 30000,
+            FirstTime = new DateTime(2026, 10, 24, 8, 0, 0),
+            SecondTime = new DateTime(2026, 10, 24, 16, 30, 0),
+            FirstIsTare = true,
+        };
+        string dir = Path.Combine(AppContext.BaseDirectory, "captures", "20261024");
+
+        Assert.Equal(record.TareTime, SyncPayloads.ShotAtOf(
+            Path.Combine(dir, "20261024-01-0001_tare_cam1.jpg"), record));
+        Assert.Equal(record.GrossTime, SyncPayloads.ShotAtOf(
+            Path.Combine(dir, "20261024-01-0001_gross_cam1.jpg"), record));
+
+        // 旧版无标记文件：退回二次磅时间
+        Assert.Equal(record.SecondTime, SyncPayloads.ShotAtOf(
+            Path.Combine(dir, "20261024-01-0001_cam1.jpg"), record));
+    }
 }
 
 /// <summary>服务端响应反序列化：photoId/recordNo 兼容数字与字符串两种返回。</summary>

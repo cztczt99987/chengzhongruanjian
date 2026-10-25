@@ -56,8 +56,9 @@ public sealed class PushScheduler : IDisposable
             {
                 string photoRef = SyncPayloads.PhotoRefOf(file);
                 refs.Add(photoRef);
+                // 皮重/毛重照片分别用各自的称重时刻，不能用统一的二次磅时间
                 _queue.Enqueue(PushQueueRepository.KindPhoto, photoRef,
-                    ToJson(new PhotoPayload(file, record.SecondTime)));
+                    ToJson(new PhotoPayload(file, SyncPayloads.ShotAtOf(file, record))));
             }
             _queue.Enqueue(PushQueueRepository.KindRecord, serialNo,
                 ToJson(SyncPayloads.FromRecord(record, refs)));
@@ -215,6 +216,26 @@ public sealed class PushScheduler : IDisposable
         foreach (var item in items)
         {
             var payload = FromJson<RecordPayload>(item.Payload);
+
+            // 任一张照片已永久失败（平台拒收等不可自愈错误）→ 该记录不可能推送成功，
+            // 直接置失败并带原因供现场查看/人工重推；否则会每分钟顺延、永远挂在待推送。
+            string? failedPhoto = null;
+            foreach (var p in payload.Photos)
+            {
+                var st = _queue.GetStatus(PushQueueRepository.KindPhoto, p);
+                if (st is { Status: "failed" })
+                {
+                    failedPhoto = string.IsNullOrEmpty(st.Value.LastError)
+                        ? p : $"{p}（{st.Value.LastError}）";
+                    break;
+                }
+            }
+            if (failedPhoto != null)
+            {
+                _queue.MarkFailed(item.Id, "关联照片上传失败：" + failedPhoto);
+                continue;
+            }
+
             if (payload.Photos.All(p => _queue.GetDoneResult(PushQueueRepository.KindPhoto, p) != null))
                 ready.Add((item, payload));
             else
