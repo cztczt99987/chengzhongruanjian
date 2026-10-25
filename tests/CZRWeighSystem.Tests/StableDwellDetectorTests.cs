@@ -46,17 +46,45 @@ public class StableDwellDetectorTests
     }
 
     [Fact]
-    public void Dynamic_ResetsTimer_ThenStableAgain_FiresAgain()
+    public void 车在磅上抖动_只记录一次()
     {
         var d = NewDetector();
 
         d.ShouldFire(5000, isStable: true, T(0));
         Assert.True(d.ShouldFire(5000, isStable: true, T(10)));    // 第一次触发
 
-        // 车辆下磅 → 动态 → 计时重置
+        // 车仍在磅上（重量未跌破阈值）：仪表短暂报动态后重新稳定，不再记录
         Assert.False(d.ShouldFire(3000, isStable: false, T(12)));
-        Assert.False(d.ShouldFire(4800, isStable: true, T(20)));   // 重新稳定仅 8 秒
-        Assert.True(d.ShouldFire(4800, isStable: true, T(30)));    // 新过程满 10 秒 → 再次触发
+        Assert.False(d.ShouldFire(4800, isStable: true, T(20)));
+        Assert.False(d.ShouldFire(4800, isStable: true, T(30)));
+        Assert.False(d.ShouldFire(4800, isStable: true, T(120)));  // 长时间停留也不重复
+    }
+
+    [Fact]
+    public void 重量跌破阈值_视为下磅_下一辆车再次记录()
+    {
+        var d = NewDetector();
+
+        d.ShouldFire(5000, isStable: true, T(0));
+        Assert.True(d.ShouldFire(5000, isStable: true, T(10)));
+
+        // 车辆下磅：重量低于触发重量 → 本次过程结束
+        Assert.False(d.ShouldFire(150, isStable: true, T(15)));
+
+        // 第二辆车上磅并稳定满 10 秒 → 再次记录
+        Assert.False(d.ShouldFire(4800, isStable: true, T(20)));
+        Assert.True(d.ShouldFire(4800, isStable: true, T(30)));
+    }
+
+    [Fact]
+    public void 未触发前抖动_重新计时()
+    {
+        var d = NewDetector();
+
+        d.ShouldFire(5000, isStable: true, T(0));
+        Assert.False(d.ShouldFire(5000, isStable: false, T(5)));   // 抖动 → 计时重置
+        Assert.False(d.ShouldFire(5000, isStable: true, T(10)));   // 从 T(10) 重新起算
+        Assert.True(d.ShouldFire(5000, isStable: true, T(20)));    // 满 10 秒 → 触发
     }
 
     [Fact]
